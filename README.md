@@ -1,1 +1,1 @@
-# Ehrenfeucht–Fräısśe Learning for Knowledge Graph First Order Sentence Verification
+# Ehrenfeucht–Fraı̈sśe Learning for Knowledge Graph First Order Sentence Verification

@@ -3,7 +3,7 @@ from model.predicate import NeuralBinaryPredicate
 
 class EFL:
     """
-    A class for Ehrenfeucht–Fräısśe Learning (EFL).
+    A class for Ehrenfeucht–Fraı̈sśe Learning (EFL).
     EFL is based on play of EFG to optimize the neural (binary predicate) model
     so that it can be more elementary equivalent to the finite (knowledge graph)
     model.
