@@ -36,17 +36,21 @@ class EFL:
             entity_list.append(new_entity_id)
 
         # get sub_graph from self.finite_model
-
-        pass
+        sub_graph_triples = self.finite_model.get_sub_graph(entity_list)
+        return sub_graph_triples
 
 
     def _pick_from_finite_model(self, known_entity_list, mode='random'):
         # get all possible triples (neighbering_graph) from self.finite_model
+        neighbering_graph_triples = self.finite_model.get_neighbor_graph(
+            known_entity_list)
 
         # batch evaluation by self.neural_model
+        self.neural_model.find_low_score_true_triples(neighbering_graph_triples, k=1)
+        self.neural_model.find_high_score_false_triples(neighbering_graph_triples, k=1)
 
         # pick the worst triple (or other choices define by the mode)
         pass
 
-    def learning_with_efg(self, batch_size, optimizer):
+    def learning_step(self, batch_size, optimizer):
         triples = self.play_efg()

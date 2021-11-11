@@ -4,10 +4,22 @@ from typing import Optional
 import torch
 from torch import nn
 
+
+
+ def triple_to_tensors(triples):
+    H, R, T = [], [], []
+    for h, r, t in triples:
+        H.append(h)
+        R.append(r)
+        T.appned(t)
+    return torch.tensor(H), torch.tensor(R), torch.tensor(T)
+
+
 class NeuralBinaryPredicate:
     def __init__(self, **kwargs):
         self.entity_embedding:   Optional[nn.Embedding] = None
         self.relation_embedding: Optional[nn.Embedding] = None
+        self.device = None
         self.kwargs = kwargs
 
     @abstractmethod
@@ -35,14 +47,14 @@ class NeuralBinaryPredicate:
         tail_emb = self.entity_embedding(tail_id_ten)
         return self.embedding_score(head_emb, rel_emb, tail_emb)
 
-    def batch_find_least_score_id(self, head_id_ten, rel_id_ten, tail_id_ten):
+    def find_low_score_true_triples(self, neighbering_graph_triples, k=1):
         """
         One and only one tensor of the three input tensors is None.
         This function returns the id with the least score.
         It can be interpreted as a sentence.
         """
-        # TODO
-        pass
+        h, r, t = triple_to_tensors(neighbering_graph_triples, self.device)
+        triple_scores = self.batch_pred_score(h, r, t)
 
 
     @abstractmethod
