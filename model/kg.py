@@ -1,6 +1,11 @@
 import os
 from collections import defaultdict
 
+from typing import List, Tuple
+
+Triple = Tuple[int, int, int]
+
+
 def iter_triple_from_tsv(triple_file):
     with open(triple_file, 'rt') as f:
         for line in f.readlines():
@@ -8,6 +13,7 @@ def iter_triple_from_tsv(triple_file):
             assert len(tp) == 3
             triple = [int(t) for t in tp]
             yield triple
+
 
 class KG:
     def __init__(self, triple_file):
@@ -30,15 +36,15 @@ class KG:
             self.h2r2t[h][r] = t
             self.t2r2h[t][r] = h
 
-    def get_sub_graph(self, entity_list):
+    def get_sub_graph(self, entity_list: List[int]) -> List[Triple]:
         triples = []
         for h in entity_list:
             for t in entity_list:
                 if (h, t) in self.ht2r:
                     triples.append((h, self.ht2r[(h, t)], t))
-        return triples
+        return list(triples)
 
-    def get_neighbor_graph(self, entity_list):
+    def get_neighbor_graph(self, entity_list: List[int]) -> List[Triple]:
         triples = set()
         for h in entity_list:
             for t in self.h2t[h]:
@@ -46,4 +52,12 @@ class KG:
         for t in entity_list:
             for h in self.t2h[t]:
                 triples.add((h, self.ht2r[(h, t)], t))
-        return triples
+        return list(triples)
+
+    @classmethod
+    def create(cls, triple_file):
+        """
+        Create the class
+        TO be modified when certain parameters controls the triple_file
+        """
+        return cls(triple_file)
