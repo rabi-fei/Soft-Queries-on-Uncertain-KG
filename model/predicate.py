@@ -4,23 +4,15 @@ from typing import Optional
 import torch
 from torch import nn
 
-
-def triple_to_tensors(triples):
-    H, R, T = [], [], []
-    for h, r, t in triples:
-        H.append(h)
-        R.append(r)
-        T.appned(t)
-    return torch.tensor(H), torch.tensor(R), torch.tensor(T)
+from .model_utils import triples_to_tensors
 
 
 class NeuralBinaryPredicate(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, entity_embedding: nn.Embedding, relation_embedding: nn.Embedding, device):
         super(NeuralBinaryPredicate, self).__init__()
-        self.entity_embedding:   Optional[nn.Embedding] = None
-        self.relation_embedding: Optional[nn.Embedding] = None
-        self.device = None
-        self.kwargs = kwargs
+        self.entity_embedding = entity_embedding
+        self.relation_embedding = relation_embedding
+        self.device = device
 
     @abstractmethod
     def embedding_score(self, head_emb, rel_emb, tail_emb):
@@ -54,9 +46,9 @@ class NeuralBinaryPredicate(nn.Module):
         This function returns the id with the least score.
         It can be interpreted as a sentence.
         """
-        h, r, t = triple_to_tensors(triples, self.device)
+        h, r, t = triples_to_tensors(triples, self.device)
         triple_score_tensor = self.batch_pred_score(h, r, t)
-        triple_scores = triple_score_tensor.cpu().numpy().tolist()
+        triple_scores = triple_score_tensor.detach().cpu().numpy().tolist()
         triple_with_score = sorted(zip(triples, triple_scores),
                                    reverse=not assending,
                                    key=lambda x: x[1])
@@ -66,5 +58,5 @@ class NeuralBinaryPredicate(nn.Module):
         return ret
 
     @abstractmethod
-    def compute_loss(self, head_id_ten, rel_id_ten, tail_id_ten):
+    def compute_triple_loss(self, triples, labels):
         pass

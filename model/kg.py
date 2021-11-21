@@ -36,22 +36,33 @@ class KG:
             self.h2r2t[h][r] = t
             self.t2r2h[t][r] = h
 
+    @property
+    def num_entities(self):
+        return len(self.h2t)
+
+    @property
+    def num_relations(self):
+        return len(self.r2ht)
+
     def get_sub_graph(self, entity_list: List[int]) -> List[Triple]:
         triples = []
         for h in entity_list:
             for t in entity_list:
                 if (h, t) in self.ht2r:
-                    triples.append((h, self.ht2r[(h, t)], t))
+                    for r in self.ht2r[(h, t)]:
+                        triples.append((h, r, t))
         return list(triples)
 
     def get_neighbor_graph(self, entity_list: List[int]) -> List[Triple]:
         triples = set()
         for h in entity_list:
             for t in self.h2t[h]:
-                triples.add((h, self.ht2r[(h, t)], t))
+                for r in self.ht2r[(h, t)]:
+                    triples.add((h, r, t))
         for t in entity_list:
             for h in self.t2h[t]:
-                triples.add((h, self.ht2r[(h, t)], t))
+                for r in self.ht2r[(h, t)]:
+                    triples.add((h, r, t))
         return list(triples)
 
     @classmethod
