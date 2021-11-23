@@ -29,50 +29,56 @@ class EFL:
         Play the EF game and get the game position
         Optimize the score over the sub-graph
         """
-
+        # prepare rounds
         if round is None:
             round = self.round
 
+        # prepare initial entities
         if begin_entity_id is None:
             entity_list = [self.get_random_entity()]
         else:
             entity_list = [begin_entity_id]
 
+        # prepare spolier argument
         if spolier_mode is None:
             spolier_mode = 'random'
             spolier_args = {'threshold': 0.5}
 
         # inside the game
         for _ in range(round):
-            if spolier_mode == 'random':
-                new_entity_id = self.spolier_random_step(
-                    entity_list, **spolier_args)
-            else:
-                raise NotImplementedError
+            new_entity_id = self._spoiler_step(
+                entity_list, mode=spolier_mode, **spolier_args)
             entity_list.append(new_entity_id)
 
         # get sub_graph from self.finite_model
-        sub_graph_triples = self.finite_model.get_sub_graph(entity_list)
-        return sub_graph_triples
+        pos_triples, neg_triples = self.finite_model.get_sub_graph(entity_list)
+        return pos_triples, neg_triples
 
     def get_random_entity(self):
-        return random.randint(0, self.finite_model.num_entities-1)
+        return self.finite_model.get_random_entity()
 
     def get_random_relation(self):
-        return random.randint(0, self.finite_model.num_relations-1)
+        return self.finite_model.get_random_relation()
 
-    def spolier_random_step(self, entity_list, threshold=0.5, **kwargs):
+    def _spoiler_step(self, entity_list, mode, **spolier_args):
+        if mode == 'random':
+            return self._spolier_greedy_step(entity_list, **spolier_args)
+        else:
+            raise NotImplementedError(
+                f"spoiler step mode {mode} is not implemented")
+
+    def _spoiler_random_step(self, entity_list, threshold=0.5, **kwargs):
         rand = random.random()
         if rand < threshold:
             new_entity_id = self._spolier_act_on_finite_model(
-                entity_list)
-            return new_entity_id, 1
+                entity_list, **kwargs)
+            return new_entity_id
         else:
             new_entity_id = self._spoiler_act_on_neural_model(
-                entity_list)
-            return new_entity_id, 0
+                entity_list, **kwargs)
+            return new_entity_id
 
-    def _spolier_act_on_finite_model(self, known_entity_list, mode='random'):
+    def _spolier_act_on_finite_model(self, known_entity_list):
         # get all possible triples (neighbering_graph) from self.finite_model
         neighbering_graph_triples = self.finite_model.get_neighbor_graph(
             known_entity_list)
