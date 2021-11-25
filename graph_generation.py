@@ -46,6 +46,7 @@ class FamilySimulator:
     REL_MARRYWITH = 2
     REL_ISFATHERINLAW = 3
     REL_ISMOTHERINLAW = 4
+    REL_INIT_PEOPLE = 5
 
     def __init__(self, num_gen, num_init_people, birth_ratio, death_ratio):
         self.num_gen = num_gen
@@ -160,6 +161,7 @@ class FamilySimulator:
         for pid in range(self.num_init_people):
             self.pid2people[pid] = People.born(pid)
             self.stats['birth'] += 1
+            self.triples.append((pid, self.REL_INIT_PEOPLE, pid))
 
         for _ in range(self.num_gen):
             self.simulate_next_generation()

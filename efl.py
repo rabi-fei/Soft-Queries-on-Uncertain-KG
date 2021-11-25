@@ -15,7 +15,7 @@ class EFL:
     def __init__(self,
                  finite_model: KG,
                  neural_model: NeuralBinaryPredicate,
-                 round=2):
+                 round=5):
         self.finite_model = finite_model
         self.neural_model = neural_model
         self.round = round
@@ -52,6 +52,7 @@ class EFL:
 
         # get sub_graph from self.finite_model
         pos_triples, neg_triples = self.finite_model.get_sub_graph(entity_list)
+        assert len(pos_triples) == len(neg_triples)
         return pos_triples, neg_triples
 
     def get_random_entity(self):
@@ -62,7 +63,7 @@ class EFL:
 
     def _spoiler_step(self, entity_list, mode, **spolier_args):
         if mode == 'random':
-            return self._spolier_greedy_step(entity_list, **spolier_args)
+            return self._spoiler_random_step(entity_list, **spolier_args)
         else:
             raise NotImplementedError(
                 f"spoiler step mode {mode} is not implemented")
@@ -123,11 +124,13 @@ class EFL:
     def learning_step(self, batch_size, optimizer):
         optimizer.zero_grad()
 
-        triples = []
+        pos_triples, neg_triples = [], []
         for _ in range(batch_size):
-            triples += self.play_efg()
+            pt, nt = self.play_efg()
+            pos_triples += pt
+            neg_triples += nt
 
         loss = self.neural_model.compute_triple_loss(
-            triples, labels=[1.] * len(triples))
+            pos_triples, neg_triples)
         loss.backward()
         optimizer.step()

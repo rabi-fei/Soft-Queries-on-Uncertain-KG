@@ -1,9 +1,10 @@
 from model import KG, TransE, NeuralBinaryPredicate
+
 from efl import EFL
 import torch
 
 
-TEST_KG_FILE = "../datasets-knowledge-embedding/WN18/edges_as_id_train.tsv"
+TEST_KG_FILE = "data/family-full.tsv"
 
 
 if __name__ == "__main__":

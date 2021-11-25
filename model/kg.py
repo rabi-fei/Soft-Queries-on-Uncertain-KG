@@ -19,6 +19,7 @@ def iter_triple_from_tsv(triple_file):
 
 class KG:
     def __init__(self, triple_file):
+        self.entity_set = set()
         self.ht2r = defaultdict(list)
         self.r2ht = defaultdict(list)
 
@@ -29,6 +30,11 @@ class KG:
         self.t2r2h = defaultdict(dict)
 
         for h, r, t in iter_triple_from_tsv(triple_file):
+            if h not in self.entity_set:
+                self.entity_set.add(h)
+            if t not in self.entity_set:
+                self.entity_set.add(t)
+
             self.ht2r[(h, t)].append(r)
             self.r2ht[r].append((h, t))
 
@@ -48,7 +54,7 @@ class KG:
 
     @property
     def num_entities(self):
-        return len(self.h2t)
+        return len(self.entity_set)
 
     @property
     def num_relations(self):
@@ -62,11 +68,11 @@ class KG:
 
     def get_sub_graph(self,
                       entity_list: List[int],
-                      negative_triples=True,
+                      negative_sampling=True,
                       negative_sample_scope='subgraph',
                       pairwise_negative=True,
                       perturbation_vals=[1, 1, 1],
-                      **kwargs) -> List[Tuple(Triple, 0 | 1)]:
+                      **kwargs) -> List[Tuple[Triple, int]]:
         positive_triples = []
         for h in entity_list:
             for t in entity_list:
@@ -75,7 +81,7 @@ class KG:
                         positive_triples.append((h, r, t))
 
         negative_triples = []
-        if negative_triples:
+        if negative_sampling:
             assert negative_sample_scope in ['graph', 'subgraph']
             if negative_sample_scope == 'graph':
                 def entity_sampler():
@@ -86,15 +92,18 @@ class KG:
 
             if pairwise_negative:
                 for triple in positive_triples:
-                    neg_triple = triple[:]
+                    h, r, t = triple
                     while True:
                         which = np.random.choice([0, 1, 2])
-                        if which == 1:
-                            neg_triple[which] = self.get_random_relation()
-                        else:
-                            neg_triple[which] = entity_sampler()
+                        if which == 0:
+                            neg_triple = (entity_sampler(), r, t)
+                        elif which == 1:
+                            neg_triple = (h, self.get_random_relation(), t)
+                        elif which == 2:
+                            neg_triple = (h, r, entity_sampler())
+
                         if neg_triple not in positive_triples:
-                            negative_triples.append(positive_triples)
+                            negative_triples.append(neg_triple)
                             break
             else:
                 while len(negative_triples) < len(positive_triples):
@@ -104,9 +113,7 @@ class KG:
                         negative_triples.append(neg_triple)
 
                 # pair wise negative triple sampling
-            for (h, r, t), _ in positive_triples:
-                negative_triples.append()
-        return positive_triples + negative_triples
+        return positive_triples, negative_triples
 
     def get_neighbor_graph(self, entity_list: List[int]) -> List[Triple]:
         triples = set()
