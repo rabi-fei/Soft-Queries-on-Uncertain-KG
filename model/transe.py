@@ -48,7 +48,7 @@ class TransE(NeuralBinaryPredicate):
         if pairwise_loss:
             pos_scores = scores[:len(pos_triples)]
             neg_scores = scores[len(pos_triples):]
-            loss = torch.relu(neg_scores - pos_scores - 1).mean()
+            loss = torch.relu(neg_scores - pos_scores + 10).mean()
             return loss
 
         labels = torch.tensor([1] * len(pos_triples) + [0] * len(neg_triples))

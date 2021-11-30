@@ -48,12 +48,17 @@ class EFL:
         for _ in range(round):
             new_entity_id = self._spoiler_step(
                 entity_list, mode=spolier_mode, **spolier_args)
+            if new_entity_id is None:
+                break
             entity_list.append(new_entity_id)
 
         # get sub_graph from self.finite_model
         pos_triples, neg_triples = self.finite_model.get_sub_graph(entity_list)
         assert len(pos_triples) == len(neg_triples)
-        return pos_triples, neg_triples
+        if len(pos_triples) > 0:
+            return pos_triples, neg_triples
+        else:
+            return self.play_efg()
 
     def get_random_entity(self):
         return self.finite_model.get_random_entity()
@@ -73,11 +78,10 @@ class EFL:
         if rand < threshold:
             new_entity_id = self._spolier_act_on_finite_model(
                 entity_list, **kwargs)
-            return new_entity_id
         else:
             new_entity_id = self._spoiler_act_on_neural_model(
                 entity_list, **kwargs)
-            return new_entity_id
+        return new_entity_id
 
     def _spolier_act_on_finite_model(self, known_entity_list):
         # get all possible triples (neighbering_graph) from self.finite_model
@@ -121,7 +125,10 @@ class EFL:
             if t not in known_entity_list:
                 return t
 
-    def learning_step(self, batch_size, optimizer):
+    def learning_step(self, batch_size, optimizer, log=True):
+        if log:
+            log_dict = {}
+
         optimizer.zero_grad()
 
         pos_triples, neg_triples = [], []
@@ -134,3 +141,9 @@ class EFL:
             pos_triples, neg_triples)
         loss.backward()
         optimizer.step()
+
+        if log:
+            log_dict['num_pos_triples'] = len(pos_triples)
+            log_dict['num_neg_triples'] = len(neg_triples)
+            log_dict['loss'] = loss
+            return log_dict
