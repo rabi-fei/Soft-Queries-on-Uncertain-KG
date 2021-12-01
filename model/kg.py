@@ -28,8 +28,11 @@ class KG:
 
         self.h2r2t = defaultdict(dict)
         self.t2r2h = defaultdict(dict)
+        self.triples = []
 
         for h, r, t in iter_triple_from_tsv(triple_file):
+            self.triples.append((h, r, t))
+
             if h not in self.entity_set:
                 self.entity_set.add(h)
             if t not in self.entity_set:
@@ -66,12 +69,50 @@ class KG:
     def get_random_relation(self):
         return random.randint(0, self.num_relations-1)
 
+    def lcwa_negative_sampling(self,
+                               positive_triples=None,
+                               entity_list=None,
+                               negative_sample_scope='subgraph'):
+
+        assert positive_triples is not None
+
+        if entity_list is None:
+            entity_set = set()
+            for h, r, t in positive_triples:
+                entity_set.add(h)
+                entity_set.add(t)
+            entity_list = list(entity_set)
+
+        assert negative_sample_scope in ['graph', 'subgraph']
+        if negative_sample_scope == 'graph':
+            def entity_sampler():
+                return self.get_random_entity()
+        else:
+            def entity_sampler():
+                return random.sample(entity_list, 1)[0]
+
+        negative_triples = []
+        positive_triples_sets = set(positive_triples)
+        for triple in positive_triples:
+            h, r, t = triple
+            while True:
+                which = np.random.choice([0, 1, 2])
+                if which == 0:
+                    neg_triple = (entity_sampler(), r, t)
+                elif which == 1:
+                    neg_triple = (h, self.get_random_relation(), t)
+                elif which == 2:
+                    neg_triple = (h, r, entity_sampler())
+
+                if neg_triple not in positive_triples_sets:
+                    negative_triples.append(neg_triple)
+                    break
+        return negative_triples
+
     def get_sub_graph(self,
                       entity_list: List[int],
                       negative_sampling=True,
                       negative_sample_scope='subgraph',
-                      pairwise_negative=True,
-                      perturbation_vals=[1, 1, 1],
                       **kwargs) -> List[Tuple[Triple, int]]:
         positive_triples = []
         for h in entity_list:
@@ -82,37 +123,12 @@ class KG:
 
         negative_triples = []
         if negative_sampling:
-            assert negative_sample_scope in ['graph', 'subgraph']
-            if negative_sample_scope == 'graph':
-                def entity_sampler():
-                    return self.get_random_entity()
-            else:
-                def entity_sampler():
-                    return random.sample(entity_list, 1)[0]
+            negative_triples = self.lcwa_negative_sampling(
+                positive_triples=positive_triples,
+                entity_list=entity_list,
+                negative_sample_scope=negative_sample_scope)
 
-            if pairwise_negative:
-                for triple in positive_triples:
-                    h, r, t = triple
-                    while True:
-                        which = np.random.choice([0, 1, 2])
-                        if which == 0:
-                            neg_triple = (entity_sampler(), r, t)
-                        elif which == 1:
-                            neg_triple = (h, self.get_random_relation(), t)
-                        elif which == 2:
-                            neg_triple = (h, r, entity_sampler())
-
-                        if neg_triple not in positive_triples:
-                            negative_triples.append(neg_triple)
-                            break
-            else:
-                while len(negative_triples) < len(positive_triples):
-                    neg_triple = [
-                        entity_sampler(), self.get_random_relation(), entity_sampler()]
-                    if neg_triple not in positive_triples:
-                        negative_triples.append(neg_triple)
-
-                # pair wise negative triple sampling
+            # pair wise negative triple sampling
         return positive_triples, negative_triples
 
     def get_neighbor_graph(self, entity_list: List[int]) -> List[Triple]:
