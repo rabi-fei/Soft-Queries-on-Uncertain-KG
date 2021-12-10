@@ -3,20 +3,26 @@ import logging
 import os
 
 import torch
+from torch.utils.data import dataloader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange, tqdm
 
 from efl import EFL
+from lpl import LPL
 from model import KG, NeuralBinaryPredicate, TransE
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_dir', default='data/family-loss-0.05')
+parser.add_argument('--train_data', default='data/family-loss-0.05/train.tsv')
+parser.add_argument('--dev_data', default='data/family-loss-0.05/dev.tsv')
+parser.add_argument('--auto_index', default=True, type=bool)
+
 parser.add_argument('--log_dir', default='log')
 
 parser.add_argument('--learning_method', default='efl')
-parser.add_argument('--num_steps', default=10000, type=int)
+parser.add_argument('--efl_round', default=5, type=int)
+parser.add_argument('--num_steps', default=50000, type=int)
 parser.add_argument('--batch_size', default=128, type=int)
-parser.add_argument('--lr', default=1e-4, type=float)
+parser.add_argument('--lr', default=1e-2, type=float)
 
 parser.add_argument('--cuda', default=-1, type=int)
 parser.add_argument('--eval_every', default=1000, type=int)
@@ -26,20 +32,49 @@ def run_efl(finite_model_train: KG,
             finite_model_dev: KG,
             neural_model: NeuralBinaryPredicate,
             optimizer,
+            efl_round,
             num_steps,
             batch_size,
             eval_every,
             **kwargs):
-    efl = EFL(finite_model_train, neural_model)
+    print("running EFL")
+    efl = EFL(finite_model_train, neural_model, round=efl_round)
     for i in trange(num_steps):
         log = efl.learning_step(batch_size, optimizer)
         logging.info(f'EFL Step {i+1}|'
-                     + '|'.join(f"{k}:{v}" for k, v in log.items())
-                     + '\n')
+                     + '|'.join(f"{k}:{v}" for k, v in log.items()))
         tb_writer.add_scalar(f'train/loss', log['loss'], global_step=i+1)
 
         if (i+1) % eval_every == 0:
             metric = neural_model.evaluate_triples(finite_model_dev.triples)
+            logging.info(f'EFL Eval {i+1}|'
+                         + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+            for k in metric:
+                tb_writer.add_scalar(f"dev/{k}", metric[k], global_step=(i+1))
+
+
+def run_lpl(finite_model_train: KG,
+            finite_model_dev: KG,
+            neural_model: NeuralBinaryPredicate,
+            optimizer,
+            num_steps,
+            batch_size,
+            eval_every,
+            **kwargs):
+    print("running LPL")
+    triple_loader = finite_model_train.get_triple_dataloader(
+        batch_size=batch_size, shuffle=True)
+    lpl = LPL(finite_model_train, triple_loader, neural_model)
+    for i in trange(num_steps):
+        log = lpl.learning_step(optimizer)
+        logging.info(f'LPL Step {i+1}|'
+                     + '|'.join(f"{k}:{v}" for k, v in log.items()))
+        tb_writer.add_scalar(f'train/loss', log['loss'], global_step=i+1)
+
+        if (i+1) % eval_every == 0:
+            metric = neural_model.evaluate_triples(finite_model_dev.triples)
+            logging.info(f'LPL Eval {i+1}|'
+                         + '|'.join(f"{k}:{v}" for k, v in metric.items()))
             for k in metric:
                 tb_writer.add_scalar(f"dev/{k}", metric[k], global_step=(i+1))
 
@@ -51,6 +86,7 @@ def train_period(finite_model_train,
                  learning_method='efl',
                  **kwargs):
     if learning_method == 'efl':
+        print(kwargs)
         run_efl(finite_model_train,
                 finite_model_dev,
                 neural_model,
@@ -75,11 +111,9 @@ if __name__ == "__main__":
                         level=logging.INFO)
 
     # create the KG
-    finite_model_train = KG.create(
-        os.path.join(args.dataset_dir, 'train.tsv'))
+    finite_model_train = KG.create(args.train_data, auto_index=args.auto_index)
 
-    finite_model_dev = KG.create(
-        os.path.join(args.dataset_dir, 'dev.tsv'))
+    finite_model_dev = KG.create(args.dev_data, auto_index=args.auto_index)
 
     # create the neural
     if torch.cuda.is_available() and args.cuda >= 0:
@@ -101,4 +135,5 @@ if __name__ == "__main__":
                  learning_method=args.learning_method,
                  num_steps=args.num_steps,
                  batch_size=args.batch_size,
-                 eval_every=args.eval_every)
+                 eval_every=args.eval_every,
+                 efl_round=args.efl_round)

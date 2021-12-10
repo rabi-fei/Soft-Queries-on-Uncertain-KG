@@ -9,15 +9,26 @@ class LPL:
 
     def __init__(self,
                  finite_model: KG,
+                 triple_loader,
                  neural_model: NeuralBinaryPredicate):
+        self.triple_loader = triple_loader
+        self.triple_iter = iter(self.triple_loader)
         self.finite_model = finite_model
         self.neural_model = neural_model
+        self.num_epoch = 0
+
+    def get_next_batch_of_triples(self):
+        try:
+            batch = next(self.triple_iter)
+            return batch
+        except StopIteration:
+            self.num_epoch += 1
+            self.triple_iter = iter(self.triple_loader)
+            batch = next(self.triple_iter)
+            return batch
 
     def learning_step(self,
                       optimizer=None,
-                      batch_size=None,
-                      positive_triples=None,
-                      negative_triples=None,
                       log=True):
         assert optimizer is not None
 
@@ -26,13 +37,10 @@ class LPL:
 
         optimizer.zero_grad()
 
-        if positive_triples is None:
-            assert batch_size is not None
-            # random positive samples according to the batch size
+        positive_triples = self.get_next_batch_of_triples()
 
-        if negative_triples is None:
-            negative_triples = self.finite_model.lcwa_negative_sampling(
-                positive_triples)
+        negative_triples = self.finite_model.lcwa_negative_sampling(
+            positive_triples, negative_sample_scope='graph')
 
         loss = self.neural_model.compute_triple_loss(
             pos_triples=positive_triples,
