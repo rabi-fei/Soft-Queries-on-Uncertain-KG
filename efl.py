@@ -1,7 +1,6 @@
 from typing import List
 import random
-from model.kg import KG, Triple
-from model.predicate import NeuralBinaryPredicate
+from model.abstract_models import KG, Triple, NeuralBinaryPredicate
 
 
 class EFL:

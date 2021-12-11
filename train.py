@@ -1,6 +1,8 @@
+from abc import abstractclassmethod
 import argparse
 import logging
 import os
+from random import shuffle
 
 import torch
 from torch.utils.data import dataloader
@@ -9,7 +11,8 @@ from tqdm import trange, tqdm
 
 from efl import EFL
 from lpl import LPL
-from model import KG, NeuralBinaryPredicate, TransE
+from model.abstract_models import KG, NeuralBinaryPredicate
+from model.transe import TransE
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data', default='data/family-loss-0.05/train.tsv')
@@ -62,21 +65,25 @@ def run_lpl(finite_model_train: KG,
             eval_every,
             **kwargs):
     print("running LPL")
-    triple_loader = finite_model_train.get_triple_dataloader(
-        batch_size=batch_size, shuffle=True)
-    lpl = LPL(finite_model_train, triple_loader, neural_model)
-    for i in trange(num_steps):
-        log = lpl.learning_step(optimizer)
-        logging.info(f'LPL Step {i+1}|'
-                     + '|'.join(f"{k}:{v}" for k, v in log.items()))
-        tb_writer.add_scalar(f'train/loss', log['loss'], global_step=i+1)
+    print("triple loader get")
+    lpl = LPL(finite_model_train, neural_model,
+              batch_size=batch_size, shuffle=True)
+    with trange(num_steps) as t:
+        for i in t:
+            log = lpl.learning_step(optimizer)
+            logging.info(f'LPL Step {i+1}|'
+                         + '|'.join(f"{k}:{v}" for k, v in log.items()))
+            tb_writer.add_scalar(f'train/loss', log['loss'], global_step=i+1)
 
-        if (i+1) % eval_every == 0:
-            metric = neural_model.evaluate_triples(finite_model_dev.triples)
-            logging.info(f'LPL Eval {i+1}|'
-                         + '|'.join(f"{k}:{v}" for k, v in metric.items()))
-            for k in metric:
-                tb_writer.add_scalar(f"dev/{k}", metric[k], global_step=(i+1))
+            t.set_postfix(log)
+
+            if (i+1) % eval_every == 0:
+                metric = neural_model.evaluate_kg(finite_model_dev)
+                logging.info(f'LPL Eval {i+1}|'
+                             + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+                for k in metric:
+                    tb_writer.add_scalar(
+                        f"dev/{k}", metric[k], global_step=(i+1))
 
 
 def train_period(finite_model_train,

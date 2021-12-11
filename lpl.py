@@ -1,5 +1,4 @@
-from model.kg import KG, Triple
-from model.predicate import NeuralBinaryPredicate
+from model.abstract_models import KG, Triple, NeuralBinaryPredicate
 
 
 class LPL:
@@ -9,13 +8,17 @@ class LPL:
 
     def __init__(self,
                  finite_model: KG,
-                 triple_loader,
-                 neural_model: NeuralBinaryPredicate):
-        self.triple_loader = triple_loader
-        self.triple_iter = iter(self.triple_loader)
+                 neural_model: NeuralBinaryPredicate,
+                 **kwargs):
+        """
+        kwargs is intend for the iterator parameters
+        """
         self.finite_model = finite_model
         self.neural_model = neural_model
         self.num_epoch = 0
+        self.kwargs = kwargs
+        self.triple_iter = self.finite_model.get_train_triple_ns_iterator(
+            **self.kwargs)
 
     def get_next_batch_of_triples(self):
         try:
@@ -23,7 +26,9 @@ class LPL:
             return batch
         except StopIteration:
             self.num_epoch += 1
-            self.triple_iter = iter(self.triple_loader)
+            print("epoch", self.num_epoch)
+            self.triple_iter = self.finite_model.get_train_triple_ns_iterator(
+                **self.kwargs)
             batch = next(self.triple_iter)
             return batch
 
@@ -37,18 +42,15 @@ class LPL:
 
         optimizer.zero_grad()
 
-        positive_triples = self.get_next_batch_of_triples()
-
-        negative_triples = self.finite_model.lcwa_negative_sampling(
-            positive_triples, negative_sample_scope='graph')
+        pos_triple_ten, neg_triple_ten = self.get_next_batch_of_triples()
 
         loss = self.neural_model.compute_triple_loss(
-            pos_triples=positive_triples,
-            neg_triples=negative_triples)
+            pos_triples=pos_triple_ten,
+            neg_triples=neg_triple_ten)
 
         loss.backward()
         optimizer.step()
 
         if log:
-            log_dict['loss'] = loss
+            log_dict['loss'] = loss.item()
             return log_dict

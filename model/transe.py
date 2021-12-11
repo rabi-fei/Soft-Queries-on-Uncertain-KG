@@ -1,10 +1,8 @@
 from typing import List
 from torch import nn
 import torch
-from model.kg import Triple
+from model.abstract_models import Triple, NeuralBinaryPredicate, KG
 
-from model.predicate import NeuralBinaryPredicate
-from model.kg import KG
 from model.model_utils import triples_to_tensors
 
 
@@ -32,6 +30,9 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         return model
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
+        """
+        board castable for the last dimension
+        """
         return - torch.norm(torch.abs(head_emb + rel_emb - tail_emb), dim=-1)
 
     def compute_triple_loss(self,
@@ -41,8 +42,8 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         """
         compute the loss to learn the neural model
         """
-        phead, prel, ptail = triples_to_tensors(pos_triples, self.device)
-        nhead, nrel, ntail = triples_to_tensors(neg_triples, self.device)
+        phead, prel, ptail = pos_triples
+        nhead, nrel, ntail = neg_triples
 
         head = self.entity_embedding(torch.cat([phead, nhead]))
         rel = self.relation_embedding(torch.cat([prel, nrel]))
@@ -51,8 +52,8 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         scores = self.embedding_score(head, rel, tail)
 
         if pairwise_loss:
-            pos_scores = scores[:len(pos_triples)]
-            neg_scores = scores[len(pos_triples):]
+            pos_scores = scores[:len(phead)]
+            neg_scores = scores[len(phead):]
             loss = torch.relu(neg_scores - pos_scores + 10).mean()
             return loss
 
