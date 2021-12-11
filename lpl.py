@@ -1,4 +1,6 @@
-from model.abstract_models import KG, Triple, NeuralBinaryPredicate
+from torch.utils.data import DataLoader
+import torch
+from model.abstract_models import KG, NeuralBinaryPredicate
 
 
 class LPL:
@@ -17,8 +19,22 @@ class LPL:
         self.neural_model = neural_model
         self.num_epoch = 0
         self.kwargs = kwargs
-        self.triple_iter = self.finite_model.get_train_triple_ns_iterator(
-            **self.kwargs)
+        self.triple_iter = self.get_train_triple_ns_iterator()
+
+    def get_train_triple_ns_iterator(self):
+        dataloader = DataLoader(self.finite_model.triples, **self.kwargs)
+        for phead, prel, ptail in dataloader:
+            random_entities = torch.randint(
+                low=0, high=self.finite_model.num_entities, size=phead.shape)
+
+            head_collapse = torch.randint(
+                low=0, high=2, size=phead.shape).bool()
+            tail_collapse = head_collapse.logical_not()
+
+            nhead = torch.where(head_collapse, random_entities, phead)
+            ntail = torch.where(tail_collapse, random_entities, ptail)
+
+            yield (phead, prel, ptail), (nhead, prel, ntail)
 
     def get_next_batch_of_triples(self):
         try:
@@ -27,8 +43,7 @@ class LPL:
         except StopIteration:
             self.num_epoch += 1
             print("epoch", self.num_epoch)
-            self.triple_iter = self.finite_model.get_train_triple_ns_iterator(
-                **self.kwargs)
+            self.triple_iter = self.get_train_triple_ns_iterator()
             batch = next(self.triple_iter)
             return batch
 

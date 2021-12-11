@@ -99,21 +99,6 @@ class KG:
     def get_random_relation(self):
         return random.randint(0, self.num_relations-1)
 
-    def get_train_triple_ns_iterator(self, **kwargs):
-        dataloader = DataLoader(self.triples, **kwargs)
-        for phead, prel, ptail in dataloader:
-            random_entities = torch.randint(
-                low=0, high=self.num_entities, size=phead.shape)
-
-            head_collapse = torch.randint(
-                low=0, high=2, size=phead.shape).bool()
-            tail_collapse = head_collapse.logical_not()
-
-            nhead = torch.where(head_collapse, random_entities, phead)
-            ntail = torch.where(tail_collapse, random_entities, ptail)
-
-            yield (phead, prel, ptail), (nhead, prel, ntail)
-
     def get_eval_triple_iterator(self, **kwargs):
         dataloader = DataLoader(self.triples, **kwargs)
         return dataloader
