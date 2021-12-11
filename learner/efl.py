@@ -1,11 +1,74 @@
 from typing import List
 import random
-from model.abstract_models import KG, Triple, NeuralBinaryPredicate
+
+from torch.utils.data.dataloader import DataLoader
+from learner.utils import lcwa_negative_sampling
+from model.abstract_models import KG, Triple, NeuralBinaryPredicate, triples_to_tensors
 
 
 class EFL:
+
+    def __init__(self,
+                 finite_model: KG,
+                 neural_model: NeuralBinaryPredicate,
+                 round,
+                 **kwargs):
+        self.finite_model = finite_model
+        self.neural_model = neural_model
+        self.round = round
+        self.num_epoch = 0
+        self.kwargs = kwargs
+        self.node_iter = self.get_train_node_efg_iterator()
+
+    def get_efg_collator(self):
+        efg = EFG(finite_model=self.finite_model,
+                  neural_model=self.neural_model,
+                  round=self.round)
+        return efg
+
+    def get_train_node_efg_iterator(self):
+        dataloader = DataLoader(
+            list(self.finite_model.entity_set),
+            collate_fn=self.get_efg_collator(),
+            **self.kwargs)
+        for phead, prel, ptail in dataloader:
+            nhead, ntail = lcwa_negative_sampling(
+                phead, ptail, self.finite_model.num_entities)
+            yield (phead, prel, ptail), (nhead, prel, ntail)
+
+    def get_next_batch_of_triples(self):
+        try:
+            batch = next(self.node_iter)
+        except StopIteration:
+            self.num_epoch += 1
+            print("train epoch", self.num_epoch)
+            self.node_iter = self.get_train_node_efg_iterator()
+            batch = next(self.node_iter)
+        return batch
+
+    def learning_step(self, optimizer, log=True):
+        if log:
+            log_dict = {}
+
+        optimizer.zero_grad()
+
+        pos_triple_ten, neg_triple_ten = self.get_next_batch_of_triples()
+
+        loss = self.neural_model.compute_triple_loss(
+            pos_triples=pos_triple_ten,
+            neg_triples=neg_triple_ten)
+
+        loss.backward()
+        optimizer.step()
+
+        if log:
+            log_dict['loss'] = loss.item()
+            return log_dict
+
+
+class EFG:
     """
-    A class for Ehrenfeucht–Fraı̈sśe Learning (EFL).
+    A class for Ehrenfeucht–Fraı̈sśe Game.
     EFL is based on EFG to optimize the neural (binary predicate) model
     so that it can be more elementary equivalent to the finite (knowledge graph)
     model.
@@ -18,6 +81,13 @@ class EFL:
         self.finite_model = finite_model
         self.neural_model = neural_model
         self.round = round
+
+    def __call__(self, begin_entity_id_list):
+        pos_triples = []
+        for begin_entity_id in begin_entity_id_list:
+            pos_triples.extend(self.play_efg(begin_entity_id=begin_entity_id))
+        phead, prel, ptail = triples_to_tensors(pos_triples)
+        return phead, prel, ptail
 
     def play_efg(self,
                  begin_entity_id=None,
@@ -52,12 +122,8 @@ class EFL:
             entity_list.append(new_entity_id)
 
         # get sub_graph from self.finite_model
-        pos_triples, neg_triples = self.finite_model.get_sub_graph(entity_list)
-        assert len(pos_triples) == len(neg_triples)
-        if len(pos_triples) > 0:
-            return pos_triples, neg_triples
-        else:
-            return self.play_efg()
+        pos_triples = self.finite_model.get_sub_graph(entity_list)
+        return pos_triples
 
     def get_random_entity(self):
         return self.finite_model.get_random_entity()
@@ -123,26 +189,3 @@ class EFL:
                 return h
             if t not in known_entity_list:
                 return t
-
-    def learning_step(self, batch_size, optimizer, log=True):
-        if log:
-            log_dict = {}
-
-        optimizer.zero_grad()
-
-        pos_triples, neg_triples = [], []
-        for _ in range(batch_size):
-            pt, nt = self.play_efg()
-            pos_triples += pt
-            neg_triples += nt
-
-        loss = self.neural_model.compute_triple_loss(
-            pos_triples, neg_triples)
-        loss.backward()
-        optimizer.step()
-
-        if log:
-            log_dict['num_pos_triples'] = len(pos_triples)
-            log_dict['num_neg_triples'] = len(neg_triples)
-            log_dict['loss'] = loss
-            return log_dict

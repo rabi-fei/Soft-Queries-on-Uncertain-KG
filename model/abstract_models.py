@@ -103,11 +103,6 @@ class KG:
         dataloader = DataLoader(self.triples, **kwargs)
         return dataloader
 
-    def get_node_train_dataloader(self, neural_model: 'NeuralBinaryPredicate', **kwargs):
-        def collate_function(triples):
-            pass
-        return DataLoader(list(self.entity_set), collate_fn=lambda x: x, **kwargs)
-
     def lcwa_negative_sampling(self,
                                positive_triples=None,
                                entity_list=None,
@@ -148,8 +143,6 @@ class KG:
 
     def get_sub_graph(self,
                       entity_list: List[int],
-                      negative_sampling=True,
-                      negative_sample_scope='graph',
                       **kwargs) -> List[Tuple[Triple, int]]:
         positive_triples = []
         for h in entity_list:
@@ -157,16 +150,7 @@ class KG:
                 if (h, t) in self.ht2r:
                     for r in self.ht2r[(h, t)]:
                         positive_triples.append((h, r, t))
-
-        negative_triples = []
-        if negative_sampling:
-            negative_triples = self.lcwa_negative_sampling(
-                positive_triples=positive_triples,
-                entity_list=entity_list,
-                negative_sample_scope=negative_sample_scope)
-
-            # pair wise negative triple sampling
-        return positive_triples, negative_triples
+        return positive_triples
 
     def get_neighbor_graph(self, entity_list: List[int]) -> List[Triple]:
         triples = set()
@@ -307,58 +291,3 @@ class NeuralBinaryPredicate:
                 t.set_postfix(metric)
 
         return metric
-
-    def evaluate_triples(self, triple, **kwargs):
-        record = defaultdict(list)
-
-        def record_rank(r, title):
-            if r == 0:
-                record[f'{title}.hit1'].append(1)
-            else:
-                record[f'{title}.hit1'].append(0)
-
-            if r < 3:
-                record[f'{title}.hit3'].append(1)
-            else:
-                record[f'{title}.hit3'].append(0)
-
-            if r < 10:
-                record[f'{title}.hit10'].append(1)
-            else:
-                record[f'{title}.hit10'].append(0)
-
-            record[f'{title}.mrr'].append(1/(1+r))
-
-        for h, r, t in tqdm(triples):
-            # eval default head
-            _eval_triples = [(e, r, t) for e in range(self.num_entities)]
-            sorted_eval_triples = self.sort_triples_by_scores(
-                _eval_triples, assending=False)
-            rank = None
-            for i, (_h, _r, _t) in enumerate(sorted_eval_triples):
-                if _h == h:
-                    rank = i
-                    record_rank(rank, 'head')
-                    break
-
-            # eval default rel
-            _eval_triples = [(h, _r, t) for _r in range(self.num_relations)]
-            sorted_eval_triples = self.sort_triples_by_scores(
-                _eval_triples, assending=False)
-            rank = None
-            for i, (_h, _r, _t) in enumerate(sorted_eval_triples):
-                if _r == r:
-                    rank = i
-                    record_rank(rank, 'rel')
-                    break
-
-            # eval default tail
-            _eval_triples = [(h, r, e) for e in range(self.num_entities)]
-            sorted_eval_triples = self.sort_triples_by_scores(
-                _eval_triples, assending=False)
-            rank = None
-            for i, (_h, _r, _t) in enumerate(sorted_eval_triples):
-                if _t == t:
-                    rank = i
-                    record_rank(rank, 'tail')
-                    break

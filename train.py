@@ -9,8 +9,8 @@ from torch.utils.data import dataloader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange, tqdm
 
-from efl import EFL
-from lpl import LPL
+from learner.efl import EFL
+from learner.lpl import LPL
 from model.abstract_models import KG, NeuralBinaryPredicate
 from model.transe import TransE
 
@@ -41,19 +41,24 @@ def run_efl(finite_model_train: KG,
             eval_every,
             **kwargs):
     print("running EFL")
-    efl = EFL(finite_model_train, neural_model, round=efl_round)
-    for i in trange(num_steps):
-        log = efl.learning_step(batch_size, optimizer)
-        logging.info(f'EFL Step {i+1}|'
-                     + '|'.join(f"{k}:{v}" for k, v in log.items()))
-        tb_writer.add_scalar(f'train/loss', log['loss'], global_step=i+1)
+    efl = EFL(finite_model_train, neural_model,
+              round=efl_round, batch_size=batch_size, num_workers=2, shuffle=True)
+    with trange(num_steps) as t:
+        for i in t:
+            log = efl.learning_step(optimizer)
+            logging.info(f'EFL Step {i+1}|'
+                         + '|'.join(f"{k}:{v}" for k, v in log.items()))
+            tb_writer.add_scalar(f'train/loss', log['loss'], global_step=i+1)
+            t.set_postfix(log)
 
-        if (i+1) % eval_every == 0:
-            metric = neural_model.evaluate_triples(finite_model_dev.triples)
-            logging.info(f'EFL Eval {i+1}|'
-                         + '|'.join(f"{k}:{v}" for k, v in metric.items()))
-            for k in metric:
-                tb_writer.add_scalar(f"dev/{k}", metric[k], global_step=(i+1))
+            if (i+1) % eval_every == 0:
+                metric = neural_model.evaluate_kg(
+                    finite_model_dev)
+                logging.info(f'EFL Eval {i+1}|'
+                             + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+                for k in metric:
+                    tb_writer.add_scalar(
+                        f"dev/{k}", metric[k], global_step=(i+1))
 
 
 def run_lpl(finite_model_train: KG,

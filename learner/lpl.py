@@ -1,6 +1,7 @@
 from torch.utils.data import DataLoader
 import torch
 from model.abstract_models import KG, NeuralBinaryPredicate
+from learner.utils import lcwa_negative_sampling
 
 
 class LPL:
@@ -24,28 +25,19 @@ class LPL:
     def get_train_triple_ns_iterator(self):
         dataloader = DataLoader(self.finite_model.triples, **self.kwargs)
         for phead, prel, ptail in dataloader:
-            random_entities = torch.randint(
-                low=0, high=self.finite_model.num_entities, size=phead.shape)
-
-            head_collapse = torch.randint(
-                low=0, high=2, size=phead.shape).bool()
-            tail_collapse = head_collapse.logical_not()
-
-            nhead = torch.where(head_collapse, random_entities, phead)
-            ntail = torch.where(tail_collapse, random_entities, ptail)
-
+            nhead, ntail = lcwa_negative_sampling(
+                phead, ptail, self.finite_model.num_entities)
             yield (phead, prel, ptail), (nhead, prel, ntail)
 
     def get_next_batch_of_triples(self):
         try:
             batch = next(self.triple_iter)
-            return batch
         except StopIteration:
             self.num_epoch += 1
-            print("epoch", self.num_epoch)
+            print("train epoch", self.num_epoch)
             self.triple_iter = self.get_train_triple_ns_iterator()
             batch = next(self.triple_iter)
-            return batch
+        return batch
 
     def learning_step(self,
                       optimizer=None,
