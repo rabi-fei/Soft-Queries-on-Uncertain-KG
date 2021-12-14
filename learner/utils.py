@@ -2,13 +2,13 @@ import torch
 
 
 def lcwa_negative_sampling(phead_id_ten, ptail_id_ten, num_entities):
-
+    device = phead_id_ten.device
     random_entities = torch.randint(
-        low=0, high=num_entities, size=phead_id_ten.shape)
+        low=0, high=num_entities, size=phead_id_ten.shape, device=device)
 
     head_collapse = torch.randint(low=0,
                                   high=2,
-                                  size=phead_id_ten.shape).bool()
+                                  size=phead_id_ten.shape, device=device).bool()
     tail_collapse = head_collapse.logical_not()
 
     nhead = torch.where(head_collapse, random_entities, phead_id_ten)

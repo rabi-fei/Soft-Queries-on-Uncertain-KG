@@ -1,0 +1,19 @@
+import sys
+
+from torch.functional import Tensor
+sys.path.append('/home/zwanggc/project/EFG-KG-FOS-Verification')
+
+import torch
+
+from model.abstract_models import KG
+from model.transe import TransE
+from learner.efl import TensorizedEFG
+
+
+
+if __name__ == '__main__':
+    device='cuda:1'
+    kg = KG.create(triple_file='data/family-loss-0.1/train.tsv', device=device)
+    nbp = TransE.create(kg, device=device)
+    tefg = TensorizedEFG(kg, nbp)
+    tefg.play(torch.randint(0, 1000, (128,)))

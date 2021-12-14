@@ -2,13 +2,12 @@ import os
 import random
 from abc import abstractmethod
 from collections import defaultdict
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
-import numpy as np
 import torch
-from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import numpy as np
 
 from model.model_utils import triples_to_tensors
 
@@ -25,7 +24,11 @@ def iter_triple_from_tsv(triple_file):
 
 
 class KG:
-    def __init__(self, triple_file, num_entities=None, num_relations=None):
+    """
+    Fully tensorized
+    """
+    def __init__(self, triple_file, num_entities=None, num_relations=None, device='cpu', **kwargs):
+        self.device = device
         self.entity_set = set()
         self.ht2r = defaultdict(list)
         self.r2ht = defaultdict(list)
@@ -37,27 +40,19 @@ class KG:
         self.t2r2h = defaultdict(dict)
         self.triples = []
 
+        self.tensor = None
+
         for h, r, t in iter_triple_from_tsv(triple_file):
             self.triples.append((h, r, t))
 
-            if h not in self.entity_set:
-                self.entity_set.add(h)
-            if t not in self.entity_set:
-                self.entity_set.add(t)
-
-            self.ht2r[(h, t)].append(r)
-            self.r2ht[r].append((h, t))
-
-            self.h2t[h].append(t)
-            self.t2h[t].append(h)
-
-            self.h2r2t[h][r] = t
-            self.t2r2h[t][r] = h
+        self._build_index_by_triples()
 
         self.num_entities = len(
             self.entity_set) if num_entities is None else num_entities
         self.num_relations = len(
             self.r2ht) if num_relations is None else num_relations
+
+        self._build_triple_tensor()
 
     def _build_index_by_triples(self):
         for h, r, t in self.triples:
@@ -75,14 +70,24 @@ class KG:
             self.h2r2t[h][r] = t
             self.t2r2h[t][r] = h
 
+    def _build_triple_tensor(self):
+        """
+        Build a triple tensor of size [num_triples, 3]
+            for each row, it indices head, rel, tail ids
+        """
+        self.triple_tensor = torch.tensor(
+            self.triples,
+            dtype=int,
+            device=self.device)
+
     @classmethod
-    def create(cls, triple_file, auto_index=True):
+    def create(cls, triple_file, auto_index=True, **kwargs):
         """
         Create the class
         TO be modified when certain parameters controls the triple_file
         """
         if auto_index:
-            return cls(triple_file)
+            return cls(triple_file, **kwargs)
         else:
             base_dir = os.path.dirname(triple_file)
             with open(os.path.join(base_dir, 'map_entity_id_to_text.tsv')) as f:
@@ -91,7 +96,7 @@ class KG:
                 num_relations = len(f.readlines())
             print(
                 f"load indexed #entities={num_entities} and #relation={num_relations}")
-            return cls(triple_file, num_entities, num_relations)
+            return cls(triple_file, num_entities, num_relations, **kwargs)
 
     def get_random_entity(self):
         return random.randint(0, self.num_entities-1)
@@ -103,66 +108,147 @@ class KG:
         dataloader = DataLoader(self.triples, **kwargs)
         return dataloader
 
-    def lcwa_negative_sampling(self,
-                               positive_triples=None,
-                               entity_list=None,
-                               negative_sample_scope='subgraph'):
+    # def lcwa_negative_sampling(self,
+    #                            positive_triples=None,
+    #                            entity_list=None,
+    #                            negative_sample_scope='subgraph'):
 
-        assert positive_triples is not None
+    #     assert positive_triples is not None
 
-        if entity_list is None:
-            entity_set = set()
-            for h, r, t in positive_triples:
-                entity_set.add(h)
-                entity_set.add(t)
-            entity_list = list(entity_set)
+    #     if entity_list is None:
+    #         entity_set = set()
+    #         for h, r, t in positive_triples:
+    #             entity_set.add(h)
+    #             entity_set.add(t)
+    #         entity_list = list(entity_set)
 
-        assert negative_sample_scope in ['graph', 'subgraph']
-        if negative_sample_scope == 'graph':
-            def entity_sampler():
-                return self.get_random_entity()
-        else:
-            def entity_sampler():
-                return random.sample(entity_list, 1)[0]
+    #     assert negative_sample_scope in ['graph', 'subgraph']
+    #     if negative_sample_scope == 'graph':
+    #         def entity_sampler():
+    #             return self.get_random_entity()
+    #     else:
+    #         def entity_sampler():
+    #             return random.sample(entity_list, 1)[0]
 
-        negative_triples = []
-        positive_triples_sets = set(positive_triples)
-        for triple in positive_triples:
-            h, r, t = triple
-            while True:
-                which = np.random.choice([0, 1])
-                if which == 0:
-                    neg_triple = (entity_sampler(), r, t)
-                elif which == 1:
-                    neg_triple = (h, r, entity_sampler())
+    #     negative_triples = []
+    #     positive_triples_sets = set(positive_triples)
+    #     for triple in positive_triples:
+    #         h, r, t = triple
+    #         # make another background noise version
+    #         which = np.random.choice([0, 1])
+    #         if which == 0:
+    #             neg_triple = (entity_sampler(), r, t)
+    #         else:
+    #             neg_triple = (h, r, entity_sampler())
+    #         negative_triples.append(neg_triple)
 
-                if neg_triple not in positive_triples_sets:
-                    negative_triples.append(neg_triple)
-                    break
-        return negative_triples
+    #         # while True:
+    #         #     which = np.random.choice([0, 1])
+    #         #     if which == 0:
+    #         #         neg_triple = (entity_sampler(), r, t)
+    #         #     elif which == 1:
+    #         #         neg_triple = (h, r, entity_sampler())
+
+    #         #     if neg_triple not in positive_triples_sets:
+    #         #         negative_triples.append(neg_triple)
+    #         #         break
+
+    #     return negative_triples
 
     def get_sub_graph(self,
-                      entity_list: List[int],
-                      **kwargs) -> List[Tuple[Triple, int]]:
-        positive_triples = []
-        for h in entity_list:
-            for t in entity_list:
-                if (h, t) in self.ht2r:
-                    for r in self.ht2r[(h, t)]:
-                        positive_triples.append((h, r, t))
-        return positive_triples
+                      entities: Union[List[int], torch.Tensor],
+                      **kwargs):
 
-    def get_neighbor_graph(self, entity_list: List[int]) -> List[Triple]:
-        triples = set()
-        for h in entity_list:
-            for t in self.h2t[h]:
-                for r in self.ht2r[(h, t)]:
-                    triples.add((h, r, t))
-        for t in entity_list:
-            for h in self.t2h[t]:
-                for r in self.ht2r[(h, t)]:
-                    triples.add((h, r, t))
-        return list(triples)
+        if isinstance(entities, list):
+            # in this case, batch size = 1
+            entity_tensor = torch.tensor(
+                entities, device=self.device).reshape(1, -1)
+        elif isinstance(entities, torch.Tensor):
+            assert entities.dim() == 2
+            entity_tensor = entities
+        else:
+            raise NotImplementedError("unsupported input entities type")
+
+        # since now, the input should be tensor [batch_size, num_entities]
+        batch_size, num_entities = entity_tensor.shape
+        first_indices = torch.tile(
+            torch.arange(batch_size).view(batch_size, 1),
+            dims=(1, num_entities))
+        node_mask = torch.zeros(
+            size=(batch_size, self.num_entities),
+            dtype=torch.bool,
+            device=self.device)
+
+        node_mask[first_indices, entity_tensor] = 1
+        # so far you have a mask of shape [batch_size, total_num_entities]
+        batch_triple_mask = node_mask[:, self.triple_tensor[:, 0]]
+        batch_triple_mask = batch_triple_mask.logical_and(
+            node_mask[:, self.triple_tensor[:, 2]])
+        batch_selected_triple_count = torch.sum(batch_triple_mask, dim=-1)
+        selected_triple_ids = batch_triple_mask.nonzero()[:, 1]
+        subgraph_triples = self.triple_tensor[selected_triple_ids]
+
+
+
+        return subgraph_triples, batch_selected_triple_count
+
+    def get_neighbor_new_tail(self, entities: Union[List[int], torch.Tensor]):
+        if isinstance(entities, list):
+            # in this case, batch size = 1
+            entity_tensor = torch.tensor(
+                entities, device=self.device).reshape(1, -1)
+        elif isinstance(entities, torch.Tensor):
+            assert entities.dim() == 2
+            entity_tensor = entities
+        else:
+            raise NotImplementedError("unsupported input entities type")
+
+        # since now, the input should be tensor [batch_size, num_entities]
+        batch_size, num_entities = entity_tensor.shape
+        first_indices = torch.tile(
+            torch.arange(batch_size).view(batch_size, 1),
+            dims=(1, num_entities))
+        node_mask = torch.zeros(
+            size=(batch_size, self.num_entities), dtype=torch.bool, device=self.device)
+        node_mask[first_indices, entity_tensor] = 1
+        # so far you have a mask of shape [batch_size, total_num_entities]
+        batch_triple_mask = node_mask[:, self.triple_tensor[:, 0]]
+        batch_triple_mask = batch_triple_mask.logical_and(
+            node_mask[:, self.triple_tensor[:, 2]].logical_not())
+        batch_selected_triple_count = torch.sum(batch_triple_mask, dim=-1)
+        selected_triple_ids = batch_triple_mask.nonzero()[:, 1]
+        neighbor_triples = self.triple_tensor[selected_triple_ids]
+
+        return neighbor_triples, batch_selected_triple_count
+
+    def get_neighbor_new_head(self, entities: Union[List[int], torch.Tensor]):
+        if isinstance(entities, list):
+            # in this case, batch size = 1
+            entity_tensor = torch.tensor(
+                entities, device=self.device).reshape(1, -1)
+        elif isinstance(entities, torch.Tensor):
+            assert entities.dim() == 2
+            entity_tensor = entities
+        else:
+            raise NotImplementedError("unsupported input entities type")
+
+        # since now, the input should be tensor [batch_size, num_entities]
+        batch_size, num_entities = entity_tensor.shape
+        first_indices = torch.tile(
+            torch.arange(batch_size).view(batch_size, 1),
+            dims=(1, num_entities))
+        node_mask = torch.zeros(
+            size=(batch_size, self.num_entities), dtype=torch.bool, device=self.device)
+        node_mask[first_indices, entity_tensor] = 1
+        # so far you have a mask of shape [batch_size, total_num_entities]
+        batch_triple_mask = node_mask[:, self.triple_tensor[:, 2]]
+        batch_triple_mask = batch_triple_mask.logical_and(
+            node_mask[:, self.triple_tensor[:, 0]].logical_not())
+        batch_selected_triple_count = torch.sum(batch_triple_mask, dim=-1)
+        selected_triple_ids = batch_triple_mask.nonzero()[:, 1]
+        neighbor_triples = self.triple_tensor[selected_triple_ids]
+
+        return neighbor_triples, batch_selected_triple_count
 
 
 class NeuralBinaryPredicate:
@@ -219,7 +305,7 @@ class NeuralBinaryPredicate:
         """
         pass
 
-    def evaluate_kg(self, kg, init_batch_size=64, bound_numel=100000):
+    def evaluate_kg(self, kg, init_batch_size=1024, bound_numel=100000):
         init_batch_size = min(init_batch_size,
                               bound_numel // self.entity_embedding.weight.shape[0])
         return self._evaluate_kg(kg, init_batch_size)
@@ -232,6 +318,10 @@ class NeuralBinaryPredicate:
         record = defaultdict(list)
         with tqdm(kg.get_eval_triple_iterator(batch_size=batch_size)) as t:
             for _head_id_ten, _rel_id_ten, _tail_id_ten in t:
+                _head_id_ten = _head_id_ten.to(self.device)
+                _rel_id_ten = _rel_id_ten.to(self.device)
+                _tail_id_ten = _tail_id_ten.to(self.device)
+
                 _cand_id_ten = torch.arange(
                     0,
                     end=self.entity_embedding.weight.shape[0],
@@ -264,8 +354,8 @@ class NeuralBinaryPredicate:
                 record['head_mrr'].extend((1/(1+head_rank)).tolist())
 
                 # [num_cases, num_candidates]
-                head_cand_sorted = torch.argsort(head_cand_score_tensor,
-                                                 dim=-1, descending=True)
+                # head_cand_sorted = torch.argsort(head_cand_score_tensor,
+                #  dim=-1, descending=True)
 
                 # assert (head_cand_sorted[torch.arange(
                 #     len(head_rank)), head_rank] == _head_id_ten).all()

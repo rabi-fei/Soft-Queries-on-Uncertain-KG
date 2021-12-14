@@ -26,6 +26,7 @@ parser.add_argument('--efl_round', default=5, type=int)
 parser.add_argument('--num_steps', default=50000, type=int)
 parser.add_argument('--batch_size', default=128, type=int)
 parser.add_argument('--lr', default=1e-2, type=float)
+parser.add_argument('--num_workers', default=1, type=int)
 
 parser.add_argument('--cuda', default=-1, type=int)
 parser.add_argument('--eval_every', default=1000, type=int)
@@ -39,10 +40,15 @@ def run_efl(finite_model_train: KG,
             num_steps,
             batch_size,
             eval_every,
+            num_workers,
             **kwargs):
     print("running EFL")
-    efl = EFL(finite_model_train, neural_model,
-              round=efl_round, batch_size=batch_size, num_workers=2, shuffle=True)
+    efl = EFL(finite_model_train,
+              neural_model,
+              round=efl_round,
+              batch_size=batch_size,
+              num_workers=num_workers,
+              shuffle=True)
     with trange(num_steps) as t:
         for i in t:
             log = efl.learning_step(optimizer)
@@ -68,7 +74,7 @@ def run_lpl(finite_model_train: KG,
             num_steps,
             batch_size,
             eval_every,
-            **kwargs):
+            ** kwargs):
     print("running LPL")
     print("triple loader get")
     lpl = LPL(finite_model_train, neural_model,
@@ -113,6 +119,8 @@ def train_period(finite_model_train,
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
+
     args = parser.parse_args()
     # log folder
     os.makedirs(args.log_dir, exist_ok=True)
@@ -122,17 +130,19 @@ if __name__ == "__main__":
     logging.basicConfig(filename=log_file,
                         level=logging.INFO)
 
-    # create the KG
-    finite_model_train = KG.create(args.train_data, auto_index=args.auto_index)
-
-    finite_model_dev = KG.create(args.dev_data, auto_index=args.auto_index)
-
-    # create the neural
     if torch.cuda.is_available() and args.cuda >= 0:
         device = f'cuda:{args.cuda}'
     else:
         device = 'cpu'
 
+    # create the KG
+    finite_model_train = KG.create(
+        args.train_data, auto_index=args.auto_index, device=device)
+
+    finite_model_dev = KG.create(
+        args.dev_data, auto_index=args.auto_index, device=device)
+
+    # create the neural
     neural_model = TransE.create(finite_model_train,
                                  embedding_dim=600,
                                  device=device)
@@ -148,4 +158,5 @@ if __name__ == "__main__":
                  num_steps=args.num_steps,
                  batch_size=args.batch_size,
                  eval_every=args.eval_every,
-                 efl_round=args.efl_round)
+                 efl_round=args.efl_round,
+                 num_workers=args.num_workers)

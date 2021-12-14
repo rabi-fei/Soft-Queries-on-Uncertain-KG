@@ -1,5 +1,4 @@
 from torch.utils.data import DataLoader
-import torch
 from model.abstract_models import KG, NeuralBinaryPredicate
 from learner.utils import lcwa_negative_sampling
 
@@ -18,6 +17,7 @@ class LPL:
         """
         self.finite_model = finite_model
         self.neural_model = neural_model
+        self.device = neural_model.device
         self.num_epoch = 0
         self.kwargs = kwargs
         self.triple_iter = self.get_train_triple_ns_iterator()
@@ -27,7 +27,12 @@ class LPL:
         for phead, prel, ptail in dataloader:
             nhead, ntail = lcwa_negative_sampling(
                 phead, ptail, self.finite_model.num_entities)
-            yield (phead, prel, ptail), (nhead, prel, ntail)
+            yield ((phead.to(self.device),
+                    prel.to(self.device),
+                    ptail.to(self.device)),
+                   (nhead.to(self.device),
+                    prel.to(self.device),
+                    ntail.to(self.device)))
 
     def get_next_batch_of_triples(self):
         try:
