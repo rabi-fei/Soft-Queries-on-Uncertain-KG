@@ -8,10 +8,9 @@ python3 train.py --log_dir log/fb15k/efl_round3 \
                  --batch_size 512 \
                  --train_data datasets-knowledge-embedding/FB15K/edges_as_id_train.tsv \
                  --dev_data datasets-knowledge-embedding/FB15K/edges_as_id_valid.tsv \
-                 --auto_index False \
                  --cuda 1
 
-python3 train.py --log_dir log/fb15k/lpl \
+python3 train.py --log_dir log/fb15k/lpl-transe \
                  --learning_method lpl \
                  --num_steps 50000 \
                  --eval_every 5000 \
@@ -19,7 +18,6 @@ python3 train.py --log_dir log/fb15k/lpl \
                  --batch_size 512 \
                  --train_data datasets-knowledge-embedding/FB15K/edges_as_id_train.tsv \
                  --dev_data datasets-knowledge-embedding/FB15K/edges_as_id_valid.tsv \
-                 --auto_index False \
                  --cuda 2
 
 # good learning rate

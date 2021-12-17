@@ -19,7 +19,6 @@ if __name__ == '__main__':
     num_entities = 5
     entities = torch.randint(low=0, high=1000, size=(batch_size, num_entities), device=device)
 
-    kg.get_non_neightbor_new_tail(entities)
     nbp = TransE.create(kg, device=device)
     tefg = TensorizedEFG(kg, nbp)
     tefg.play(torch.randint(0, 1000, (128,)))

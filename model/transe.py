@@ -34,30 +34,3 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         board castable for the last dimension
         """
         return - torch.norm(torch.abs(head_emb + rel_emb - tail_emb), dim=-1)
-
-    def compute_triple_loss(self,
-                            pos_triples: List[Triple],
-                            neg_triples: List[Triple],
-                            pairwise_loss=True):
-        """
-        compute the loss to learn the neural model
-        """
-        phead, prel, ptail = pos_triples
-        nhead, nrel, ntail = neg_triples
-
-        head = self.entity_embedding(torch.cat([phead, nhead]))
-        rel = self.relation_embedding(torch.cat([prel, nrel]))
-        tail = self.entity_embedding(torch.cat([ptail, ntail]))
-
-        scores = self.embedding_score(head, rel, tail)
-
-        if pairwise_loss:
-            pos_scores = scores[:len(phead)]
-            neg_scores = scores[len(phead):]
-            loss = torch.relu(neg_scores - pos_scores + 10).mean()
-            return loss
-
-        labels = torch.tensor([1] * len(pos_triples) + [0] * len(neg_triples))
-
-        tv_tensor = torch.tensor(labels, device=self.device)
-        return self.criteria(scores, tv_tensor)

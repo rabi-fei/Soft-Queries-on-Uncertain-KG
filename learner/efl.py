@@ -137,12 +137,16 @@ class TensorizedEFG:
     def __init__(self,
                  finite_model: KG,
                  neural_model: NeuralBinaryPredicate,
-                 round=5):
+                 round=5,
+                 k_neural=3,
+                 k_subgraph=1):
         self.finite_model = finite_model
         self.neural_model = neural_model
         assert self.finite_model.device == self.neural_model.device
         self.device = self.finite_model.device
         self.round = round
+        self.k_neural = k_neural
+        self.k_subgraph = k_subgraph
 
     def play(self, begin_entity_id_list: List[int], spoiler_mode=None):
 
@@ -156,17 +160,17 @@ class TensorizedEFG:
         else:
             raise NotImplementedError
 
-        round_mask = torch.ones(size=(len(begin_entity_id_list), self.round),
+        round_mask = torch.ones(size=(len(begin_entity_id_list), self.round+1),
                                 dtype=torch.long,
                                 device=self.device)
 
         # prepare spolier argument
         if spoiler_mode is None:
             spoiler_mode = 'random'
-            spoiler_args = {'threshold': 5}
+            spoiler_args = {'threshold': 0.5}
 
         # inside the game
-        for i in range(1, self.round):
+        for i in range(1, self.round + 1):
             new_batch_entity, _round_mask = self._spoiler_step(
                 batch_entities, round_mask[:, i-1].detach().clone(), mode=spoiler_mode, **spoiler_args)
             batch_entities = torch.cat([batch_entities, new_batch_entity],
@@ -174,9 +178,8 @@ class TensorizedEFG:
             round_mask[:, i] = _round_mask
 
         # get sub_graph from self.finite_model
-        pos_triples, neg_triples = self.finite_model.get_sub_graph(
-            batch_entities)
-        return pos_triples, neg_triples
+        outputs = self.finite_model.get_sub_graph(batch_entities)
+        return outputs
 
     def _spoiler_step(self, batch_entities, round_mask, mode, **kwargs):
         if mode == 'random':
@@ -196,14 +199,14 @@ class TensorizedEFG:
         return new_entity_id
 
     def _spoiler_act_on_finite_model(self, batch_entities, round_mask):
-        head_triples, counts = self.finite_model.get_neighbor_new_head(
-            batch_entities)
+        head_triples, counts = self.finite_model.get_neighbor_triples(
+            batch_entities, reverse=True)
         head_limits = counts.cumsum(dim=0)
         head_scores = self.neural_model.batch_pred_score(
             head_triples[:, 0], head_triples[:, 1], head_triples[:, 2])
 
-        tail_triples, counts = self.finite_model.get_neighbor_new_tail(
-            batch_entities)
+        tail_triples, counts = self.finite_model.get_neighbor_triples(
+            batch_entities, reverse=False)
         tail_limits = counts.cumsum(dim=0)
         tail_scores = self.neural_model.batch_pred_score(
             tail_triples[:, 0], tail_triples[:, 1], tail_triples[:, 2])
@@ -252,6 +255,32 @@ class TensorizedEFG:
 
         return batch_new_entity, round_mask
 
+    def _spoiler_act_on_neural_model(self, batch_entities, round_mask):
+
+        Thead, Trel, Ttail = self.finite_model.get_non_neightbor_triple(
+            batch_entities, k=self.k_neural, reverse=False)
+        Tscores = self.neural_model.batch_pred_score(Thead, Trel, Ttail).squeeze()
+
+        Hhead, Hrel, Htail = self.finite_model.get_non_neightbor_triple(
+            batch_entities, k=self.k_neural, reverse=True)
+        Hscores = self.neural_model.batch_pred_score(Hhead, Hrel, Htail).squeeze()
+
+        head_begin_idx, tail_begin_idx = 0, 0
+        batch_new_entity = batch_entities[:, -1].detach().clone().view(-1, 1)
+
+        # adhoc may be improved by ragged tensor if one uses TF
+        Tmax_index = Tscores.argmax(-1)
+        Hmax_index = Hscores.argmax(-1)
+
+        first_indices = torch.arange(batch_entities.size(0), device=self.device)
+
+        Tmax_scores = Tscores[first_indices, Tmax_index]
+        Hmax_scores = Tscores[first_indices, Hmax_index]
+
+        batch_new_entity = torch.where(Tmax_scores > Hmax_scores, Tmax_index, Hmax_index)
+
+        return batch_new_entity.view(-1, 1), torch.ones_like(batch_new_entity)
+
 
 class EFL:
 
@@ -295,17 +324,11 @@ class EFL:
     def random_training_triple(self):
         entity_list = list(self.finite_model.entity_set)
         elist = random.sample(
-            entity_list, k=self.kwargs['batch_size']//self.round)
+            entity_list, k=self.kwargs['batch_size'])
 
-        pos_triples_ten, _ = self.efg.play(begin_entity_id_list=elist)
+        output = self.efg.play(begin_entity_id_list=elist)
 
-        phead, prel, ptail = torch.split(
-            pos_triples_ten, dim=1, split_size_or_sections=1)
-
-        nhead, ntail = lcwa_negative_sampling(phead, ptail, self.finite_model.num_entities)
-
-
-        return ((phead, prel, ptail), (nhead, prel, ntail))
+        return output
 
     def get_next_batch_of_triples(self, epoch=False):
         if epoch:
@@ -326,15 +349,14 @@ class EFL:
 
         optimizer.zero_grad()
 
-        pos_triple_ten, neg_triple_ten = self.get_next_batch_of_triples()
+        output = self.get_next_batch_of_triples()
 
-        loss = self.neural_model.compute_triple_loss(
-            pos_triples=pos_triple_ten,
-            neg_triples=neg_triple_ten)
+        loss = self.neural_model.compute_triple_efg_loss(**output)
 
         loss.backward()
         optimizer.step()
 
         if log:
             log_dict['loss'] = loss.item()
+            log_dict['num_triples'] = len(output['subgraph_flat_triples'])
             return log_dict

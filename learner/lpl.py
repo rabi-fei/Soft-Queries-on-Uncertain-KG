@@ -56,7 +56,7 @@ class LPL:
 
         pos_triple_ten, neg_triple_ten = self.get_next_batch_of_triples()
 
-        loss = self.neural_model.compute_triple_loss(
+        loss = self.neural_model.compute_triple_pair_loss(
             pos_triples=pos_triple_ten,
             neg_triples=neg_triple_ten)
 

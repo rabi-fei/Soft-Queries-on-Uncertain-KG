@@ -17,7 +17,7 @@ from model.transe import TransE
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data', default='data/family-loss-0.05/train.tsv')
 parser.add_argument('--dev_data', default='data/family-loss-0.05/dev.tsv')
-parser.add_argument('--auto_index', default=True, type=bool)
+parser.add_argument('--auto_index', default=False, action='store_true')
 
 parser.add_argument('--log_dir', default='log')
 
@@ -119,9 +119,8 @@ def train_period(finite_model_train,
 
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method('spawn')
-
     args = parser.parse_args()
+    print(args)
     # log folder
     os.makedirs(args.log_dir, exist_ok=True)
     tb_writer = SummaryWriter(log_dir=args.log_dir)
@@ -140,7 +139,11 @@ if __name__ == "__main__":
         args.train_data, auto_index=args.auto_index, device=device)
 
     finite_model_dev = KG.create(
-        args.dev_data, auto_index=args.auto_index, device=device)
+        args.dev_data,
+        auto_index=args.auto_index,
+        num_entities=finite_model_train.num_entities,
+        num_relations=finite_model_train.num_relations,
+        device=device)
 
     # create the neural
     neural_model = TransE.create(finite_model_train,
