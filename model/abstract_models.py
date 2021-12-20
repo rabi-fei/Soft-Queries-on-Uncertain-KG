@@ -195,7 +195,6 @@ class KG:
         subgraph_flat_triple_ids = batch_triple_mask.nonzero()[:, 1]
         subgraph_flat_triples = self.triple_tensor[subgraph_flat_triple_ids]
 
-
         # now do the negative sampling for noisy triples
         # we generate finite samples and returns the nomalized weights
 
@@ -210,9 +209,10 @@ class KG:
             low=0, high=self.num_relations, size=noisy_head.shape, device=self.device)
 
         noisy_triples = torch.cat([noisy_head, noisy_rel, noisy_tail], dim=-1)
-        noisy_weights = torch.ones(size=(batch_size, k), device=self.device) / k
+        noisy_weights = torch.ones(
+            size=(batch_size, k), device=self.device) / k
 
-        #TODO: uniform weights now, may use weights now
+        # TODO: uniform weights now, may use weights now
 
         output = {
             "subgraph_flat_triples": subgraph_flat_triples,
@@ -295,7 +295,7 @@ class KG:
         flat_neg_target = torch.multinomial(input=flat_impossible_target_dist,
                                             num_samples=k)
         flat_neg_source = torch.tile(flat_entity_tensor.unsqueeze(-1),
-                                    dims=(1, k))
+                                     dims=(1, k))
 
         flat_neg_rels = torch.randint(low=0, high=self.num_relations,
                                       size=flat_neg_source.shape,
@@ -391,16 +391,50 @@ class NeuralBinaryPredicate:
         tv_tensor = torch.tensor(labels, device=self.device)
         return self.criteria(scores, tv_tensor)
 
-    def compute_triple_efg_loss(self,
-                                subgraph_flat_triples,
-                                subgraph_batch_triple_count,
-                                noisy_batch_triples,
-                                noisy_batch_weights,
-                                margin=10,
-                                **kwargs):
+    def compute_efg_pair_loss(self,
+                              subgraph_flat_triples,
+                              subgraph_batch_triple_count,
+                              noisy_batch_triples,
+                              noisy_batch_weights,
+                              **kwargs):
+        phead, prel, ptail = subgraph_flat_triples.split(split_size=1, dim=-1)
+        subgraph_flat_scores = self.batch_pred_score(phead, prel, ptail).squeeze()
+        subgraph_batch_limit = subgraph_batch_triple_count.cumsum(dim=0)
+
+        nhead, nrel, ntail = noisy_batch_triples.split(split_size=1, dim=-1)
+        noisy_batch_scores = self.batch_pred_score(nhead, nrel, ntail).squeeze()
+        batch_size, num_neg_trip = noisy_batch_scores.shape
+
+        loss = 0
+        for i in range(len(subgraph_batch_triple_count)):
+            if i == 0:
+                begin = 0
+            else:
+                begin = subgraph_batch_limit[i-1]
+            end = subgraph_batch_limit[i]
+
+            size = min(end - begin, num_neg_trip)
+
+            if end > begin:
+                batch_pos = subgraph_flat_scores[begin: begin + size]
+                batch_neg = noisy_batch_scores[i, 0:size]
+                loss += torch.relu(batch_neg - batch_pos + 10).mean()
+
+        return loss / batch_size
+
+
+    def compute_efg_nce_loss(self,
+                             subgraph_flat_triples,
+                             subgraph_batch_triple_count,
+                             noisy_batch_triples,
+                             noisy_batch_weights,
+                             k_nce,
+                             margin,
+                             **kwargs):
 
         phead, prel, ptail = subgraph_flat_triples.split(split_size=1, dim=-1)
-        subgraph_flat_scores = margin + self.batch_pred_score(phead, prel, ptail).squeeze()
+        subgraph_flat_scores = margin + \
+            self.batch_pred_score(phead, prel, ptail).squeeze()
         subgraph_flat_ll = torch.log(torch.sigmoid(subgraph_flat_scores))
         subgraph_batch_limit = subgraph_batch_triple_count.cumsum(dim=0)
         loss = 0
@@ -414,20 +448,20 @@ class NeuralBinaryPredicate:
                 loss -= torch.sum(subgraph_flat_ll[begin: end]) / (end - begin)
 
         phead, prel, ptail = noisy_batch_triples.split(split_size=1, dim=-1)
-        noisy_batch_scores  = margin + self.batch_pred_score(phead, prel, ptail).squeeze()
-        noisy_batch_ll = torch.log(torch.sigmoid(1-noisy_batch_scores))
+        noisy_batch_scores = margin + \
+            self.batch_pred_score(phead, prel, ptail).squeeze()
+        noisy_batch_ll = torch.log(1 - torch.sigmoid(noisy_batch_scores))
         loss -= torch.sum(torch.sum(noisy_batch_ll * noisy_batch_weights,
-                          dim=-1))
-        return loss
+                          dim=-1)) * k_nce
+        return loss / len(subgraph_batch_triple_count)
 
     def evaluate_kg(self, kg, init_batch_size=1024, bound_numel=100000):
         init_batch_size = min(init_batch_size,
                               bound_numel // self.entity_embedding.weight.shape[0])
-        return self._evaluate_kg(kg, init_batch_size)
-        # try:
-        #     return self._evaluate_kg(kg, init_batch_size)
-        # except:
-        #     return self.evaluate_kg(kg, init_batch_size//2)
+        try:
+            return self._evaluate_kg(kg, init_batch_size)
+        except:
+            return self.evaluate_kg(kg, init_batch_size//2)
 
     def _evaluate_kg(self, kg: KG, batch_size):
         record = defaultdict(list)

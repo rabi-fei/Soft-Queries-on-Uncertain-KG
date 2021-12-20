@@ -17,38 +17,58 @@ from model.transe import TransE
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data', default='data/family-loss-0.05/train.tsv')
 parser.add_argument('--dev_data', default='data/family-loss-0.05/dev.tsv')
+parser.add_argument('--test_data', default='data/family-loss-0.05/test.tsv')
 parser.add_argument('--auto_index', default=False, action='store_true')
 
 parser.add_argument('--log_dir', default='log')
 
 parser.add_argument('--learning_method', default='efl')
-parser.add_argument('--efl_round', default=5, type=int)
+# efl parameter
+parser.add_argument('--efg_round', default=5, type=int)
+parser.add_argument('--efg_rand_thr', default=0.5, type=float,
+                    help="thr = 1 all on finite side, thr = 0 all on neural side")
+parser.add_argument('--k_neural', default=5, type=int,
+                    help="search size when play efg on the neural side")
+parser.add_argument('--k_subgraph', default=5, type=int,
+                    help="number of negative samples for each batch")
+parser.add_argument('--k_nce', default=1, type=int)
+parser.add_argument('--margin', default=10, type=float)
+
 parser.add_argument('--num_steps', default=50000, type=int)
 parser.add_argument('--batch_size', default=128, type=int)
 parser.add_argument('--lr', default=1e-2, type=float)
 parser.add_argument('--num_workers', default=1, type=int)
 
+parser.add_argument('--eval_every', default=200, type=int)
 parser.add_argument('--cuda', default=-1, type=int)
-parser.add_argument('--eval_every', default=1000, type=int)
 
 
 def run_efl(finite_model_train: KG,
             finite_model_dev: KG,
+            finite_model_test: KG,
             neural_model: NeuralBinaryPredicate,
             optimizer,
-            efl_round,
             num_steps,
             batch_size,
             eval_every,
-            num_workers,
+            efg_round,
+            efg_rand_thr,
+            k_neural,
+            k_subgraph,
+            k_nce,
+            margin,
             **kwargs):
     print("running EFL")
     efl = EFL(finite_model_train,
               neural_model,
-              round=efl_round,
               batch_size=batch_size,
-              num_workers=num_workers,
-              shuffle=True)
+              shuffle=True,
+              efg_round=efg_round,
+              efg_rand_thr=efg_rand_thr,
+              k_neural=k_neural,
+              k_subgraph=k_subgraph,
+              k_nce=k_nce,
+              margin=margin)
     with trange(num_steps) as t:
         for i in t:
             log = efl.learning_step(optimizer)
@@ -59,22 +79,39 @@ def run_efl(finite_model_train: KG,
 
             if (i+1) % eval_every == 0:
                 metric = neural_model.evaluate_kg(
+                    finite_model_train)
+                logging.info(f'EFL Eval Train {i+1}|'
+                             + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+                for k in metric:
+                    tb_writer.add_scalar(
+                        f"train/{k}", metric[k], global_step=(i+1))
+
+                metric = neural_model.evaluate_kg(
                     finite_model_dev)
-                logging.info(f'EFL Eval {i+1}|'
+                logging.info(f'EFL Eval Dev {i+1}|'
                              + '|'.join(f"{k}:{v}" for k, v in metric.items()))
                 for k in metric:
                     tb_writer.add_scalar(
                         f"dev/{k}", metric[k], global_step=(i+1))
 
+                metric = neural_model.evaluate_kg(
+                    finite_model_test)
+                logging.info(f'EFL Eval Test {i+1}|'
+                             + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+                for k in metric:
+                    tb_writer.add_scalar(
+                        f"test/{k}", metric[k], global_step=(i+1))
+
 
 def run_lpl(finite_model_train: KG,
             finite_model_dev: KG,
+            finite_model_test: KG,
             neural_model: NeuralBinaryPredicate,
             optimizer,
             num_steps,
             batch_size,
             eval_every,
-            ** kwargs):
+            **kwargs):
     print("running LPL")
     print("triple loader get")
     lpl = LPL(finite_model_train, neural_model,
@@ -89,16 +126,31 @@ def run_lpl(finite_model_train: KG,
             t.set_postfix(log)
 
             if (i+1) % eval_every == 0:
+                metric = neural_model.evaluate_kg(finite_model_train)
+                logging.info(f'LPL Eval Train {i+1}|'
+                             + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+                for k in metric:
+                    tb_writer.add_scalar(
+                        f"train/{k}", metric[k], global_step=(i+1))
+
                 metric = neural_model.evaluate_kg(finite_model_dev)
-                logging.info(f'LPL Eval {i+1}|'
+                logging.info(f'LPL Eval Dev {i+1}|'
                              + '|'.join(f"{k}:{v}" for k, v in metric.items()))
                 for k in metric:
                     tb_writer.add_scalar(
                         f"dev/{k}", metric[k], global_step=(i+1))
 
+                metric = neural_model.evaluate_kg(finite_model_test)
+                logging.info(f'LPL Eval Test {i+1}|'
+                             + '|'.join(f"{k}:{v}" for k, v in metric.items()))
+                for k in metric:
+                    tb_writer.add_scalar(
+                        f"test/{k}", metric[k], global_step=(i+1))
+
 
 def train_period(finite_model_train,
                  finite_model_dev,
+                 finite_model_test,
                  neural_model,
                  optimizer,
                  learning_method='efl',
@@ -107,12 +159,14 @@ def train_period(finite_model_train,
         print(kwargs)
         run_efl(finite_model_train,
                 finite_model_dev,
+                finite_model_test,
                 neural_model,
                 optimizer,
                 **kwargs)
     if learning_method == 'lpl':
         run_lpl(finite_model_train,
                 finite_model_dev,
+                finite_model_test,
                 neural_model,
                 optimizer,
                 **kwargs)
@@ -145,6 +199,13 @@ if __name__ == "__main__":
         num_relations=finite_model_train.num_relations,
         device=device)
 
+    finite_model_test = KG.create(
+        args.test_data,
+        auto_index=args.auto_index,
+        num_entities=finite_model_train.num_entities,
+        num_relations=finite_model_train.num_relations,
+        device=device)
+
     # create the neural
     neural_model = TransE.create(finite_model_train,
                                  embedding_dim=600,
@@ -155,11 +216,17 @@ if __name__ == "__main__":
 
     train_period(finite_model_train=finite_model_train,
                  finite_model_dev=finite_model_dev,
+                 finite_model_test=finite_model_test,
                  neural_model=neural_model,
                  optimizer=optimizer,
                  learning_method=args.learning_method,
                  num_steps=args.num_steps,
                  batch_size=args.batch_size,
                  eval_every=args.eval_every,
-                 efl_round=args.efl_round,
-                 num_workers=args.num_workers)
+                 efg_round=args.efg_round,
+                 efg_rand_thr=args.efg_rand_thr,
+                 k_neural=args.k_neural,
+                 k_subgraph=args.k_subgraph,
+                 k_nce=args.k_nce,
+                 margin=args.margin
+                 )
