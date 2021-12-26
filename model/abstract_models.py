@@ -1,21 +1,22 @@
 import os
-import time
 import random
+import time
 from abc import abstractmethod
 from collections import defaultdict
+from itertools import chain
 from typing import List, Tuple, Union
 
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import numpy as np
 
 from model.model_utils import triples_to_tensors
 
 Triple = Tuple[int, int, int]
 
 
-def iter_triple_from_tsv(triple_file):
+def _iter_triple_from_tsv(triple_file):
     with open(triple_file, 'rt') as f:
         for line in f.readlines():
             tp = line.strip().split()
@@ -23,35 +24,30 @@ def iter_triple_from_tsv(triple_file):
             triple = [int(t) for t in tp]
             yield triple
 
+def iter_triple_from_tsv(triple_files):
+    if isinstance(triple_files, list):
+        return chain(*[iter_triple_from_tsv(tfile) for tfile in triple_files])
+    elif isinstance(triple_files, str):
+        return _iter_triple_from_tsv(triple_files)
+    else:
+        raise NotImplementedError("invalid input of triple files")
 
 class KG:
     """
     Fully tensorized
     """
 
-    def __init__(self, triple_file, num_entities=None, num_relations=None, device='cpu', **kwargs):
+    def __init__(self, triple_files, num_entities=None, num_relations=None, device='cpu', **kwargs):
         self.device = device
         self.entity_set = set()
         self.relation_set = set()
         self.triples = []
 
-        for h, r, t in iter_triple_from_tsv(triple_file):
+        for h, r, t in iter_triple_from_tsv(triple_files):
             self.triples.append((h, r, t))
             self.entity_set.add(h)
             self.relation_set.add(r)
             self.entity_set.add(t)
-
-        # self.ht2r = defaultdict(list)
-        # self.r2ht = defaultdict(list)
-
-        # self.h2t = defaultdict(list)
-        # self.t2h = defaultdict(list)
-
-        # self.h2r2t = defaultdict(dict)
-        # self.t2r2h = defaultdict(dict)
-
-        # self.tensor = None
-        # self._build_index_by_triples()
 
         self.num_entities = len(
             self.entity_set) if num_entities is None else num_entities
@@ -62,6 +58,8 @@ class KG:
 
     # FIXME: this part might not be necessary
     def _build_index_by_triples(self):
+        print("build triple index")
+        t0 = time.time()
         for h, r, t in self.triples:
             if h not in self.entity_set:
                 self.entity_set.add(h)
@@ -76,6 +74,7 @@ class KG:
 
             self.h2r2t[h][r] = t
             self.t2r2h[t][r] = h
+        print("use time", time.time() - t0)
 
     def _build_triple_tensor(self):
         """
