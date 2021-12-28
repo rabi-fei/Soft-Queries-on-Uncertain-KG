@@ -7,7 +7,7 @@ import torch
 
 from model.abstract_models import KG
 from model.transe import TransE
-from learner.efl import TensorizedEFG
+from learner.elementary import BatchedEFG
 
 
 
@@ -20,5 +20,5 @@ if __name__ == '__main__':
     entities = torch.randint(low=0, high=1000, size=(batch_size, num_entities), device=device)
 
     nbp = TransE.create(kg, device=device)
-    tefg = TensorizedEFG(kg, nbp)
+    tefg = BatchedEFG(kg, nbp)
     tefg.play(torch.randint(0, 1000, (128,)))

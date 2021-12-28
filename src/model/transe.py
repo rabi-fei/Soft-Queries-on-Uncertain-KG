@@ -1,9 +1,8 @@
 from typing import List
 from torch import nn
 import torch
-from model.abstract_models import Triple, NeuralBinaryPredicate, KG
+from model.abstract_models import Triple, NeuralBinaryPredicate, KnowledgeGraph
 
-from model.model_utils import triples_to_tensors
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):
@@ -20,7 +19,7 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         self.relation_embedding = nn.Embedding(num_relations, embedding_dim)
 
     @classmethod
-    def create(cls, kg: KG, embedding_dim=300, device='cpu'):
+    def create(cls, kg: KnowledgeGraph, embedding_dim=300, device='cpu'):
         model = cls(num_entities=kg.num_entities,
                     num_relations=kg.num_relations,
                     embedding_dim=embedding_dim,

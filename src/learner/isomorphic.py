@@ -1,15 +1,16 @@
 from torch.utils.data import DataLoader
-from model.abstract_models import KG, NeuralBinaryPredicate
-from learner.utils import lcwa_negative_sampling
+
+from src.model.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from src.learner.utils import lcwa_negative_sampling
 
 
-class LPL:
+class IsomorphicLearner:
     """
     A class for Link Prediction Learning
     """
 
     def __init__(self,
-                 finite_model: KG,
+                 finite_model: KnowledgeGraph,
                  neural_model: NeuralBinaryPredicate,
                  **kwargs):
         """

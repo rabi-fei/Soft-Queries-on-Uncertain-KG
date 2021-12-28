@@ -9,10 +9,10 @@ from torch.utils.data import dataloader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange, tqdm
 
-from learner.efl import EFL
-from learner.lpl import LPL
-from model.abstract_models import KG, NeuralBinaryPredicate
-from model.transe import TransE
+from learner.elementary import ElementaryLearner
+from learner.isomorphic import IsomorphicLearner
+from src.model.abstract_models import KG, NeuralBinaryPredicate
+from src.model.transe import TransE
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--train_data', default='data/family-loss-0.05/train.tsv')
@@ -59,7 +59,7 @@ def run_efl(finite_model_train: KG,
             margin,
             **kwargs):
     print("running EFL")
-    efl = EFL(finite_model_train,
+    efl = ElementaryLearner(finite_model_train,
               neural_model,
               batch_size=batch_size,
               shuffle=True,
@@ -114,7 +114,7 @@ def run_lpl(finite_model_train: KG,
             **kwargs):
     print("running LPL")
     print("triple loader get")
-    lpl = LPL(finite_model_train, neural_model,
+    lpl = IsomorphicLearner(finite_model_train, neural_model,
               batch_size=batch_size, shuffle=True)
     with trange(num_steps) as t:
         for i in t:
