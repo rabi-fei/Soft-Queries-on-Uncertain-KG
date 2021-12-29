@@ -1,7 +1,36 @@
 from torch.utils.data import DataLoader
 
+from src.learner.abstract import Learner
+from src.learner.sampler import lcwa_negative_sampling, rel_negative_sampling
 from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
-from src.utils.train import lcwa_negative_sampling
+
+
+class IsomorphicLearner(Learner):
+    def __init__(self,
+                 kg: KnowledgeGraph,
+                 nbp: NeuralBinaryPredicate):
+        self.kg = kg
+        self.nbp = nbp
+
+    def forward(self, batch_input, num_negative_samples=1, strategy='lcwa'):
+        """
+        In this case we assume the batch input is a list of 3 tensors
+        """
+        phead, prel, ptail = batch_input
+
+        assert 'lcwa' in strategy
+        nhead, ntail = lcwa_negative_sampling(
+            phead_id_ten=phead,
+            ptail_id_ten=ptail,
+            num_entities=self.kg.num_entities)
+
+        pos_scores = self.nbp.batch_predicate_score([phead, prel, ptail])
+        neg_scores = self.nbp.batch_predicate_score([nhead, prel, ntail])
+
+        if 'rel' in strategy:
+            pass
+
+        return pos_scores.squeeze(), neg_scores.squeeze()
 
 
 class IsomorphicLearner:

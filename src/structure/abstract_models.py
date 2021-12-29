@@ -4,12 +4,10 @@ from abc import abstractmethod
 from collections import defaultdict
 from typing import List, Tuple, Union
 
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
-from src.common.data_utils import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
+from src.utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
 
 Triple = Tuple[int, int, int]
 
@@ -56,6 +54,8 @@ class KnowledgeGraph:
 
         if num_relations is None:
             self.num_relations = len(self.relation_index)
+
+        self.entities = list(self.entity_index.keys())
 
         self._build_triple_tensor()
 
@@ -252,12 +252,12 @@ class KnowledgeGraph:
         return RaggedBatch(flatten_triples, batch_triple_count)
 
     def get_triples_by_source(self, entities, filtered) -> RaggedBatch:
-        return self.__get_neighbor_triples(entities, 
-            reverse=False, filtered=filtered)
+        return self.__get_neighbor_triples(entities,
+                                           reverse=False, filtered=filtered)
 
     def get_triples_by_target(self, entities, filtered) -> RaggedBatch:
         return self.__get_neighbor_triples(entities,
-            reverse=True, filtered=filtered)
+                                           reverse=True, filtered=filtered)
 
     def get_non_neightbor_triple(self,
                                  entities: Union[List[int], torch.Tensor],
@@ -334,6 +334,10 @@ class NeuralBinaryPredicate:
         """
         pass
 
+    @abstractmethod
+    def score2prob(score, margin):
+        pass
+
     def batch_predicate_score(self,
                               triple_tensor: torch.Tensor) -> torch.Tensor:
         """
@@ -341,7 +345,12 @@ class NeuralBinaryPredicate:
         shape of [..., 3]
         It returns the same size of predicate scores.
         """
-        head_id_ten, rel_id_ten, tail_id_ten = torch.split(triple_tensor, 1, dim=-1)
+        if isinstance(triple_tensor, list):
+            assert len(triple_tensor) == 3
+            head_id_ten, rel_id_ten, tail_id_ten = triple_tensor
+        else:
+            head_id_ten, rel_id_ten, tail_id_ten = torch.split(
+                triple_tensor, 1, dim=-1)
         head_emb = self.entity_embedding(head_id_ten)
         rel_emb = self.relation_embedding(rel_id_ten)
         tail_emb = self.entity_embedding(tail_id_ten)

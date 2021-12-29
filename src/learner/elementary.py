@@ -2,7 +2,8 @@ from typing import List
 import random
 import torch
 
-from src.common.data_utils import tensorize_batch_entities
+from src.learner.abstract import Learner
+from src.utils.data import tensorize_batch_entities
 from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
 
 
@@ -167,66 +168,63 @@ class BatchedEFG:
         return batch_new_entity.view(-1, 1), torch.ones_like(batch_new_entity)
 
 
-class ElementaryLearner:
+class ElementarySampler(Learner):
     def __init__(self,
-                 finite_model: KnowledgeGraph,
-                 neural_model: NeuralBinaryPredicate,
-                 batch_size,
-                 k_nce,
-                 margin,
+                 kg: KnowledgeGraph,
+                 nbp: NeuralBinaryPredicate,
+                 round,
                  **kwargs):
-        self.finite_model = finite_model
-        self.neural_model = neural_model
-        self.batch_size = batch_size
-        self.device = neural_model.device
-        self.round = kwargs.get('round', 5)
-        self.k_nce = k_nce
-        self.margin = margin
-        self.num_epoch = 0
-        self.efg_kwargs = kwargs
-        self.node_iter = self.get_train_node_efg_iterator()
+        self.kg = kg
+        self.nbp = nbp
+        self.device = nbp.device
+        self.round = round
 
-        self.efg = BatchedEFG(
-            self.finite_model, self.neural_model, **self.efg_kwargs)
+        self.efg = BatchedEFG(self.kg, self.nbp)
+    
+    def sample(self, batch_input, num_negative_samples, aggregate_level='triple'):
 
-    def random_training_triple(self):
-        entity_list = list(self.finite_model.entity_set)
-        elist = random.sample(
-            entity_list, k=self.batch_size // self.round)
+        batch_entity_set = self.efg.play(batch_input)
 
-        output = self.efg.play(begin_entity_id_list=elist)
+        return pass
 
-        return output
+    # def random_training_triple(self):
+    #     entity_list = list(self.finite_model.entity_set)
+    #     elist = random.sample(
+    #         entity_list, k=self.batch_size // self.round)
 
-    def get_next_batch_of_triples(self, epoch=False):
-        if epoch:
-            try:
-                batch = next(self.node_iter)
-            except StopIteration:
-                self.num_epoch += 1
-                print("train epoch", self.num_epoch)
-                self.node_iter = self.get_train_node_efg_iterator()
-                batch = next(self.node_iter)
-        else:
-            batch = self.random_training_triple()
-        return batch
+    #     output = self.efg.play(begin_entity_id_list=elist)
 
-    def learning_step(self, optimizer, log=True):
-        if log:
-            log_dict = {}
+    #     return output
 
-        optimizer.zero_grad()
+    # def get_next_batch_of_triples(self, epoch=False):
+    #     if epoch:
+    #         try:
+    #             batch = next(self.node_iter)
+    #         except StopIteration:
+    #             self.num_epoch += 1
+    #             print("train epoch", self.num_epoch)
+    #             self.node_iter = self.get_train_node_efg_iterator()
+    #             batch = next(self.node_iter)
+    #     else:
+    #         batch = self.random_training_triple()
+    #     return batch
 
-        output = self.get_next_batch_of_triples()
+    # def learning_step(self, optimizer, log=True):
+    #     if log:
+    #         log_dict = {}
 
-        loss = self.neural_model.compute_efg_nce_loss(
-            **output, k_nce=self.k_nce, margin=self.margin)
-        # loss = self.neural_model.compute_efg_pair_loss(**output)
+    #     optimizer.zero_grad()
 
-        loss.backward()
-        optimizer.step()
+    #     output = self.get_next_batch_of_triples()
 
-        if log:
-            log_dict['loss'] = loss.item()
-            log_dict['num_triples'] = len(output['subgraph_flat_triples'])
-            return log_dict
+    #     loss = self.neural_model.compute_efg_nce_loss(
+    #         **output, k_nce=self.k_nce, margin=self.margin)
+    #     # loss = self.neural_model.compute_efg_pair_loss(**output)
+
+    #     loss.backward()
+    #     optimizer.step()
+
+    #     if log:
+    #         log_dict['loss'] = loss.item()
+    #         log_dict['num_triples'] = len(output['subgraph_flat_triples'])
+    #         return log_dict

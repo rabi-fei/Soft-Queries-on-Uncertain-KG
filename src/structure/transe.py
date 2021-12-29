@@ -1,14 +1,9 @@
-from typing import List
 from torch import nn
 import torch
-from model.abstract_models import Triple, NeuralBinaryPredicate, KnowledgeGraph
-
+from src.structure.abstract_models import NeuralBinaryPredicate, KnowledgeGraph
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):
-
-    criteria = nn.CrossEntropyLoss()
-
     def __init__(self, num_entities, num_relations, embedding_dim, device):
         super(TransE, self).__init__()
         self.num_entities = num_entities
@@ -33,3 +28,6 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         board castable for the last dimension
         """
         return - torch.norm(torch.abs(head_emb + rel_emb - tail_emb), dim=-1)
+
+    def score2prob(score, margin):
+        return torch.sigmoid(margin + score)
