@@ -4,6 +4,7 @@ from itertools import chain
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
+
 def _iter_triple_from_tsv(triple_file):
     with open(triple_file, 'rt') as f:
         for line in f.readlines():
@@ -58,7 +59,6 @@ class RaggedBatch:
     def __init__(self, flatten, sizes):
         self.flatten = flatten
         self.sizes = sizes
-
 
     def run_ops_on_flatten(self, opfunc):
         return RaggedBatch(

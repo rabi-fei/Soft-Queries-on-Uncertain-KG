@@ -2,45 +2,61 @@ from abc import abstractclassmethod
 import argparse
 import logging
 import os
-from random import shuffle
 
 import torch
-from torch.utils.data import dataloader
+from tqdm import trange
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import trange, tqdm
 
-from learner.elementary import ElementaryLearner
-from learner.isomorphic import IsomorphicLearner
-from src.model.abstract_models import KG, NeuralBinaryPredicate
-from src.model.transe import TransE
+from src.learner.elementary import ElementaryLearner
+from src.learner.isomorphic import IsomorphicLearner
+from src.structure.abstract_models import KG, NeuralBinaryPredicate
+from src.structure.transe import TransE
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--train_data', default='data/family-loss-0.05/train.tsv')
-parser.add_argument('--dev_data', default='data/family-loss-0.05/dev.tsv')
-parser.add_argument('--test_data', default='data/family-loss-0.05/test.tsv')
-parser.add_argument('--auto_index', default=False, action='store_true')
 
-parser.add_argument('--log_dir', default='log')
+# saved config override
+parser.add_argument('--override_yaml_file')
 
-parser.add_argument('--learning_method', default='efl')
-# efl parameter
-parser.add_argument('--efg_round', default=5, type=int)
-parser.add_argument('--efg_rand_thr', default=0.5, type=float,
-                    help="thr = 1 all on finite side, thr = 0 all on neural side")
-parser.add_argument('--k_neural', default=5, type=int,
-                    help="search size when play efg on the neural side")
-parser.add_argument('--k_subgraph', default=5, type=int,
-                    help="number of negative samples for each batch")
+# model argument
+parser.add_argument('--cuda', type=int, required=False)
+# finite model
+parser.add_argument('--observed_finite_model_data_list',
+                    default='data/family-loss-0.05/train.tsv', action='append')
+# neural model argument
+parser.add_argument('--neural_model', default='transe', type=str)
+
+# learner arguments
+parser.add_argument('--learner', default='I', choices=['E', 'I'])
+parser.add_argument('--loss_function_type',
+                    default='nce',
+                    choices=['nce', 'pairwise'])
 parser.add_argument('--k_nce', default=1, type=int)
 parser.add_argument('--margin', default=10, type=float)
+# elementary arguments
+parser.add_argument('--efg_round', default=5, type=int)
+parser.add_argument('--efg_rand_thr',
+                    default=0.5, type=float,
+                    help="thr=1 all on finite side, thr = 0 all on neural side")
+parser.add_argument('--spoiler_neural_play_search_size',
+                    default=5, type=int,
+                    help="search size when play efg on the neural side")
+parser.add_argument('--negative_subgraph_sampling', default=5, type=int,
+                    help="number of negative samples for each batch")
 
+# optimization arguments
 parser.add_argument('--num_steps', default=50000, type=int)
 parser.add_argument('--batch_size', default=128, type=int)
 parser.add_argument('--lr', default=1e-2, type=float)
-parser.add_argument('--num_workers', default=1, type=int)
 
+# output arguments
+parser.add_argument('--log_dir', default='log/default')
 parser.add_argument('--eval_every', default=200, type=int)
-parser.add_argument('--cuda', default=-1, type=int)
+
+# evaluate tasks
+parser.add_argument('--dev_task',
+                    default='data/family-loss-0.05/dev.tsv', action='append')
+parser.add_argument('--test_task',
+                    default='data/family-loss-0.05/test.tsv', action='append')
 
 
 def run_efl(finite_model_train: KG,
@@ -60,15 +76,15 @@ def run_efl(finite_model_train: KG,
             **kwargs):
     print("running EFL")
     efl = ElementaryLearner(finite_model_train,
-              neural_model,
-              batch_size=batch_size,
-              shuffle=True,
-              efg_round=efg_round,
-              efg_rand_thr=efg_rand_thr,
-              k_neural=k_neural,
-              k_subgraph=k_subgraph,
-              k_nce=k_nce,
-              margin=margin)
+                            neural_model,
+                            batch_size=batch_size,
+                            shuffle=True,
+                            efg_round=efg_round,
+                            efg_rand_thr=efg_rand_thr,
+                            k_neural=k_neural,
+                            k_subgraph=k_subgraph,
+                            k_nce=k_nce,
+                            margin=margin)
     with trange(num_steps) as t:
         for i in t:
             log = efl.learning_step(optimizer)
@@ -115,7 +131,7 @@ def run_lpl(finite_model_train: KG,
     print("running LPL")
     print("triple loader get")
     lpl = IsomorphicLearner(finite_model_train, neural_model,
-              batch_size=batch_size, shuffle=True)
+                            batch_size=batch_size, shuffle=True)
     with trange(num_steps) as t:
         for i in t:
             log = lpl.learning_step(optimizer)
@@ -175,13 +191,6 @@ def train_period(finite_model_train,
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    # log folder
-    os.makedirs(args.log_dir, exist_ok=True)
-    tb_writer = SummaryWriter(log_dir=args.log_dir)
-
-    log_file = os.path.join(args.log_dir, 'exp.log')
-    logging.basicConfig(filename=log_file,
-                        level=logging.INFO)
 
     if torch.cuda.is_available() and args.cuda >= 0:
         device = f'cuda:{args.cuda}'
@@ -213,6 +222,14 @@ if __name__ == "__main__":
 
     # create the optimizer
     optimizer = torch.optim.Adam(neural_model.parameters(), lr=args.lr)
+
+    # log folder
+    os.makedirs(args.log_dir, exist_ok=True)
+    tb_writer = SummaryWriter(log_dir=args.log_dir)
+
+    log_file = os.path.join(args.log_dir, 'exp.log')
+    logging.basicConfig(filename=log_file,
+                        level=logging.INFO)
 
     train_period(finite_model_train=finite_model_train,
                  finite_model_dev=finite_model_dev,

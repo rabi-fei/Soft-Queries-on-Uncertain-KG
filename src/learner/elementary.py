@@ -2,8 +2,8 @@ from typing import List
 import random
 import torch
 
-from common.data_utils import tensorize_batch_entities
-from model.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from src.common.data_utils import tensorize_batch_entities
+from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
 
 
 class BatchedEFG:

@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader
 
-from src.model.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
-from src.learner.utils import lcwa_negative_sampling
+from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from src.utils.train import lcwa_negative_sampling
 
 
 class IsomorphicLearner:

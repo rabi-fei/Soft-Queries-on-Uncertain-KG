@@ -1,6 +1,5 @@
 import yaml
 
-
 class Config(object):
     def __init__(self):
         pass
@@ -13,7 +12,7 @@ class Config(object):
 
 class ConfigKG(Config):
     def __init__(self):
-
+        pass
 
 def dump_to_yaml(config):
     pass

@@ -1,0 +1,33 @@
+cuda: -1
+knowledge_graph: 
+  # TODO: generated graph in the uniform format
+  filelist:
+    - data/family-loss-0.05/train.tsv
+neural_binary_predicate:
+  name: transe
+  params:
+    embedding_dim: 600
+log_dir: log/default
+loss_function:
+  objective: nce          # nce or pairwise
+  margin: 10              # used in both nce and pairwise objective
+  k_nce: 1                # 1 for pairwise
+  num_negative_samples: 1 # 1 for pairwise
+optimization:
+  batch_size: 256
+  optimizer: Adam
+  lr: 1e-2
+# TODO: the learner is decoupled form the optimization
+learner: I
+elementary_learner:
+  efg_round: 5
+  # TODO: greedy implementation
+  efg_mode: random  # random or greedy
+  efg_rand_thr: 0.5 # only worked when random 
+                        # 0 for totally finite, 1 for totally neural
+  neural_act_search_size: 10
+evaluation:
+  eval_every: 200
+  # implement the task interface
+  dev_task_file:
+  test_task_file:
