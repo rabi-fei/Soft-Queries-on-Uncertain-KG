@@ -13,16 +13,6 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         self.entity_embedding = nn.Embedding(num_entities, embedding_dim)
         self.relation_embedding = nn.Embedding(num_relations, embedding_dim)
 
-    @classmethod
-    def create(cls, kg: KnowledgeGraph, embedding_dim=300, device='cpu'):
-        model = cls(num_entities=kg.num_entities,
-                    num_relations=kg.num_relations,
-                    embedding_dim=embedding_dim,
-                    device=device)
-        model.to(device)
-        print(model)
-        return model
-
     def embedding_score(self, head_emb, rel_emb, tail_emb):
         """
         board castable for the last dimension

@@ -1,5 +1,9 @@
+from abc import abstractmethod
+
 import torch
 import yaml
+
+from src import learner, structure
 
 
 class Config:
@@ -17,17 +21,16 @@ class Config:
             self.params.update(config_dict)
 
     def to_dict(self):
-        attrs = dir(self)
-        ret = {k: attrs[k] for k in attrs if not k.startwith('__')}
-        return ret
+        return vars(self)
 
 
 class KnowledgeGraphConfig(Config):
-    default_kv = {'filelist': ['data/family-loss-0.05/train.tsv']}
+    default_kv = {'filelist': 
+    ['datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv']}
 
-
-class NeuralBinaryPredicateConfig(Config):
-    default_kv = {'name': 'transe'}
+    def __init__(self, config_dict={}) -> None:
+        self.filelist = []
+        super().__init__(config_dict)
 
 
 class TrainerConfig(Config):
@@ -38,16 +41,85 @@ class TrainerConfig(Config):
                   'ns_strategy': 'lcwa',
                   'batch_size': 256}
 
-class OptimizerConfig(Config):
-    default_kv = {'name': 'Adam'}
+    def __init__(self, config_dict={}) -> None:
+        self.objective = ""
+        self.margin = -1
+        self.k_nce = -1
+        self.num_negative_samples = -1
+        self.ns_strategy = ""
+        self.batch_size = -1
+        super().__init__(config_dict)
 
-class LearnerConfig(Config):
-    default_kv = {'name': 'I'}
 
 class EvaluationConfig(Config):
     default_kv = {'eval_every': 200,
-                  'dev_task_file': "",
-                  'test_task_file': ""}
+                  'task_dict': {
+                      'dev': {"type": "isomorphic",
+                              "filelist": []},
+                      'test': {"type": "isomorphic",
+                               "filelist": []},
+                  }}
+
+    def __init__(self, config_dict={}) -> None:
+        self.eval_every = 9999999
+        self.task_dict = {}
+        super().__init__(config_dict)
+
+
+class ConfigWithChoice(Config):
+    @abstractmethod
+    def instantiate(self):
+        pass
+
+
+class NeuralBinaryPredicateConfig(ConfigWithChoice):
+    default_kv = {'name': 'TransE',
+                  'params': {'embedding_dim': 600}}
+
+    def __init__(self, config_dict={}) -> None:
+        self.name = ""
+        self.params = {}
+        super().__init__(config_dict)
+
+    def instantiate(self, knowledge_graph):
+        return structure.get(self.name)(
+            num_entities=knowledge_graph.num_entities,
+            num_relations=knowledge_graph.num_relations,
+            device=self.device,
+            **self.params)
+
+
+class OptimizerConfig(ConfigWithChoice):
+    default_kv = {'name': 'Adam',
+                  'params': {"lr": 1e-2}}
+
+    def __init__(self, config_dict={}) -> None:
+        self.name = ""
+        self.params = {}
+        super().__init__(config_dict)
+
+    def instantiate(self, parameters):
+        return getattr(torch.optim, self.name)(parameters, **self.params)
+
+
+class LearnerConfig(ConfigWithChoice):
+    default_kv = {'name': 'I',
+                  'params': {
+                      'efg_round': 5,
+                      'efg_mode': 'random',
+                      'efg_rand_thr': 0.5,
+                      'neural_act_search_size': 10
+                  }
+                  }
+
+    def __init__(self, config_dict={}) -> None:
+        self.name = ""
+        self.params = {}
+        super().__init__(config_dict)
+
+    def instantiate(self, kg, nbp):
+        return learner.get(self.name)(kg, nbp, **self.params)
+
 
 class ExperimentConfigCollection:
     components = {'knowledge_graph': KnowledgeGraphConfig,
@@ -58,6 +130,13 @@ class ExperimentConfigCollection:
                   'evaluation': EvaluationConfig}
 
     def __init__(self, config_collection):
+        self.knowledge_graph_config = KnowledgeGraphConfig()
+        self.neural_binary_predicate_config = NeuralBinaryPredicateConfig()
+        self.trainer_config = TrainerConfig()
+        self.optimizer_config = OptimizerConfig()
+        self.learner_config = LearnerConfig()
+        self.evaluation_config = EvaluationConfig()
+
         self.logdir = config_collection.pop('logdir')
 
         self.cuda = config_collection.pop('cuda', -1)
@@ -69,13 +148,22 @@ class ExperimentConfigCollection:
         for comp in self.components:
             config_instance = self.components[comp](
                 config_dict=config_collection.pop('comp', {}))
-            setattr(self, comp + '_config', config_instance)
+            setattr(self, comp+'_config', config_instance)
+            setattr(
+                getattr(self, comp+'_config'),
+                'device',
+                self.device
+            )
 
+    @classmethod
+    def from_yaml_file(cls, filename):
+        with open(filename, 'rt') as f:
+            config_collection = yaml.full_load(f)
+        print(config_collection)
+        return cls(config_collection=config_collection)
 
-
-def dump_to_yaml(config):
-    pass
-
-
-def load_config(path):
-    Config.load_from_yaml
+    def show_config(self):
+        for comp in self.components:
+            print('-' * 10)
+            print(comp)
+            print(getattr(self, comp + '_config').to_dict())

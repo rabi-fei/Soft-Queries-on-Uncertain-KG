@@ -13,7 +13,7 @@ trainer:
   margin: 10              # used in both nce and pairwise objective
   k_nce: 1                # 1 for pairwise
   num_negative_samples: 1 # 1 for pairwise
-  ns_strategy: lcwa # lcwa or lcwa+rel
+  ns_strategy: lcwa       # lcwa or lcwa+rel
   batch_size: 256
 
 optimizer:

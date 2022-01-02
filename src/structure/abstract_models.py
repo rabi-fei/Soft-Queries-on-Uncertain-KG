@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
+from src.utils.config import KnowledgeGraphConfig, NeuralBinaryPredicateConfig
 
 Triple = Tuple[int, int, int]
 
@@ -55,31 +56,9 @@ class KnowledgeGraph:
         if num_relations is None:
             self.num_relations = len(self.relation_index)
 
-        self.entities = list(self.entity_index.keys())
+        self.entities = list(range(self.num_entities))
 
         self._build_triple_tensor()
-
-    """
-    # FIXME: this part might not be necessary
-    def _build_index_by_triples(self):
-        print("build triple index")
-        t0 = time.time()
-        for h, r, t in self.triples:
-            if h not in self.entity_set:
-                self.entity_set.add(h)
-            if t not in self.entity_set:
-                self.entity_set.add(t)
-
-            self.ht2r[(h, t)].append(r)
-            self.r2ht[r].append((h, t))
-
-            self.h2t[h].append(t)
-            self.t2h[t].append(h)
-
-            self.h2r2t[h][r] = t
-            self.t2r2h[t][r] = h
-        print("use time", time.time() - t0)
-    """
 
     def _build_triple_tensor(self):
         """
@@ -126,22 +105,27 @@ class KnowledgeGraph:
         print("use time", time.time() - t0)
 
     @classmethod
-    def create(cls, triple_file, auto_index=False, **kwargs):
+    def create(cls, triple_files, auto_index=False, **kwargs):
         """
         Create the class
         TO be modified when certain parameters controls the triple_file
+        triple files can be a list, but they should be in the same folder
         """
         if auto_index:
-            return cls(triple_file, **kwargs)
+            return cls(triple_files, **kwargs)
         else:
-            base_dir = os.path.dirname(triple_file)
+            base_dir = os.path.dirname(triple_files[0])
             if 'num_entities' not in kwargs:
                 with open(os.path.join(base_dir, 'map_entity_id_to_text.tsv')) as f:
                     kwargs['num_entities'] = len(f.readlines())
             if 'num_relations' not in kwargs:
                 with open(os.path.join(base_dir, 'map_relation_id_to_text.tsv')) as f:
                     kwargs['num_relations'] = len(f.readlines())
-            return cls(triple_file, **kwargs)
+            return cls(triple_files, **kwargs)
+
+    @classmethod
+    def from_config(cls, config: KnowledgeGraphConfig):
+        return cls.create(triple_files=config.filelist)
 
     def get_triple_dataloader(self, **kwargs):
         dataloader = DataLoader(self.triples, **kwargs)
@@ -198,8 +182,6 @@ class KnowledgeGraph:
         noisy_triples = torch.cat([noisy_head, noisy_rel, noisy_tail], dim=-1)
         noisy_weights = torch.ones(
             size=(batch_size, k), device=self.device) / k
-
-        # TODO: uniform weights now, may use weights now
 
         output = {
             "subgraph_flat_triples": subgraph_flat_triples,

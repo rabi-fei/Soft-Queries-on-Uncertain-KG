@@ -8,9 +8,13 @@ from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
 class IsomorphicLearner(Learner):
     def __init__(self,
                  kg: KnowledgeGraph,
-                 nbp: NeuralBinaryPredicate):
+                 nbp: NeuralBinaryPredicate,
+                 **kwargs):
         self.kg = kg
         self.nbp = nbp
+
+    def get_data_iterator(self, **kwargs):
+        return DataLoader(self.kg.triples, **kwargs)
 
     def forward(self, batch_input, num_negative_samples=1, strategy='lcwa'):
         """

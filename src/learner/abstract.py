@@ -9,9 +9,8 @@ class LearnerForwardOutput:
 
 class Learner(ABC):
 
-    @classmethod
     @abstractmethod
-    def get_data_iterator(datalist):
+    def get_data_iterator(self):
         """
         We pack the datalist into the iterator as we wish
         """

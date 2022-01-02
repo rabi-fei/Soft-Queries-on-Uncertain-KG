@@ -168,7 +168,7 @@ class BatchedEFG:
         return batch_new_entity.view(-1, 1), torch.ones_like(batch_new_entity)
 
 
-class ElementarySampler(Learner):
+class ElementaryLearner(Learner):
     def __init__(self,
                  kg: KnowledgeGraph,
                  nbp: NeuralBinaryPredicate,

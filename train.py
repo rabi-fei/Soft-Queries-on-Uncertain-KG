@@ -9,13 +9,15 @@ from torch.utils.tensorboard import SummaryWriter
 
 from src.learner.elementary import ElementaryLearner
 from src.learner.isomorphic import IsomorphicLearner
-from src.structure.abstract_models import KG, NeuralBinaryPredicate
+from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
 from src.structure.transe import TransE
+from src.utils.config import ExperimentConfigCollection
+from src.trainer import Trainer
 
 parser = argparse.ArgumentParser()
 
 # saved config override
-parser.add_argument('--override_yaml_file')
+parser.add_argument('--config_file', default='config/default_config.yaml')
 
 # model argument
 parser.add_argument('--cuda', type=int, required=False)
@@ -59,9 +61,9 @@ parser.add_argument('--test_task',
                     default='data/family-loss-0.05/test.tsv', action='append')
 
 
-def run_efl(finite_model_train: KG,
-            finite_model_dev: KG,
-            finite_model_test: KG,
+def run_efl(finite_model_train: KnowledgeGraph,
+            finite_model_dev: KnowledgeGraph,
+            finite_model_test: KnowledgeGraph,
             neural_model: NeuralBinaryPredicate,
             optimizer,
             num_steps,
@@ -119,9 +121,9 @@ def run_efl(finite_model_train: KG,
                         f"test/{k}", metric[k], global_step=(i+1))
 
 
-def run_lpl(finite_model_train: KG,
-            finite_model_dev: KG,
-            finite_model_test: KG,
+def run_lpl(finite_model_train: KnowledgeGraph,
+            finite_model_dev: KnowledgeGraph,
+            finite_model_test: KnowledgeGraph,
             neural_model: NeuralBinaryPredicate,
             optimizer,
             num_steps,
@@ -192,58 +194,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    if torch.cuda.is_available() and args.cuda >= 0:
-        device = f'cuda:{args.cuda}'
-    else:
-        device = 'cpu'
+    ecc = ExperimentConfigCollection.from_yaml_file(args.config_file)
+    ecc.show_config()
 
-    # create the KG
-    finite_model_train = KG.create(
-        args.train_data, auto_index=args.auto_index, device=device)
+    # create trainer 
+    trainer = Trainer.create(ecc)
 
-    finite_model_dev = KG.create(
-        args.dev_data,
-        auto_index=args.auto_index,
-        num_entities=finite_model_train.num_entities,
-        num_relations=finite_model_train.num_relations,
-        device=device)
-
-    finite_model_test = KG.create(
-        args.test_data,
-        auto_index=args.auto_index,
-        num_entities=finite_model_train.num_entities,
-        num_relations=finite_model_train.num_relations,
-        device=device)
-
-    # create the neural
-    neural_model = TransE.create(finite_model_train,
-                                 embedding_dim=600,
-                                 device=device)
-
-    # create the optimizer
-    optimizer = torch.optim.Adam(neural_model.parameters(), lr=args.lr)
+    # create evaluator
+    Evaluator
 
     # log folder
-    os.makedirs(args.log_dir, exist_ok=True)
-    tb_writer = SummaryWriter(log_dir=args.log_dir)
+    os.makedirs(ecc.logdir, exist_ok=True)
+    tb_writer = SummaryWriter(log_dir=ecc.logdir)
 
     log_file = os.path.join(args.log_dir, 'exp.log')
     logging.basicConfig(filename=log_file,
                         level=logging.INFO)
-
-    train_period(finite_model_train=finite_model_train,
-                 finite_model_dev=finite_model_dev,
-                 finite_model_test=finite_model_test,
-                 neural_model=neural_model,
-                 optimizer=optimizer,
-                 learning_method=args.learning_method,
-                 num_steps=args.num_steps,
-                 batch_size=args.batch_size,
-                 eval_every=args.eval_every,
-                 efg_round=args.efg_round,
-                 efg_rand_thr=args.efg_rand_thr,
-                 k_neural=args.k_neural,
-                 k_subgraph=args.k_subgraph,
-                 k_nce=args.k_nce,
-                 margin=args.margin
-                 )
