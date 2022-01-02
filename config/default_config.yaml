@@ -38,4 +38,4 @@ evaluation:
   dev_task_file:
   test_task_file:
 
-log_dir: log/default
+logdir: log/default

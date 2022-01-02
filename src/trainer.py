@@ -31,26 +31,50 @@ class Trainer:
         self.batch_size = batch_size
         # internal fields
         self._iterator = self.learner.get_data_iterator(self.kg)
-        self.num_epoch = 0
+        self.epoch = 0
+        self.step = 0
     
     def get_next_batch_input(self):
         try:
             batch = next(self._iterator)
         except StopIteration:
-            self.num_epoch += 1
-            print("train epoch", self.num_epoch)
+            self.epoch += 1
+            print("train epoch", self.epoch)
             self._iterator = self.learner.get_data_iterator(self.kg)
             batch = next(self._iterator)
         return batch
 
-    def _compute_nce_loss(self, ):
+    def _compute_nce_loss(self, batch_output):
         pass
 
-    
+    def _compute_pairwise_loss(self, batch_output):
+        pass
+
     def train_step(self):
+        log = {}
+        
+        self.optimizer.zero_grad()
+    
         batch_input = self.get_next_batch_input()
         batch_output = self.learner.forward(
             batch_input, self.num_negative_samples)
         
         if self.objective == 'nce':
-            self._compute_nce_loss(pos_prob, neg_prob, **kwargs)
+            loss = self._compute_nce_loss(batch_output)
+
+        elif self.objective == 'pairwise':
+            loss = self._compute_pairwise_loss(batch_output)
+        
+        else:
+            raise NotImplementedError(f"Unknown loss function {self.objective}")
+        
+        loss.backward()
+        self.optimizer.step()
+        self.step += 1
+
+
+        log['loss'] = loss.item()
+        log['epoch'] = self.epoch
+        log['step'] = self.step
+
+        return log

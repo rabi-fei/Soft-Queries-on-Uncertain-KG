@@ -185,7 +185,7 @@ class ElementarySampler(Learner):
 
         batch_entity_set = self.efg.play(batch_input)
 
-        return pass
+        pass
 
     # def random_training_triple(self):
     #     entity_list = list(self.finite_model.entity_set)

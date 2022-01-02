@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader
 
-from src.learner.abstract import Learner
+from src.learner.abstract import Learner, LearnerForwardOutput
 from src.learner.sampler import lcwa_negative_sampling, rel_negative_sampling
 from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
 
@@ -24,16 +24,23 @@ class IsomorphicLearner(Learner):
             ptail_id_ten=ptail,
             num_entities=self.kg.num_entities)
 
-        pos_scores = self.nbp.batch_predicate_score([phead, prel, ptail])
-        neg_scores = self.nbp.batch_predicate_score([nhead, prel, ntail])
+        pos_scores = self.nbp.batch_predicate_score([phead, prel, ptail]).squeeze()
+        neg_scores = self.nbp.batch_predicate_score([nhead, prel, ntail]).squeeze()
 
         if 'rel' in strategy:
             pass
 
-        return pos_scores.squeeze(), neg_scores.squeeze()
+        output = LearnerForwardOutput(
+            pos_score=pos_scores,
+            pos_prob=self.nbp.score2prob(pos_scores),
+            neg_score=neg_scores,
+            neg_prob=self.nbp.score2prob(neg_scores),
+        )
+
+        return output
 
 
-class IsomorphicLearner:
+class __IsomorphicLearner:
     """
     A class for Link Prediction Learning
     """
