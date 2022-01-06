@@ -1,4 +1,4 @@
-from .abstract import Learner
+from .abstract_learner import Learner, LearnerForwardOutput
 from .isomorphic import IsomorphicLearner
 from .elementary import ElementaryLearner
 

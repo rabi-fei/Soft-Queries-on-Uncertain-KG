@@ -37,7 +37,7 @@ class TrainerConfig(Config):
     default_kv = {'objective': 'nce',
                   'margin': 10,
                   'k_nce': 1,
-                  'num_negative_samples': 1,
+                  'num_neg_samples': 1,
                   'ns_strategy': 'lcwa',
                   'batch_size': 256}
 
@@ -45,7 +45,7 @@ class TrainerConfig(Config):
         self.objective = ""
         self.margin = -1
         self.k_nce = -1
-        self.num_negative_samples = -1
+        self.num_neg_samples = -1
         self.ns_strategy = ""
         self.batch_size = -1
         super().__init__(config_dict)
@@ -54,10 +54,10 @@ class TrainerConfig(Config):
 class EvaluationConfig(Config):
     default_kv = {'eval_every': 200,
                   'task_dict': {
-                      'dev': {"type": "isomorphic",
-                              "filelist": []},
-                      'test': {"type": "isomorphic",
-                               "filelist": []},
+                      'dev': {"name": "LinkPrediction",
+                              "params": {"filelist": []}},
+                      'test': {"name": "LinkPrediction",
+                               "params": {"filelist": []}},
                   }}
 
     def __init__(self, config_dict={}) -> None:

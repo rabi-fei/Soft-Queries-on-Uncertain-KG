@@ -1,6 +1,7 @@
+from abc import abstractmethod
 from torch import nn
 import torch
-from src.structure.abstract_models import NeuralBinaryPredicate, KnowledgeGraph
+from ..structure.abstract_models import NeuralBinaryPredicate, KnowledgeGraph
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):
@@ -19,5 +20,5 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         """
         return - torch.norm(torch.abs(head_emb + rel_emb - tail_emb), dim=-1)
 
-    def score2prob(score, margin):
+    def score2prob(self, score, margin):
         return torch.sigmoid(margin + score)

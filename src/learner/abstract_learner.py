@@ -17,7 +17,7 @@ class Learner(ABC):
         pass
 
     @abstractmethod
-    def forward(self, batch_input, num_negative_samples) -> LearnerForwardOutput:
+    def forward(self, batch_input, num_neg_samples, margin) -> LearnerForwardOutput:
         """
         the batch input is forward passed to dict of outputs
         """

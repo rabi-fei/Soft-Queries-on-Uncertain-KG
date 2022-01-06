@@ -2,7 +2,7 @@ cuda: -1
 knowledge_graph: 
   # TODO: generated graph in the uniform format
   filelist:
-    - data/family-loss-0.05/train.tsv
+    - datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv
 neural_binary_predicate:
   name: transe
   params:
@@ -12,7 +12,7 @@ trainer:
   objective: nce          # nce or pairwise
   margin: 10              # used in both nce and pairwise objective
   k_nce: 1                # 1 for pairwise
-  num_negative_samples: 1 # 1 for pairwise
+  num_neg_samples: 1 # 1 for pairwise
   ns_strategy: lcwa       # lcwa or lcwa+rel
   batch_size: 256
 
@@ -35,7 +35,14 @@ learner:
 evaluation:
   eval_every: 200
   # implement the task interface
-  dev_task_file:
-  test_task_file:
+  task_dict: 
+    dev: 
+      name: LinkPrediction
+      params: 
+        filelist: datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_dev.tsv
+    test:
+      name: LinkPrediction
+      params: 
+        filelist: datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_test.tsv
 
 logdir: log/default

@@ -7,12 +7,11 @@ import torch
 from tqdm import trange
 from torch.utils.tensorboard import SummaryWriter
 
-from src.learner.elementary import ElementaryLearner
-from src.learner.isomorphic import IsomorphicLearner
-from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
-from src.structure.transe import TransE
+from src.learner import Learner
+from src.structure import KnowledgeGraph, NeuralBinaryPredicate
 from src.utils.config import ExperimentConfigCollection
 from src.trainer import Trainer
+from src.evaluator import Evaluator
 
 parser = argparse.ArgumentParser()
 
@@ -197,16 +196,15 @@ if __name__ == "__main__":
     ecc = ExperimentConfigCollection.from_yaml_file(args.config_file)
     ecc.show_config()
 
+    # log folder
+    os.makedirs(ecc.logdir, exist_ok=True)
+
+    log_file = os.path.join(ecc.log_dir, 'exp.log')
+    logging.basicConfig(filename=log_file,
+                        level=logging.INFO)
+
     # create trainer 
     trainer = Trainer.create(ecc)
 
-    # create evaluator
-    Evaluator
+    trainer.train_step()
 
-    # log folder
-    os.makedirs(ecc.logdir, exist_ok=True)
-    tb_writer = SummaryWriter(log_dir=ecc.logdir)
-
-    log_file = os.path.join(args.log_dir, 'exp.log')
-    logging.basicConfig(filename=log_file,
-                        level=logging.INFO)

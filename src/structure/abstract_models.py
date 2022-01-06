@@ -41,14 +41,23 @@ class KnowledgeGraph:
         else:
             self.num_relations = num_relations
 
+        self.hr2t = defaultdict(list)
+        self.tr2h = defaultdict(list)
+        self.r2ht = defaultdict(list)
+        self.ht2r = defaultdict(list)
+
         for h, r, t in iter_triple_from_tsv(triple_files):
             if num_entities is None:
                 h = register(h, self.entity_index)
                 t = register(t, self.entity_index)
             if num_relations is None:
                 r = register(r, self.relation_index)
-
+        
             self.triples.append((h, r, t))
+            self.hr2t[(h, r)].append(t)
+            self.tr2h[(t, r)].append(h)
+            self.r2ht[r].append((h, t))
+            self.ht2r[(h, t)].append(r)
 
         if num_entities is None:
             self.num_entities = len(self.entity_index)
@@ -316,8 +325,7 @@ class NeuralBinaryPredicate:
         """
         pass
 
-    @abstractmethod
-    def score2prob(score, margin):
+    def score2prob(self, score, margin):
         pass
 
     def batch_predicate_score(self,
@@ -435,79 +443,3 @@ class NeuralBinaryPredicate:
     #     loss -= torch.sum(torch.sum(noisy_batch_ll * noisy_batch_weights,
     #                       dim=-1)) * k_nce
     #     return loss / len(subgraph_batch_triple_count)
-
-    # def evaluate_kg(self, kg, init_batch_size=1024, bound_numel=100000):
-    #     init_batch_size = min(init_batch_size,
-    #                           bound_numel // self.entity_embedding.weight.shape[0])
-    #     try:
-    #         return self._evaluate_kg(kg, init_batch_size)
-    #     except:
-    #         return self.evaluate_kg(kg, init_batch_size//2)
-
-    # def _evaluate_kg(self, kg: KnowledgeGraph, batch_size):
-    #     record = defaultdict(list)
-    #     with tqdm(kg.get_triple_dataloader(batch_size=batch_size)) as t:
-    #         for _head_id_ten, _rel_id_ten, _tail_id_ten in t:
-    #             _head_id_ten = _head_id_ten.to(self.device)
-    #             _rel_id_ten = _rel_id_ten.to(self.device)
-    #             _tail_id_ten = _tail_id_ten.to(self.device)
-
-    #             _cand_id_ten = torch.arange(
-    #                 0,
-    #                 end=self.entity_embedding.weight.shape[0],
-    #                 step=1,
-    #                 device=_head_id_ten.device)
-
-    #             num_cases = len(_rel_id_ten)
-    #             num_candidates = len(_cand_id_ten)
-
-    #             cand_id_ten = torch.reshape(_cand_id_ten, (1, num_candidates))
-
-    #             head_id_ten = torch.reshape(_head_id_ten, (num_cases, 1))
-    #             rel_id_ten = torch.reshape(_rel_id_ten, (num_cases, 1))
-    #             tail_id_ten = torch.reshape(_tail_id_ten, (num_cases, 1))
-
-    #             # predict head
-    #             head_cand_score_tensor = self.batch_pred_score(
-    #                 cand_id_ten, rel_id_ten, tail_id_ten)  # [num_cases, num_candidates]
-
-    #             head_score = torch.take_along_dim(input=head_cand_score_tensor,
-    #                                               indices=head_id_ten,
-    #                                               dim=1)
-
-    #             head_rank = torch.sum(head_cand_score_tensor >
-    #                                   head_score, -1).cpu().numpy()
-
-    #             record['head_hit1'].extend((head_rank < 1).tolist())
-    #             record['head_hit3'].extend((head_rank < 3).tolist())
-    #             record['head_hit10'].extend((head_rank < 10).tolist())
-    #             record['head_mrr'].extend((1/(1+head_rank)).tolist())
-
-    #             # [num_cases, num_candidates]
-    #             # head_cand_sorted = torch.argsort(head_cand_score_tensor,
-    #             #  dim=-1, descending=True)
-
-    #             # assert (head_cand_sorted[torch.arange(
-    #             #     len(head_rank)), head_rank] == _head_id_ten).all()
-    #             # predict tail
-    #             tail_cand_score_tensor = self.batch_pred_score(
-    #                 head_id_ten, rel_id_ten, cand_id_ten)  # [num_cases, num_candidates]
-
-    #             tail_score = torch.take_along_dim(input=tail_cand_score_tensor,
-    #                                               indices=tail_id_ten,
-    #                                               dim=1)
-
-    #             tail_rank = torch.sum(tail_cand_score_tensor >
-    #                                   tail_score, -1).cpu().numpy()
-
-    #             record['tail_hit1'].extend((tail_rank < 1).tolist())
-    #             record['tail_hit3'].extend((tail_rank < 3).tolist())
-    #             record['tail_hit10'].extend((tail_rank < 10).tolist())
-    #             record['tail_mrr'].extend((1/(1+tail_rank)).tolist())
-    #             metric = {}
-    #             for k in record:
-    #                 metric[k] = np.mean(record[k])
-
-    #             t.set_postfix(metric)
-
-    #     return metric

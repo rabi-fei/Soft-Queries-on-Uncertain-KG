@@ -2,9 +2,9 @@ from typing import List
 import random
 import torch
 
-from src.learner.abstract import Learner
-from src.utils.data import tensorize_batch_entities
-from src.structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from .abstract_learner import Learner
+from ..utils.data import tensorize_batch_entities
+from ..structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
 
 
 class BatchedEFG:
@@ -54,7 +54,7 @@ class BatchedEFG:
                 batch_entities, round_mask[:, i-1].detach().clone(),
                 mode=spoiler_mode, **spoiler_args)
             batch_entities = torch.cat([batch_entities, new_batch_entity],
-                                        dim=-1)
+                                       dim=-1)
             round_mask[:, i] = _round_mask
 
         # get sub_graph from self.finite_model
@@ -180,7 +180,7 @@ class ElementaryLearner(Learner):
         self.round = round
 
         self.efg = BatchedEFG(self.kg, self.nbp)
-    
+
     def sample(self, batch_input, num_negative_samples, aggregate_level='triple'):
 
         batch_entity_set = self.efg.play(batch_input)
