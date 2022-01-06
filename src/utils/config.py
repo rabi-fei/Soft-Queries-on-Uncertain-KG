@@ -42,7 +42,8 @@ class TrainerConfig(Config):
                   'k_nce': 1,
                   'num_neg_samples': 1,
                   'ns_strategy': 'lcwa',
-                  'batch_size': 256}
+                  'batch_size': 256,
+                  'num_steps': 10000}
 
     def __init__(self, config_dict={}) -> None:
         self.objective = ""

@@ -32,8 +32,8 @@ class Evaluator:
                    **eval_config.to_dict())
 
     def evaluate_nbp(self, nbp: NeuralBinaryPredicate, global_step):
-        for k in task:
-            metric = self.task[k].evaluate_nbp(nbp)
+        for k in self.task:
+            metric = self.task[k].evaluate_nbp(nbp, prefix=k)
             metric['global_step'] = global_step
             self.task_recorder[k].write(metric)
 

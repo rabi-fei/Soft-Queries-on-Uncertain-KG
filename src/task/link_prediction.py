@@ -21,13 +21,14 @@ class LinkPrediction(AbstractTask):
         kg = KnowledgeGraph.create(filelist)
         return cls(kg, observed_kg)
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=1000):
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=1000, prefix=""):
+        return self._evaluate_nbp(nbp, init_batch_size, prefix)
         try:
-            return self._evaluate_nbp(nbp, init_batch_size)
+            return self._evaluate_nbp(nbp, prefix, init_batch_size)
         except:
-            return self.evaluate_nbp(nbp, init_batch_size//2)
+            return self.evaluate_nbp(nbp, prefix, init_batch_size//2)
 
-    def _evaluate_nbp(self, nbp: NeuralBinaryPredicate, batch_size):
+    def _evaluate_nbp(self, nbp: NeuralBinaryPredicate, batch_size, prefix):
         record = defaultdict(list)
         _cand_id_ten = torch.arange(
             0,
@@ -37,35 +38,39 @@ class LinkPrediction(AbstractTask):
         cand_id_ten = torch.reshape(_cand_id_ten, (1, -1))
 
         def cfn(batch):
-            hl, rl, tl, otml, ohml = [], [], [], [], []
-            for h, r, t in batch:
+            hl, rl, tl = [], [], []
+            ot_coo_index, oh_coo_index = [[], []], [[], []]
+
+            for i, (h, r, t) in enumerate(batch):
                 hl.append(h)
                 rl.append(r)
                 tl.append(t)
 
                 ot_list = self.observed_kg.hr2t[(h, r)]
-                ot_id_ten = torch.tensor(ot_list)
-                otm = one_hot(
-                    ot_id_ten,
-                    num_classes=self.observed_kg.num_entities,
-                    device=self.device).reshape(1, -1)
-                otml.append(otm)
+                ot_coo_index[0] += [i] * len(ot_list)
+                ot_coo_index[1] += ot_list
 
                 oh_list = self.observed_kg.tr2h[(t, r)]
-                oh_id_ten = torch.tensor(oh_list)
-                ohm = one_hot(
-                    oh_id_ten,
-                    num_classes=self.observed_kg.num_entities,
-                    device=self.device).reshape(1, -1)
-                ohml.append(ohm)
+                oh_coo_index[0] += [i] * len(oh_list)
+                oh_coo_index[1] += oh_list
 
-            return [torch.tensor(l, device=self.device) for l in [hl, rl, tl]] + \
-                   [torch.stack(otml), torch.stack(ohml)]
+            # ot_mask = torch.sparse_coo_tensor(indices=ot_coo_index,
+            #                                   values=[1] * len(ot_coo_index[0]),
+            #                                   size=(len(batch), self.observed_kg.num_entities),
+            #                                   device=self.device).to_dense()
+
+            # oh_mask = torch.sparse_coo_tensor(indices=oh_coo_index,
+            #                                   values=[1] * len(oh_coo_index[0]),
+            #                                   size=(len(batch), self.observed_kg.num_entities),
+            #                                   device=self.device).to_dense()
+
+            return [torch.tensor(l, device=self.device)
+                    for l in [hl, rl, tl]] + [ot_coo_index, oh_coo_index]
 
         with tqdm(self.kg.get_triple_dataloader(batch_size=batch_size,
                                                 collate_fn=cfn),
-                  desc="Link Prediction Evaluation") as t:
-            for _head_id_ten, _rel_id_ten, _tail_id_ten, ot_mask, oh_mask in t:
+                  desc=f"{prefix} Link Prediction Evaluation") as t:
+            for _head_id_ten, _rel_id_ten, _tail_id_ten, ot_idx, oh_idx in t:
                 # oh_mask: observed head mask
                 # ot_mask: observed tail mask
                 num_cases = len(_rel_id_ten)
@@ -75,15 +80,13 @@ class LinkPrediction(AbstractTask):
                 tail_id_ten = torch.reshape(_tail_id_ten, (num_cases, 1))
 
                 # predict head
-                head_cand_score_tensor = nbp.batch_pred_score(
+                head_cand_score_tensor = nbp.batch_predicate_score(
                     [cand_id_ten, rel_id_ten, tail_id_ten])  # [num_cases, num_candidates]
+                head_cand_score_tensor[oh_idx[0], oh_idx[1]] = - torch.inf
 
                 head_score = torch.take_along_dim(input=head_cand_score_tensor,
                                                   indices=head_id_ten,
                                                   dim=1)
-
-                first_idx = torch.arange(num_cases, device=self.device)
-                head_score[first_idx, oh_mask] = head_score - 1
 
                 head_rank = torch.sum(head_cand_score_tensor >
                                       head_score, -1).cpu().numpy()
@@ -100,8 +103,10 @@ class LinkPrediction(AbstractTask):
                 # assert (head_cand_sorted[torch.arange(
                 #     len(head_rank)), head_rank] == _head_id_ten).all()
                 # predict tail
-                tail_cand_score_tensor = self.batch_pred_score(
-                    head_id_ten, rel_id_ten, cand_id_ten)  # [num_cases, num_candidates]
+                tail_cand_score_tensor = nbp.batch_predicate_score(
+                    [head_id_ten, rel_id_ten, cand_id_ten])  # [num_cases, num_candidates]
+
+                tail_cand_score_tensor[ot_idx[0], ot_idx[1]] = - torch.inf
 
                 tail_score = torch.take_along_dim(input=tail_cand_score_tensor,
                                                   indices=tail_id_ten,

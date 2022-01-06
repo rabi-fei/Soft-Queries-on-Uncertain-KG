@@ -206,5 +206,4 @@ if __name__ == "__main__":
     # create trainer 
     trainer = Trainer.create(ecc)
 
-    trainer.train_step()
-
+    trainer.run()

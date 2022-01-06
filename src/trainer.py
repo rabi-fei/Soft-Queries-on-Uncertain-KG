@@ -32,6 +32,7 @@ class Trainer:
                  num_neg_samples=1,
                  ns_strategy='lcwa',
                  batch_size=256,
+                 num_steps=10000,
                  **kwargs):
         # important objects
         self.kg = kg
@@ -47,6 +48,7 @@ class Trainer:
         self.k_nce = k_nce
         self.ns_strategy = ns_strategy
         self.batch_size = batch_size
+        self.num_steps = num_steps
         # internal fields
         self._iterator = None
         self.epoch = -1
@@ -153,3 +155,12 @@ class Trainer:
         log['step'] = self.step
 
         return log
+
+    def run(self):
+        self.evaluator.evaluate_nbp(self.nbp, self.step)
+        while self.step < self.num_steps:
+            log = self.train_step()
+            self.recorder.write(log)
+            if (self.step + 1) % self.evaluator.eval_every == 0:
+                self.evaluator.evaluate_nbp(self.nbp, self.step)    
+            

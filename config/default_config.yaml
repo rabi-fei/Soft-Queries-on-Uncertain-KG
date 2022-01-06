@@ -1,27 +1,29 @@
 cuda: -1
+
 knowledge_graph: 
   # TODO: generated graph in the uniform format
   filelist:
-    - datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv
+    - datasets-knowledge-embedding/FB15K/edges_as_id_train.tsv
+
 neural_binary_predicate:
   name: transe
   params:
     embedding_dim: 600
 
 trainer:
-  objective: nce          # nce or pairwise
+  objective: pairwise          # nce or pairwise
   margin: 10              # used in both nce and pairwise objective
   k_nce: 1                # 1 for pairwise
   num_neg_samples: 1 # 1 for pairwise
   ns_strategy: lcwa       # lcwa or lcwa+rel
   batch_size: 256
+  num_steps: 10000
 
 optimizer:
   name: Adam
   params:
     lr: 0.01
 
-# TODO: the learner is decoupled form the optimization
 learner: 
   name: I
   params:
@@ -40,11 +42,11 @@ evaluation:
       name: LinkPrediction
       params: 
         filelist: 
-          - datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_valid.tsv
+          - datasets-knowledge-embedding/FB15K/edges_as_id_valid.tsv
     test:
       name: LinkPrediction
       params: 
         filelist: 
-          - datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_test.tsv
+          - datasets-knowledge-embedding/FB15K/edges_as_id_test.tsv
 
 logdir: log/default

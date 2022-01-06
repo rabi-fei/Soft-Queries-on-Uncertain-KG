@@ -1,7 +1,6 @@
 import torch
 
 
-# TODO: also corporate the number of negative samples
 def lcwa_negative_sampling(phead_id_ten,
                            ptail_id_ten,
                            num_entities,
