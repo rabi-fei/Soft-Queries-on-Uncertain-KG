@@ -17,7 +17,7 @@ class Evaluator:
             name = v['name']
             params = v['params']
             logging.info(f"\ttask type {name}: {params}")
-            self.task[k] = task.get(name)(observed_kg=observed_kg, **params)
+            self.task[k] = task.get(name).create(observed_kg=observed_kg, **params)
             self.task_recorder[k] = EvalRecorder(logdir, k)
             logging.info(f"task {k} initialized")
 

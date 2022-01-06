@@ -77,12 +77,15 @@ class Trainer:
 
         # create the optimizer
         logging.info(f"create the optimizer")
-        logging.info(f"\t {ecc.learner_config.to_dict()}")
+        logging.info(f"\t {ecc.optimizer_config.to_dict()}")
         optimizer = ecc.optimizer_config.instantiate(nbp.parameters())
         logging.info(f"optimizer created")
 
         # create the evaluator
-        evaluator = Evaluator.create(ecc.evaluation_config, kg)
+        evaluator = Evaluator.create(ecc.evaluation_config, ecc.logdir, kg)
+
+        # create the train recorder
+        recorder = TrainRecorder(ecc.logdir)
 
         # create trainer
         trainer = cls(kg=kg,
@@ -90,6 +93,7 @@ class Trainer:
                       learner=learner,
                       optimizer=optimizer,
                       evaluator=evaluator,
+                      recorder=recorder,
                       **ecc.trainer_config.to_dict())
 
         return trainer

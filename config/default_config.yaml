@@ -19,7 +19,7 @@ trainer:
 optimizer:
   name: Adam
   params:
-    lr: 1e-2
+    lr: 0.01
 
 # TODO: the learner is decoupled form the optimization
 learner: 
@@ -36,13 +36,15 @@ evaluation:
   eval_every: 200
   # implement the task interface
   task_dict: 
-    dev: 
+    valid: 
       name: LinkPrediction
       params: 
-        filelist: datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_dev.tsv
+        filelist: 
+          - datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_valid.tsv
     test:
       name: LinkPrediction
       params: 
-        filelist: datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_test.tsv
+        filelist: 
+          - datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_test.tsv
 
 logdir: log/default

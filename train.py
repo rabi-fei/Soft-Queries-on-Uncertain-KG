@@ -199,7 +199,7 @@ if __name__ == "__main__":
     # log folder
     os.makedirs(ecc.logdir, exist_ok=True)
 
-    log_file = os.path.join(ecc.log_dir, 'exp.log')
+    log_file = os.path.join(ecc.logdir, 'exp.log')
     logging.basicConfig(filename=log_file,
                         level=logging.INFO)
 

@@ -1,7 +1,10 @@
+import os
 from abc import abstractmethod
 
 import torch
 import yaml
+
+from datetime import datetime
 
 from src import learner, structure
 
@@ -137,7 +140,11 @@ class ExperimentConfigCollection:
         self.learner_config = LearnerConfig()
         self.evaluation_config = EvaluationConfig()
 
-        self.logdir = config_collection.pop('logdir')
+        self.logdir = "_".join(
+            [config_collection.pop('logdir'),
+             datetime.strftime(
+                datetime.now(),
+                "%Y-%m-%d_%H:%M:%S")])
 
         self.cuda = config_collection.pop('cuda', -1)
         if torch.cuda.is_available() and self.cuda >= 0:
@@ -147,7 +154,7 @@ class ExperimentConfigCollection:
 
         for comp in self.components:
             config_instance = self.components[comp](
-                config_dict=config_collection.pop('comp', {}))
+                config_dict=config_collection.pop(comp, {}))
             setattr(self, comp+'_config', config_instance)
             setattr(
                 getattr(self, comp+'_config'),
