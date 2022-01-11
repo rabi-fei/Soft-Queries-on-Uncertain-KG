@@ -1,19 +1,30 @@
-Neural Models
-☐ RotatE
-☐ DistMult
-
-Logic Language
-
-Training Objective
-☐ sample type @due(22-01-12)
-    ✔ triple @done(22-01-09 16:59)
-    ☐ subgraph triples induced by single triple and number of hops
-    ☐ subgraph triples induced by EFG generated entity set
-
-☐ negative sampling strategy
-    ✔ head/tail replacement @done(22-01-11 12:22)
-    ☐ rel replacement
-    ☐ entity scope sampling
-
-Framework
-✔ cmd entry @started(22-01-11 11:46) @done(22-01-11 12:22) @lasted(36m8s)
+A. Implementation:
+    Neural Binary Predicate:
+        ☐ RotatE
+        ☐ DistMult
+    Logic Query Language:
+        ☐ Base classes
+        ☐ Inference algorithm
+    Trainer:
+        Negative Sampling Strategy:
+            ✔ head/tail replacement @done(22-01-11 12:22)
+            ☐ rel replacement
+            ☐ entity scope sampling
+        Learner:
+            Sample Type:
+                ✔ triple @done(22-01-09 16:59)
+                ☐ subgraph triples induced by single triple and number of hops
+                ☐ subgraph triples induced by EFG generated entity set
+    Evaluator:
+        ☐ `QueryAnswering` Class
+    Framework:
+        ✔ cmd entry @started(22-01-11 11:46) @done(22-01-11 12:22) @lasted(36m8s)
+    Graph Generator:
+        ☐ cross validation graph and configuration
+B. Performance Optimization:
+    ☐ cuda memory usage minimization
+C. Experiment:
+    TransE:
+        ☐ recover the original work
+    RotatE:
+        ☐ Use the known parameter

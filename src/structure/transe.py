@@ -1,7 +1,9 @@
 from abc import abstractmethod
-from torch import nn
+
 import torch
-from ..structure.abstract_models import NeuralBinaryPredicate, KnowledgeGraph
+from torch import nn
+
+from .abstract_models import NeuralBinaryPredicate
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):
@@ -12,7 +14,9 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         self.embedding_dim = embedding_dim
         self.device = device
         self.entity_embedding = nn.Embedding(num_entities, embedding_dim)
+        nn.init.xavier_uniform_(self.entity_embedding)
         self.relation_embedding = nn.Embedding(num_relations, embedding_dim)
+        nn.init.xavier_uniform_(self.relation_embedding)
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
         """
