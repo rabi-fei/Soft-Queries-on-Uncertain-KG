@@ -116,8 +116,8 @@ class Trainer:
 
     def _compute_nce_loss(self, batch_output: LearnerForwardOutput):
         loss = 0
-        loss += torch.log(batch_output.neg_prob.mean(-1))
         loss -= torch.log(batch_output.pos_prob.mean(-1))
+        loss -= torch.log(1 - batch_output.neg_prob.mean(-1))
         return loss.mean()
 
     def _compute_pairwise_loss(self, batch_output):

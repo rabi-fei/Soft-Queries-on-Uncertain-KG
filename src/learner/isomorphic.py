@@ -12,11 +12,12 @@ class IsomorphicLearner(Learner):
                  **kwargs):
         self.kg = kg
         self.nbp = nbp
+        self.device = self.nbp.device
 
     def get_data_iterator(self, **kwargs):
         it = DataLoader(self.kg.triples, **kwargs)
         for phead, prel, ptail in it:
-            yield phead.view(-1, 1), prel.view(-1, 1), ptail.view(-1, 1)
+            yield phead.to(self.device).view(-1, 1), prel.to(self.device).view(-1, 1), ptail.to(self.device).view(-1, 1)
 
     def forward(self, batch_input, num_neg_samples=1, margin=1, strategy='lcwa'):
         """

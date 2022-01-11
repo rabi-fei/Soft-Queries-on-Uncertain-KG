@@ -1,4 +1,4 @@
-import os
+import argparse
 from abc import abstractmethod
 
 import torch
@@ -6,7 +6,6 @@ import yaml
 
 from datetime import datetime
 
-from src import learner, structure
 
 
 class Config:
@@ -29,7 +28,8 @@ class Config:
 
 class KnowledgeGraphConfig(Config):
     default_kv = {'filelist': 
-    ['datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv']}
+    ['datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv'],
+                  'tensorize': True}
 
     def __init__(self, config_dict={}) -> None:
         self.filelist = []
@@ -86,7 +86,8 @@ class NeuralBinaryPredicateConfig(ConfigWithChoice):
         super().__init__(config_dict)
 
     def instantiate(self, knowledge_graph):
-        return structure.get(self.name)(
+        from src import structure
+        return structure.get(self.name).create(
             num_entities=knowledge_graph.num_entities,
             num_relations=knowledge_graph.num_relations,
             device=self.device,
@@ -122,6 +123,7 @@ class LearnerConfig(ConfigWithChoice):
         super().__init__(config_dict)
 
     def instantiate(self, kg, nbp):
+        from src import learner
         return learner.get(self.name)(kg, nbp, **self.params)
 
 
@@ -164,11 +166,54 @@ class ExperimentConfigCollection:
             )
 
     @classmethod
-    def from_yaml_file(cls, filename):
+    def from_args(cls, args):
+        override_dict = vars(args)
+        filename = override_dict.pop('config')
         with open(filename, 'rt') as f:
             config_collection = yaml.full_load(f)
-        print(config_collection)
+        for k, v in override_dict.items():
+            if v:
+                *key_chain, final_key = k.split('.')
+                pointer = config_collection
+                for _k in key_chain:
+                    pointer = pointer[_k]
+                pointer[final_key] = v
         return cls(config_collection=config_collection)
+
+    @classmethod
+    def create_argument_parser(cls):
+        parser = argparse.ArgumentParser()
+        for comp_name in cls.components:
+            comp_cls = cls.components[comp_name]
+
+            linear_dict = dict()
+            def _linearize(_d, prefix=None):
+                for _k, _v in _d.items():
+                    if prefix is not None:
+                        key = prefix + '.' + _k
+                    else:
+                        key = _k
+
+                    if isinstance(_v, dict):
+                        _linearize(_v, key)
+                    else:
+                        linear_dict[key] = _v
+                            
+            
+            _linearize(comp_cls.default_kv)
+
+            for k, v in linear_dict.items():
+                if isinstance(v, list):
+                    parser.add_argument(f"--{comp_name}.{k}", 
+                        action='append', required=False)
+                else:
+                    parser.add_argument(f"--{comp_name}.{k}",
+                        type=type(v), required=False)
+
+        parser.add_argument('--cuda', default=-1, type=int)
+        parser.add_argument('--logdir', default="log/default", type=str)
+        parser.add_argument('--config', default='config/default_config.yaml', type=str)
+        return parser
 
     def show_config(self):
         for comp in self.components:

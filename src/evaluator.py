@@ -7,7 +7,7 @@ from .utils.recorder import EvalRecorder
 
 
 class Evaluator:
-    def __init__(self, eval_every, logdir, task_dict, observed_kg, **kwargs) -> None:
+    def __init__(self, eval_every, logdir, task_dict, device, observed_kg, **kwargs) -> None:
         self.eval_every = eval_every
         self.task = {}
         self.task_recorder = {}
@@ -17,12 +17,12 @@ class Evaluator:
             name = v['name']
             params = v['params']
             logging.info(f"\ttask type {name}: {params}")
-            self.task[k] = task.get(name).create(observed_kg=observed_kg, **params)
+            self.task[k] = task.get(name).create(observed_kg=observed_kg,
+                                                 device=device, **params)
             self.task_recorder[k] = EvalRecorder(logdir, k)
             logging.info(f"task {k} initialized")
 
     @classmethod
-    # TODO: make the logging system
     def create(cls, eval_config: EvaluationConfig, logdir, observed_kg: KnowledgeGraph):
         logging.info("initalize evaluator")
         logging.info(eval_config.to_dict())

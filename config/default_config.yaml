@@ -1,4 +1,4 @@
-cuda: -1
+cuda: 0
 
 knowledge_graph: 
   # TODO: generated graph in the uniform format
@@ -12,11 +12,11 @@ neural_binary_predicate:
 
 trainer:
   objective: pairwise          # nce or pairwise
-  margin: 10              # used in both nce and pairwise objective
+  margin: 20              # used in both nce and pairwise objective
   k_nce: 1                # 1 for pairwise
-  num_neg_samples: 1 # 1 for pairwise
+  num_neg_samples: 1      # 1 for pairwise
   ns_strategy: lcwa       # lcwa or lcwa+rel
-  batch_size: 256
+  batch_size: 128
   num_steps: 10000
 
 optimizer:
@@ -35,7 +35,7 @@ learner:
     neural_act_search_size: 10
 
 evaluation:
-  eval_every: 200
+  eval_every: 500
   # implement the task interface
   task_dict: 
     valid: 

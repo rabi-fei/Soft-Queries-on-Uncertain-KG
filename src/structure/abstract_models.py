@@ -7,8 +7,8 @@ from typing import List, Tuple, Union
 import torch
 from torch.utils.data import DataLoader
 
-from src.utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
-from src.utils.config import KnowledgeGraphConfig, NeuralBinaryPredicateConfig
+from ..utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
+from ..utils.config import KnowledgeGraphConfig, NeuralBinaryPredicateConfig
 
 Triple = Tuple[int, int, int]
 
@@ -27,7 +27,7 @@ class KnowledgeGraph:
     Fully tensorized
     """
 
-    def __init__(self, triple_files, num_entities=None, num_relations=None, device='cpu', **kwargs):
+    def __init__(self, triple_files, num_entities=None, num_relations=None, device='cpu', tensorize=False, **kwargs):
         self.device = device
         self.triples = []
 
@@ -67,7 +67,8 @@ class KnowledgeGraph:
 
         self.entities = list(range(self.num_entities))
 
-        self._build_triple_tensor()
+        if tensorize:
+            self._build_triple_tensor()
 
     def _build_triple_tensor(self):
         """
@@ -114,27 +115,25 @@ class KnowledgeGraph:
         print("use time", time.time() - t0)
 
     @classmethod
-    def create(cls, triple_files, auto_index=False, **kwargs):
+    def create(cls, triple_files, **kwargs):
         """
         Create the class
         TO be modified when certain parameters controls the triple_file
         triple files can be a list, but they should be in the same folder
         """
-        if auto_index:
-            return cls(triple_files, **kwargs)
-        else:
-            base_dir = os.path.dirname(triple_files[0])
-            if 'num_entities' not in kwargs:
-                with open(os.path.join(base_dir, 'map_entity_id_to_text.tsv')) as f:
-                    kwargs['num_entities'] = len(f.readlines())
-            if 'num_relations' not in kwargs:
-                with open(os.path.join(base_dir, 'map_relation_id_to_text.tsv')) as f:
-                    kwargs['num_relations'] = len(f.readlines())
-            return cls(triple_files, **kwargs)
+        assert 'device' in kwargs
+        base_dir = os.path.dirname(triple_files[0])
+        if 'num_entities' not in kwargs:
+            with open(os.path.join(base_dir, 'map_entity_id_to_text.tsv')) as f:
+                kwargs['num_entities'] = len(f.readlines())
+        if 'num_relations' not in kwargs:
+            with open(os.path.join(base_dir, 'map_relation_id_to_text.tsv')) as f:
+                kwargs['num_relations'] = len(f.readlines())
+        return cls(triple_files, **kwargs)
 
     @classmethod
     def from_config(cls, config: KnowledgeGraphConfig):
-        return cls.create(triple_files=config.filelist)
+        return cls.create(triple_files=config.filelist, device=config.device)
 
     def get_triple_dataloader(self, **kwargs):
         dataloader = DataLoader(self.triples, **kwargs)
@@ -345,6 +344,12 @@ class NeuralBinaryPredicate:
         rel_emb = self.relation_embedding(rel_id_ten)
         tail_emb = self.entity_embedding(tail_id_ten)
         return self.embedding_score(head_emb, rel_emb, tail_emb)
+
+    @classmethod
+    def create(cls, device, **kwargs):
+        obj = cls(device=device, **kwargs)
+        obj = obj.to(device)
+        return obj
 
     # def compute_triple_pair_loss(self,
     #                              pos_triples: torch.Tensor,

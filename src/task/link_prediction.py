@@ -17,16 +17,19 @@ class LinkPrediction(AbstractTask):
         self.device = self.observed_kg.device
 
     @classmethod
-    def create(cls, filelist, observed_kg):
-        kg = KnowledgeGraph.create(filelist)
+    def create(cls, filelist, observed_kg, device):
+        kg = KnowledgeGraph.create(filelist, tensorize=False, device=device)
         return cls(kg, observed_kg)
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=1000, prefix=""):
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=50, prefix=""):
         return self._evaluate_nbp(nbp, init_batch_size, prefix)
         try:
-            return self._evaluate_nbp(nbp, prefix, init_batch_size)
+            return self._evaluate_nbp(nbp, init_batch_size, prefix)
         except:
-            return self.evaluate_nbp(nbp, prefix, init_batch_size//2)
+            torch.cuda.empty_cache()
+            print(init_batch_size, "failed")
+            next_batch_size = max(1, init_batch_size//2)
+            return self.evaluate_nbp(nbp, next_batch_size, prefix)
 
     def _evaluate_nbp(self, nbp: NeuralBinaryPredicate, batch_size, prefix):
         record = defaultdict(list)
