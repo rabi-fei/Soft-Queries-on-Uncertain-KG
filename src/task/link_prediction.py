@@ -1,13 +1,30 @@
 from collections import defaultdict
+import gc
+import sys
 
 from tqdm import tqdm
 import torch
-from torch.nn.functional import one_hot
 import numpy as np
 
 from .abstract_task import AbstractTask
 
 from ..structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+
+
+def show_objects():
+    to_print = []
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                s = '\t'.join(
+                    [str(id(obj)), str(sys.getrefcount(obj)), str(type(obj)), str(obj.size())])
+                print(">>>>", s)
+                to_print.append(s)
+        except:
+            pass
+    to_print = sorted(to_print)
+    for s in to_print:
+        print(s)
 
 
 class LinkPrediction(AbstractTask):
@@ -21,24 +38,31 @@ class LinkPrediction(AbstractTask):
         kg = KnowledgeGraph.create(filelist, tensorize=False, device=device)
         return cls(kg, observed_kg)
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=50, prefix=""):
-        return self._evaluate_nbp(nbp, init_batch_size, prefix)
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=1000, prefix=""):
+        # return self._evaluate_nbp(nbp, init_batch_size, prefix)
+        if init_batch_size == 0:
+            raise RuntimeError("zero batch size")
+
+        oom = False
         try:
             return self._evaluate_nbp(nbp, init_batch_size, prefix)
-        except:
-            torch.cuda.empty_cache()
-            print(init_batch_size, "failed")
-            next_batch_size = max(1, init_batch_size//2)
+        except RuntimeError as error:
+            print(error)
+            oom = True
+        if oom:
+            next_batch_size = init_batch_size//2
             return self.evaluate_nbp(nbp, next_batch_size, prefix)
 
     def _evaluate_nbp(self, nbp: NeuralBinaryPredicate, batch_size, prefix):
+        # nbp.eval()
         record = defaultdict(list)
-        _cand_id_ten = torch.arange(
+        cand_id_ten = torch.arange(
             0,
-            end=nbp.entity_embedding.weight.shape[0],
+            end=self.kg.num_entities,
             step=1,
             device=nbp.device)
-        cand_id_ten = torch.reshape(_cand_id_ten, (1, -1))
+        # raise RuntimeError
+        cand_id_ten = torch.reshape(cand_id_ten, (1, -1))
 
         def cfn(batch):
             hl, rl, tl = [], [], []
@@ -49,43 +73,27 @@ class LinkPrediction(AbstractTask):
                 rl.append(r)
                 tl.append(t)
 
-                ot_list = self.observed_kg.hr2t[(h, r)]
+                ot_list = self.okg.hr2t[(h, r)]
                 ot_coo_index[0] += [i] * len(ot_list)
                 ot_coo_index[1] += ot_list
 
-                oh_list = self.observed_kg.tr2h[(t, r)]
+                oh_list = self.okg.tr2h[(t, r)]
                 oh_coo_index[0] += [i] * len(oh_list)
                 oh_coo_index[1] += oh_list
 
-            # ot_mask = torch.sparse_coo_tensor(indices=ot_coo_index,
-            #                                   values=[1] * len(ot_coo_index[0]),
-            #                                   size=(len(batch), self.observed_kg.num_entities),
-            #                                   device=self.device).to_dense()
-
-            # oh_mask = torch.sparse_coo_tensor(indices=oh_coo_index,
-            #                                   values=[1] * len(oh_coo_index[0]),
-            #                                   size=(len(batch), self.observed_kg.num_entities),
-            #                                   device=self.device).to_dense()
-
-            return [torch.tensor(l, device=self.device)
+            return [torch.tensor(l, device=nbp.device).view((-1, 1))
                     for l in [hl, rl, tl]] + [ot_coo_index, oh_coo_index]
 
-        with tqdm(self.kg.get_triple_dataloader(batch_size=batch_size,
-                                                collate_fn=cfn),
+        with tqdm(kg.get_triple_dataloader(batch_size=batch_size,
+                                           collate_fn=cfn),
                   desc=f"{prefix} Link Prediction Evaluation") as t:
-            for _head_id_ten, _rel_id_ten, _tail_id_ten, ot_idx, oh_idx in t:
-                # oh_mask: observed head mask
-                # ot_mask: observed tail mask
-                num_cases = len(_rel_id_ten)
-
-                head_id_ten = torch.reshape(_head_id_ten, (num_cases, 1))
-                rel_id_ten = torch.reshape(_rel_id_ten, (num_cases, 1))
-                tail_id_ten = torch.reshape(_tail_id_ten, (num_cases, 1))
-
+            for head_id_ten, rel_id_ten, tail_id_ten, ot_idx, oh_idx in t:
                 # predict head
+                print("compute head score")
                 head_cand_score_tensor = nbp.batch_predicate_score(
                     [cand_id_ten, rel_id_ten, tail_id_ten])  # [num_cases, num_candidates]
                 head_cand_score_tensor[oh_idx[0], oh_idx[1]] = - torch.inf
+                print("head score computed")
 
                 head_score = torch.take_along_dim(input=head_cand_score_tensor,
                                                   indices=head_id_ten,

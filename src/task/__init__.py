@@ -1,4 +1,3 @@
-from .abstract_task import AbstractTask
 from .link_prediction import LinkPrediction
 from .query_answering import QueryAnswering
 
