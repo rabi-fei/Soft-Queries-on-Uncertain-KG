@@ -1,11 +1,12 @@
 import argparse
+import json
+import os
 from abc import abstractmethod
 
 import torch
 import yaml
 
 from datetime import datetime
-
 
 
 class Config:
@@ -27,8 +28,8 @@ class Config:
 
 
 class KnowledgeGraphConfig(Config):
-    default_kv = {'filelist': 
-    ['datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv'],
+    default_kv = {'filelist':
+                  ['datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv'],
                   'tensorize': True}
 
     def __init__(self, config_dict={}) -> None:
@@ -43,7 +44,8 @@ class TrainerConfig(Config):
                   'num_neg_samples': 1,
                   'ns_strategy': 'lcwa',
                   'batch_size': 256,
-                  'num_steps': 10000}
+                  'num_steps': 10000,
+                  'num_epochs': 1000}
 
     def __init__(self, config_dict={}) -> None:
         self.objective = ""
@@ -52,11 +54,13 @@ class TrainerConfig(Config):
         self.num_neg_samples = -1
         self.ns_strategy = ""
         self.batch_size = -1
+        self.num_epochs = -1
         super().__init__(config_dict)
 
 
 class EvaluationConfig(Config):
-    default_kv = {'eval_every': 200,
+    default_kv = {'eval_every_step': 200,
+                  'eval_every_epoch': 5,
                   'task_dict': {
                       'dev': {"name": "LinkPrediction",
                               "params": {"filelist": []}},
@@ -65,7 +69,8 @@ class EvaluationConfig(Config):
                   }}
 
     def __init__(self, config_dict={}) -> None:
-        self.eval_every = 9999999
+        self.eval_every_step = 9999999
+        self.eval_every_epoch = 9999999
         self.task_dict = {}
         super().__init__(config_dict)
 
@@ -149,6 +154,10 @@ class ExperimentConfigCollection:
                 datetime.now(),
                 "%Y-%m-%d_%H:%M:%S")])
 
+        os.makedirs(self.logdir, exist_ok=True)
+        with open(os.path.join(self.logdir, 'config.json'), 'wt') as f:
+            json.dump(config_collection, f, indent=2)
+
         self.cuda = config_collection.pop('cuda', -1)
         if torch.cuda.is_available() and self.cuda >= 0:
             self.device = f'cuda:{self.cuda}'
@@ -187,6 +196,7 @@ class ExperimentConfigCollection:
             comp_cls = cls.components[comp_name]
 
             linear_dict = dict()
+
             def _linearize(_d, prefix=None):
                 for _k, _v in _d.items():
                     if prefix is not None:
@@ -198,21 +208,21 @@ class ExperimentConfigCollection:
                         _linearize(_v, key)
                     else:
                         linear_dict[key] = _v
-                            
-            
+
             _linearize(comp_cls.default_kv)
 
             for k, v in linear_dict.items():
                 if isinstance(v, list):
-                    parser.add_argument(f"--{comp_name}.{k}", 
-                        action='append', required=False)
+                    parser.add_argument(f"--{comp_name}.{k}",
+                                        action='append', required=False)
                 else:
                     parser.add_argument(f"--{comp_name}.{k}",
-                        type=type(v), required=False)
+                                        type=type(v), required=False)
 
-        parser.add_argument('--cuda', default=-1, type=int)
-        parser.add_argument('--logdir', default="log/default", type=str)
-        parser.add_argument('--config', default='config/default_config.yaml', type=str)
+        parser.add_argument('--cuda', type=int)
+        parser.add_argument('--logdir', type=str)
+        parser.add_argument(
+            '--config', default='config/default_config.yaml', type=str)
         return parser
 
     def show_config(self):

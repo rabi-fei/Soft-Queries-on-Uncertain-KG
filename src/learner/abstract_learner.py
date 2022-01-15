@@ -13,11 +13,16 @@ class Learner(ABC):
     def get_data_iterator(self):
         """
         We pack the datalist into the iterator as we wish
+        return the batch_input
         """
         pass
 
     @abstractmethod
-    def forward(self, batch_input, num_neg_samples, margin) -> LearnerForwardOutput:
+    def forward(self, 
+                batch_input, 
+                num_neg_samples, 
+                ns_strategy, 
+                margin) -> LearnerForwardOutput:
         """
         the batch input is forward passed to dict of outputs
         """

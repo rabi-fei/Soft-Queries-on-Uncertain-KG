@@ -7,8 +7,9 @@ from .utils.recorder import EvalRecorder
 
 
 class Evaluator:
-    def __init__(self, eval_every, logdir, task_dict, device, observed_kg, **kwargs) -> None:
-        self.eval_every = eval_every
+    def __init__(self, eval_every_step, eval_every_epoch, logdir, task_dict, device, observed_kg, **kwargs) -> None:
+        self.eval_every_step = eval_every_step
+        self.eval_every_epoch = eval_every_epoch
         self.task = {}
         self.task_recorder = {}
         for k, v in task_dict.items():
@@ -31,10 +32,11 @@ class Evaluator:
                    logdir=logdir, 
                    **eval_config.to_dict())
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, global_step):
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, global_step, global_epoch):
         for k in self.task:
             metric = self.task[k].evaluate_nbp(nbp, prefix=k)
             metric['global_step'] = global_step
+            metric['global_epoch'] = global_epoch
             self.task_recorder[k].write(metric)
 
         

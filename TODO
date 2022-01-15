@@ -1,4 +1,4 @@
-A. Implementation:
+Implementation:
     Features:
         ☐ device maintainer
     Neural Binary Predicate:
@@ -23,10 +23,16 @@ A. Implementation:
         ✔ cmd entry @started(22-01-11 11:46) @done(22-01-11 12:22) @lasted(36m8s)
     Graph Generator:
         ☐ cross validation graph and configuration
-B. Performance Optimization:
-    ☐ cuda memory usage minimization
-C. Experiment:
-    TransE:
-        ☐ recover the original work
-    RotatE:
-        ☐ Use the known parameter
+Performance Optimization:
+    ✔ cuda memory usage minimization @done(22-01-14 15:12)
+Experiment:
+    Task1: Correct Implementation:
+        We aim to recover the results from the RotatE paper on both FB15k-237 and WR18RR
+        TransE:
+            we choose this because it is very classic
+            ☐ recover the original work by RotatE paper
+            ☐ FB15k
+
+        TurkER:
+            we choose this because it is very compatitive
+            ☐ 

@@ -7,22 +7,23 @@ from .abstract_models import NeuralBinaryPredicate
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):
-    def __init__(self, num_entities, num_relations, embedding_dim, device):
+    def __init__(self, num_entities, num_relations, embedding_dim, p, device):
         super(TransE, self).__init__()
         self.num_entities = num_entities
         self.num_relations = num_relations
         self.embedding_dim = embedding_dim
         self.device = device
-        self.entity_embedding = nn.Embedding(num_entities, embedding_dim)
+        self.p = p
+        self.entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
         nn.init.xavier_uniform_(self.entity_embedding.weight)
-        self.relation_embedding = nn.Embedding(num_relations, embedding_dim)
+        self.relation_embedding = nn.Embedding(num_relations, embedding_dim, max_norm=1)
         nn.init.xavier_uniform_(self.relation_embedding.weight)
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
         """
         board castable for the last dimension
         """
-        return - torch.norm(torch.abs(head_emb + rel_emb - tail_emb), dim=-1)
+        return - torch.norm(head_emb + rel_emb - tail_emb, p=self.p, dim=-1)
 
     def score2prob(self, score, margin):
         return torch.sigmoid(margin + score)

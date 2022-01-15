@@ -33,6 +33,7 @@ class Trainer:
                  ns_strategy='lcwa',
                  batch_size=256,
                  num_steps=10000,
+                 num_epochs=1000,
                  **kwargs):
         # important objects
         self.kg = kg
@@ -49,9 +50,11 @@ class Trainer:
         self.ns_strategy = ns_strategy
         self.batch_size = batch_size
         self.num_steps = num_steps
+        self.num_epochs = num_epochs
         # internal fields
         self._iterator = None
         self.epoch = -1
+        self._epoch_eval_flag = 0
         self.step = 0
 
     @classmethod
@@ -107,6 +110,7 @@ class Trainer:
             batch = next(self._iterator)
         except StopIteration:
             self.epoch += 1
+            self._epoch_eval_flag = 0
             print("train epoch", self.epoch)
             self._iterator = self.learner.get_data_iterator(
                 batch_size=self.batch_size,
@@ -134,7 +138,7 @@ class Trainer:
 
         batch_input = self.get_next_batch_input()
         batch_output = self.learner.forward(
-            batch_input, self.num_neg_samples, self.margin)
+            batch_input, self.num_neg_samples, self.ns_strategy, self.margin)
 
         if self.objective == 'nce':
             loss = self._compute_nce_loss(batch_output)
@@ -156,11 +160,28 @@ class Trainer:
 
         return log
 
+
+    def _should_stop(self):
+        if self.num_steps > 0:
+            return self.step > self.num_steps
+        elif self.num_epochs > 0:
+            return self.epoch > self.num_epochs
+        else:
+            raise NotImplementedError
+
+    def _should_eval(self):
+        if self.evaluator.eval_every_step > 0:
+            return (self.step + 1) % self.evaluator.eval_every_step == 0
+        if self.evaluator.eval_every_epoch > 0 and self._epoch_eval_flag == 0:
+            self._epoch_eval_flag = 1
+            return (self.epoch + 1) % self.evaluator.eval_every_epoch == 0
+        return False
+
     def run(self):
-        self.evaluator.evaluate_nbp(self.nbp, self.step)
-        while self.step < self.num_steps:
+        self.evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
+        while not self._should_stop():
             log = self.train_step()
             self.recorder.write(log)
-            if (self.step + 1) % self.evaluator.eval_every == 0:
-                self.evaluator.evaluate_nbp(self.nbp, self.step)    
+            if self._should_eval():
+                self.evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
             

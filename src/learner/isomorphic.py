@@ -17,9 +17,11 @@ class IsomorphicLearner(Learner):
     def get_data_iterator(self, **kwargs):
         it = DataLoader(self.kg.triples, **kwargs)
         for phead, prel, ptail in it:
-            yield phead.to(self.device).view(-1, 1), prel.to(self.device).view(-1, 1), ptail.to(self.device).view(-1, 1)
+            yield (phead.to(self.device).view(-1, 1),
+                   prel.to(self.device).view(-1, 1),
+                   ptail.to(self.device).view(-1, 1))
 
-    def forward(self, batch_input, num_neg_samples=1, margin=1, strategy='lcwa'):
+    def forward(self, batch_input, num_neg_samples=1, strategy='lcwa', margin=1):
         """
         In this case we assume the batch input is a list of 3 tensors
         """
@@ -48,68 +50,3 @@ class IsomorphicLearner(Learner):
         )
 
         return output
-
-
-# class __IsomorphicLearner:
-#     """
-#     A class for Link Prediction Learning
-#     """
-
-#     def __init__(self,
-#                  finite_model: KnowledgeGraph,
-#                  neural_model: NeuralBinaryPredicate,
-#                  **kwargs):
-#         """
-#         kwargs is intend for the iterator parameters
-#         """
-#         self.finite_model = finite_model
-#         self.neural_model = neural_model
-#         self.device = neural_model.device
-#         self.num_epoch = 0
-#         self.kwargs = kwargs
-#         self.triple_iter = self.get_train_triple_ns_iterator()
-
-#     def get_train_triple_ns_iterator(self):
-#         dataloader = DataLoader(self.finite_model.triples, **self.kwargs)
-#         for phead, prel, ptail in dataloader:
-#             nhead, ntail = lcwa_negative_sampling(
-#                 phead, ptail, self.finite_model.num_entities)
-#             yield ((phead.to(self.device),
-#                     prel.to(self.device),
-#                     ptail.to(self.device)),
-#                    (nhead.to(self.device),
-#                     prel.to(self.device),
-#                     ntail.to(self.device)))
-
-#     def get_next_batch_of_triples(self):
-#         try:
-#             batch = next(self.triple_iter)
-#         except StopIteration:
-#             self.num_epoch += 1
-#             print("train epoch", self.num_epoch)
-#             self.triple_iter = self.get_train_triple_ns_iterator()
-#             batch = next(self.triple_iter)
-#         return batch
-
-#     def learning_step(self,
-#                       optimizer=None,
-#                       log=True):
-#         assert optimizer is not None
-
-#         if log:
-#             log_dict = {}
-
-#         optimizer.zero_grad()
-
-#         pos_triple_ten, neg_triple_ten = self.get_next_batch_of_triples()
-
-#         loss = self.neural_model.compute_triple_pair_loss(
-#             pos_triples=pos_triple_ten,
-#             neg_triples=neg_triple_ten)
-
-#         loss.backward()
-#         optimizer.step()
-
-#         if log:
-#             log_dict['loss'] = loss.item()
-#             return log_dict
