@@ -16,7 +16,7 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         self.p = p
         self.entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
         nn.init.xavier_uniform_(self.entity_embedding.weight)
-        self.relation_embedding = nn.Embedding(num_relations, embedding_dim, max_norm=1)
+        self.relation_embedding = nn.Embedding(num_relations, embedding_dim)
         nn.init.xavier_uniform_(self.relation_embedding.weight)
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):

@@ -17,7 +17,7 @@ trainer:
   k_nce: 1                     # 1 for pairwise
   num_neg_samples: 1           # 1 for pairwise
   ns_strategy: lcwa            # lcwa or lcwa+rel
-  batch_size: 1024
+  batch_size: 100
   num_steps: -1
   num_epochs: 1000
 

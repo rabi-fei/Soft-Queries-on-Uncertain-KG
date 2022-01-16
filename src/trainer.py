@@ -19,6 +19,7 @@ class Trainer:
         - learner
         - optimizer
     """
+
     def __init__(self,
                  kg: KnowledgeGraph,
                  nbp: NeuralBinaryPredicate,
@@ -60,7 +61,6 @@ class Trainer:
     @classmethod
     def create(cls, ecc: ExperimentConfigCollection):
         ecc.show_config()
-
 
         # create the KnowledgeGraph
         logging.info(f"create the (observed) knowledge graph")
@@ -126,7 +126,7 @@ class Trainer:
 
     def _compute_pairwise_loss(self, batch_output):
         loss = self.margin
-        loss += batch_output.neg_score.mean(-1) 
+        loss += batch_output.neg_score.mean(-1)
         loss -= batch_output.pos_score.mean(-1)
         loss = torch.relu(loss).mean()
         return loss
@@ -160,7 +160,6 @@ class Trainer:
 
         return log
 
-
     def _should_stop(self):
         if self.num_steps > 0:
             return self.step > self.num_steps
@@ -184,4 +183,3 @@ class Trainer:
             self.recorder.write(log)
             if self._should_eval():
                 self.evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
-            

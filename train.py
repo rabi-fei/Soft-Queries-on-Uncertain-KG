@@ -25,17 +25,3 @@ if __name__ == "__main__":
     trainer = Trainer.create(ecc)
 
     trainer.run()
-    # with profile(activities=[ProfilerActivity.CUDA],
-    #              on_trace_ready=tensorboard_trace_handler('./log/profiler'),
-    #              record_shapes=True) as prof:
-    #     with record_function("debug_label"):
-    #         try:
-                # trainer.run()
-    #         except:
-    #             pass
-    # print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
-    # prof.export_chrome_trace("trace.json")
-
-
-
-
