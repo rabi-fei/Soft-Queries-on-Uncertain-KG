@@ -2,8 +2,8 @@ Implementation:
     Features:
         ☐ device maintainer
     Neural Binary Predicate:
-        ☐ RotatE
-        ☐ DistMult
+        ☐ TurkER
+        ☐ KBGAT
     Logic Query Language:
         ☐ Base classes
         ☐ Inference algorithm
@@ -30,8 +30,7 @@ Experiment:
         We aim to recover the results from the RotatE paper on both FB15k-237 and WR18RR
         TransE:
             we choose this because it is very classic
-            ☐ recover the original work by RotatE paper
-            ☐ FB15k
+            ✔ FB15k @done(22-01-17 13:02)
 
         TurkER:
             we choose this because it is very compatitive

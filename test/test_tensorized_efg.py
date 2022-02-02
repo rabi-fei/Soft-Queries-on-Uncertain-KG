@@ -5,9 +5,9 @@ sys.path.append('/home/zwanggc/project/EFG-KG-FOS-Verification')
 
 import torch
 
-from model.abstract_models import KG
-from model.transe import TransE
-from learner.elementary import BatchedEFG
+from src.model.abstract_models import KG
+from src.model.transe import TransE
+from src.learner.elementary import BatchedEFG
 
 
 
