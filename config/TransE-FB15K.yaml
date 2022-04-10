@@ -1,4 +1,4 @@
-cuda: 1
+cuda: 0
 
 knowledge_graph: 
   # TODO: generated graph in the uniform format
@@ -8,7 +8,7 @@ knowledge_graph:
 neural_binary_predicate:
   name: transe
   params:
-    embedding_dim: 50
+    embedding_dim: 30
     p: 1
 
 trainer:
@@ -51,4 +51,4 @@ evaluation:
         filelist: 
           - datasets-knowledge-embedding/FB15K/edges_as_id_test.tsv
 
-logdir: log/FB15K/transe
+logdir: /results/FB15K/transe

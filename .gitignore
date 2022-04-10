@@ -2,6 +2,9 @@
 .idea
 **/__pycache__
 data
-paper
-
 log
+
+BATCH.md
+run_batch.sh
+run_rsync.sh
+.rsyncignore

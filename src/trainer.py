@@ -183,3 +183,4 @@ class Trainer:
             self.recorder.write(log)
             if self._should_eval():
                 self.evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
+                self.nbp.
