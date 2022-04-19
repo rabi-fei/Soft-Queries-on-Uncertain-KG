@@ -193,6 +193,7 @@ class ExperimentConfigCollection:
                 for _k in key_chain:
                     pointer = pointer[_k]
                 pointer[final_key] = v
+        print(config_collection['logdir'])
         return cls(config_collection=config_collection)
 
     @classmethod
