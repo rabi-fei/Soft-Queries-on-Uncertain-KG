@@ -181,7 +181,10 @@ class ElementaryLearner(Learner):
 
         self.efg = BatchedEFG(self.kg, self.nbp)
 
-    def sample(self, batch_input, num_negative_samples, aggregate_level='triple'):
+    def get_data_iterator(self):
+        return super().get_data_iterator()
+
+    def forward(self, batch_input, num_negative_samples, aggregate_level='triple'):
 
         batch_entity_set = self.efg.play(batch_input)
 

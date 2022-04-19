@@ -38,11 +38,11 @@ class KnowledgeGraphConfig(Config):
 
 
 class TrainerConfig(Config):
-    default_kv = {'objective': 'nce',
-                  'margin': 10,
-                  'k_nce': 1,
-                  'num_neg_samples': 1,
-                  'ns_strategy': 'lcwa',
+    default_kv = {'objective': 'nce',    # noisy contrastive learning
+                  'margin': 10,          # margin
+                  'k_nce': 1,            # k for nce
+                  'num_neg_samples': 1,  # number of negative samples
+                  'ns_strategy': 'lcwa', # local close word assumption
                   'batch_size': 256,
                   'num_steps': 10000,
                   'num_epochs': 1000}
@@ -138,16 +138,20 @@ class ExperimentConfigCollection:
                   'trainer': TrainerConfig,
                   'optimizer': OptimizerConfig,
                   'learner': LearnerConfig,
-                  'evaluation': EvaluationConfig}
+                  'dev_evaluation': EvaluationConfig,
+                  'test_evaluation': EvaluationConfig}
 
     def __init__(self, config_collection):
+        # claim the config typing, but not initialized
         self.knowledge_graph_config = KnowledgeGraphConfig()
         self.neural_binary_predicate_config = NeuralBinaryPredicateConfig()
         self.trainer_config = TrainerConfig()
         self.optimizer_config = OptimizerConfig()
         self.learner_config = LearnerConfig()
-        self.evaluation_config = EvaluationConfig()
+        self.dev_evaluation_config = EvaluationConfig()
+        self.test_evaluation_config = EvaluationConfig()
 
+        # set logdir
         self.logdir = "_".join(
             [config_collection.pop('logdir'),
              datetime.strftime(
@@ -158,12 +162,14 @@ class ExperimentConfigCollection:
         with open(os.path.join(self.logdir, 'config.json'), 'wt') as f:
             json.dump(config_collection, f, indent=2)
 
+        # set device
         self.cuda = config_collection.pop('cuda', -1)
         if torch.cuda.is_available() and self.cuda >= 0:
             self.device = f'cuda:{self.cuda}'
         else:
             self.device = 'cpu'
 
+        # generate components
         for comp in self.components:
             config_instance = self.components[comp](
                 config_dict=config_collection.pop(comp, {}))

@@ -18,14 +18,18 @@ class Trainer:
         - nbp
         - learner
         - optimizer
+        - evaluator
+        - recorder
     """
 
     def __init__(self,
+                 logdir: str,
                  kg: KnowledgeGraph,
                  nbp: NeuralBinaryPredicate,
                  learner: Learner,
                  optimizer: torch.optim.Optimizer,
-                 evaluator: Evaluator,
+                 dev_evaluator: Evaluator,
+                 test_evaluator: Evaluator,
                  recorder: TrainRecorder,
                  objective='nce',
                  margin=10,
@@ -37,11 +41,13 @@ class Trainer:
                  num_epochs=1000,
                  **kwargs):
         # important objects
+        self.logdir = logdir
         self.kg = kg
         self.nbp = nbp
         self.learner = learner
         self.optimizer = optimizer
-        self.evaluator = evaluator
+        self.dev_evaluator = dev_evaluator
+        self.test_evaluator = test_evaluator
         self.recorder = recorder
         # parameters
         self.objective = objective
@@ -68,7 +74,7 @@ class Trainer:
         kg = KnowledgeGraph.from_config(ecc.knowledge_graph_config)
         logging.info(f"kg created")
 
-        # create the neural
+        # create the neural binary predicate
         logging.info(f"create the neural binary predicate")
         logging.info(f"\t {ecc.neural_binary_predicate_config.to_dict()}")
         nbp = ecc.neural_binary_predicate_config.instantiate(kg)
@@ -87,17 +93,20 @@ class Trainer:
         logging.info(f"optimizer created")
 
         # create the evaluator
-        evaluator = Evaluator.create(ecc.evaluation_config, ecc.logdir, kg)
+        dev_evaluator = Evaluator.create(ecc.dev_evaluation_config, ecc.logdir, kg)
+        test_evaluator = Evaluator.create(ecc.test_evaluation_config, ecc.logdir, kg)
 
         # create the train recorder
         recorder = TrainRecorder(ecc.logdir)
 
         # create trainer
-        trainer = cls(kg=kg,
+        trainer = cls(logdir=ecc.logdir,
+                      kg=kg,
                       nbp=nbp,
                       learner=learner,
                       optimizer=optimizer,
-                      evaluator=evaluator,
+                      dev_evaluator=dev_evaluator,
+                      test_evaluator=test_evaluator,
                       recorder=recorder,
                       **ecc.trainer_config.to_dict())
 
@@ -105,8 +114,7 @@ class Trainer:
 
     def get_next_batch_input(self):
         try:
-            if self._iterator is None:
-                raise StopIteration
+            if self._iterator is None: raise StopIteration
             batch = next(self._iterator)
         except StopIteration:
             self.epoch += 1
@@ -124,7 +132,7 @@ class Trainer:
         loss -= torch.log(1 - batch_output.neg_prob.mean(-1))
         return loss.mean()
 
-    def _compute_pairwise_loss(self, batch_output):
+    def _compute_pairwise_loss(self, batch_output: LearnerForwardOutput):
         loss = self.margin
         loss += batch_output.neg_score.mean(-1)
         loss -= batch_output.pos_score.mean(-1)
@@ -160,27 +168,35 @@ class Trainer:
 
         return log
 
-    def _should_stop(self):
+    def _not_finish_train(self):
         if self.num_steps > 0:
-            return self.step > self.num_steps
+            return self.step < self.num_steps
         elif self.num_epochs > 0:
-            return self.epoch > self.num_epochs
+            return self.epoch < self.num_epochs
         else:
             raise NotImplementedError
 
     def _should_eval(self):
-        if self.evaluator.eval_every_step > 0:
-            return (self.step + 1) % self.evaluator.eval_every_step == 0
-        if self.evaluator.eval_every_epoch > 0 and self._epoch_eval_flag == 0:
+        if self.dev_evaluator.eval_every_step > 0:
+            return (self.step + 1) % self.dev_evaluator.eval_every_step == 0
+        if self.dev_evaluator.eval_every_epoch > 0 and self._epoch_eval_flag == 0:
             self._epoch_eval_flag = 1
-            return (self.epoch + 1) % self.evaluator.eval_every_epoch == 0
+            return (self.epoch + 1) % self.dev_evaluator.eval_every_epoch == 0
         return False
 
     def run(self):
-        self.evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
-        while not self._should_stop():
+        best_key_metric = self.dev_evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
+        print(key_metric)
+        while self._not_finish_train():
             log = self.train_step()
             self.recorder.write(log)
             if self._should_eval():
-                self.evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
-                self.nbp.
+                key_metric = self.dev_evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
+                self.test_evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
+                print(key_metric)
+                if key_metric > best_key_metric:
+                    new_path = os.path.join(self.logdir, f'step={self.step}:epoch={self.epoch}.ckpt')
+                    torch.save(self.nbp.state_dict(),
+                               new_path)
+                    logging.info(f"key metric ({self.dev_evaluator.dev_key}) = {key_metric} is better than {best_key_metric}, new checkpoint saved to {new_path}")
+                    best_key_metric = key_metric

@@ -1,6 +1,4 @@
 from collections import defaultdict
-import gc
-import sys
 
 from tqdm import tqdm
 import torch
@@ -22,7 +20,7 @@ class LinkPrediction(AbstractTask):
         kg = KnowledgeGraph.create(filelist, tensorize=False, device=device)
         return cls(kg, observed_kg)
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=1000, prefix=""):
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=100, prefix=""):
         # return self._evaluate_nbp(nbp, init_batch_size, prefix)
         if init_batch_size == 0:
             raise RuntimeError("zero batch size")
@@ -76,7 +74,8 @@ class LinkPrediction(AbstractTask):
             record[key + 'mrr'].extend((1 / (1 + rank)).tolist())
             record[key + 'mr'].extend(rank.tolist())
 
-        with tqdm(self.kg.get_triple_dataloader(batch_size=batch_size, collate_fn=cfn),
+        with tqdm(self.kg.get_triple_dataloader(batch_size=batch_size,
+                                                collate_fn=cfn),
                   desc=f"{prefix} Link Prediction Evaluation") as t:
             for head_id_ten, rel_id_ten, tail_id_ten, ot_idx, oh_idx in t:
 

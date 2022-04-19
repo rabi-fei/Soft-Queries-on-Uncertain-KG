@@ -1,6 +1,6 @@
 cuda: 0
 
-knowledge_graph: 
+knowledge_graph:
   # TODO: generated graph in the uniform format
   filelist:
     - datasets-knowledge-embedding/FB15K/edges_as_id_train.tsv
@@ -13,7 +13,7 @@ neural_binary_predicate:
 
 trainer:
   objective: pairwise          # nce or pairwise
-  margin: 1                   # used in both nce and pairwise objective
+  margin: 1                    # used in both nce and pairwise objective
   k_nce: 1                     # 1 for pairwise
   num_neg_samples: 1           # 1 for pairwise
   ns_strategy: lcwa            # lcwa or lcwa+rel
@@ -26,29 +26,34 @@ optimizer:
   params:
     lr: 0.01
 
-learner: 
+learner:
   name: I
   params:
     efg_round: 5
     efg_mode: random  # random or greedy
-    efg_rand_thr: 0.5 # only worked when random 
+    efg_rand_thr: 0.5 # only worked when random
                           # 0 for totally finite, 1 for totally neural
     neural_act_search_size: 10
 
-evaluation:
+dev_evaluation:
   eval_every_step: -1
   eval_every_epoch: 5
-  # implement the task interface
-  task_dict: 
-    valid: 
+  # TODO: implement the task interface
+  task_dict:
+    dev:
       name: LinkPrediction
-      params: 
-        filelist: 
+      params:
+        filelist:
           - datasets-knowledge-embedding/FB15K/edges_as_id_valid.tsv
+  dev_task: dev
+  dev_key: filter/agg/mrr
+
+test_evaluation:
+  task_dict:
     test:
       name: LinkPrediction
-      params: 
-        filelist: 
+      params:
+        filelist:
           - datasets-knowledge-embedding/FB15K/edges_as_id_test.tsv
 
-logdir: /results/FB15K/transe
+logdir: log/FB15K/transe

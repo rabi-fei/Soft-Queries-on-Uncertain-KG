@@ -1,9 +1,74 @@
 # Ehrenfeucht–Fraı̈sśe Learning for Knowledge Graph Embedding and Reasoning
 
+An framework for Knowlege Graph Embedding Learning and Verification
 
 ## Design doc
 
-### 1. Model
+The functionality of this framework handles 3 data objects in 3 parts
+
+- Data objects
+  - [D0] Index for entities and relations
+  - [D1] KG, knowledge graph, triples
+  - [D2] NBP, neural binary predicate, embedding and neural network models
+  - [D3] Sentence / Query
+
+- Processes
+  - Training
+    - Input: [D0] and [D1]
+    - Output: [D2]
+  - Inference
+    - Input: [D0], [D3] and [D1] or [D2]
+    - Output: predict booleans/ entity index from [D0]
+  - Task Sampling
+    - Input: [D0], [D1]-full version, [D1]-observed version, [D3]
+    - Output: [D4]
+
+### Data object interfaces
+
+#### [D0] Index for entities and relations
+
+Beyond this level, we handle the symbolic ids. All data placed on MEM
+
+- Properties
+  - string to id
+  - id to string
+- Methods
+  - from raw string to id
+  - from id to raw string
+
+
+#### [D1] KnowledgeGraph
+
+Try to stored in CUDA for parallel lookup
+
+- Properties
+  - triples: a list of (h, r, t) triples, total triple N
+  - triple_tensor: a tensor of shape (N, 3)
+  - triple_index, sparse tensor T[h, r, t] = 1 iff (h, r, t) in triples
+  - dconnect_tensor, a tensor of shape (N, 2) for all directed edges
+  - dconnect_index, sparse tensor T[h, t] = 1 iff (h, t) is connected directly
+- Methods
+  - create
+  - from_config
+  - get_triple_dataloader
+  - get_sub_graph(self, entities)
+  - get_non_neighbor_triple(self, entities, k, reverse)
+
+#### [D2] NBP
+
+neural network prediction
+
+- methods
+  - embedding_score(head_emb, rel_emb, tail_emb)
+  - batch_predicate_score(triple_tensor)
+
+#### [D3] Sentence Type / Query Type
+
+#### [D4] Sentence Sample / Query Sample
+
+
+### 1. Training
+
 Model discussed here is relational, that is, we only consider the predicate.
 
 Two kinds of models are implemented, the one is `KnowledgeGraph` and the other
@@ -46,8 +111,15 @@ convension
 ```text
 FVars:V1,...,Vk // claim free variables
 Evars:W1,...,Wk // claim existentially quantified variables
+Uvars:U1,...,Uk // claim existentially quantified variables
 Formula:String by a Context Free Grammar
 ```
+
+exists w1, for all u1, p(w1, a) and p(u1, w1) and p(w1, u1)
+
+max w1
+  min u1
+    p(w1, a) and p(u1, w1) and p(w1, u1)
 
 The context free grammar for the formula
 
