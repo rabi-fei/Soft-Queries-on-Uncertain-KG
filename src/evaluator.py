@@ -34,24 +34,25 @@ class Evaluator:
             self.task_recorder[k] = EvalRecorder(logdir, k)
             logging.info(f"task {k} initialized")
 
-        self.dev_task = kwargs.get('dev_task', None)
         self.dev_key = kwargs.get('dev_key', None)
+        print(kwargs)
+        print(self.dev_key)
 
     @classmethod
     def create(cls, eval_config: EvaluationConfig, logdir, observed_kg: KnowledgeGraph):
         logging.info("initalize evaluator")
         logging.info(eval_config.to_dict())
-
+        print(eval_config.to_dict())
         return cls(observed_kg=observed_kg,
                    logdir=logdir,
                    **eval_config.to_dict())
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, global_step, global_epoch):
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, global_step, global_epoch, get_key_metric):
         for k in self.task:
             metric = self.task[k].evaluate_nbp(nbp, prefix=k)
             metric['global_step'] = global_step
             metric['global_epoch'] = global_epoch
             self.task_recorder[k].write(metric)
 
-            if k == self.dev_task:
+            if get_key_metric:
                 return metric[self.dev_key]

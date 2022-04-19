@@ -185,18 +185,19 @@ class Trainer:
         return False
 
     def run(self):
-        best_key_metric = self.dev_evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
-        print(key_metric)
+        best_key_metric = self.dev_evaluator.evaluate_nbp(
+            self.nbp, self.step, self.epoch, get_key_metric=True)
         while self._not_finish_train():
             log = self.train_step()
             self.recorder.write(log)
             if self._should_eval():
-                key_metric = self.dev_evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
-                self.test_evaluator.evaluate_nbp(self.nbp, self.step, self.epoch)
-                print(key_metric)
+                key_metric = self.dev_evaluator.evaluate_nbp(
+                    self.nbp, self.step, self.epoch, get_key_metric=True)
+                self.test_evaluator.evaluate_nbp(
+                    self.nbp, self.step, self.epoch, get_key_metric=False)
+
                 if key_metric > best_key_metric:
                     new_path = os.path.join(self.logdir, f'step={self.step}:epoch={self.epoch}.ckpt')
-                    torch.save(self.nbp.state_dict(),
-                               new_path)
+                    torch.save(self.nbp.state_dict(), new_path)
                     logging.info(f"key metric ({self.dev_evaluator.dev_key}) = {key_metric} is better than {best_key_metric}, new checkpoint saved to {new_path}")
                     best_key_metric = key_metric

@@ -20,10 +20,12 @@ class LinkPrediction(AbstractTask):
         kg = KnowledgeGraph.create(filelist, tensorize=False, device=device)
         return cls(kg, observed_kg)
 
-    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=100, prefix=""):
+    def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=10000, prefix=""):
         # return self._evaluate_nbp(nbp, init_batch_size, prefix)
         if init_batch_size == 0:
             raise RuntimeError("zero batch size")
+        if self.device == 'cpu':
+            init_batch_size = 100
 
         oom = False
         try:

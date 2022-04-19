@@ -19,9 +19,9 @@ class Config:
             v = config_dict.pop(k, self.default_kv[k])
             setattr(self, k, v)
 
-        # use self.params to absorb the non-named kvs
-        if config_dict is not None:
-            self.params.update(config_dict)
+        # absorb non-default parameters
+        for k, v in config_dict.items():
+            setattr(self, k, v)
 
     def to_dict(self):
         return vars(self)

@@ -45,7 +45,6 @@ dev_evaluation:
       params:
         filelist:
           - datasets-knowledge-embedding/FB15K/edges_as_id_valid.tsv
-  dev_task: dev
   dev_key: filter/agg/mrr
 
 test_evaluation:
