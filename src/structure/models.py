@@ -52,7 +52,7 @@ class KnowledgeGraph:
                 t = register(t, self.entity_index)
             if num_relations is None:
                 r = register(r, self.relation_index)
-        
+
             self.triples.append((h, r, t))
             self.hr2t[(h, r)].append(t)
             self.tr2h[(t, r)].append(h)
@@ -139,7 +139,7 @@ class KnowledgeGraph:
         dataloader = DataLoader(self.triples, **kwargs)
         return dataloader
 
-    def __get_entity_mask(self, entity_tensor):
+    def get_entity_mask(self, entity_tensor):
         """
         this function returns the batched multi-hot vectors
         [batch, total_entity_number]
@@ -156,15 +156,27 @@ class KnowledgeGraph:
         entity_mask[first_indices, entity_tensor] = 1
         return entity_mask
 
-    def get_sub_graph(self,
-                      entities: Union[List[int], torch.Tensor],
-                      negative_sampling: bool = True,
-                      k=10,
-                      **kwargs):
-        entity_tensor = self.__preproc_entities(entities)
-        batch_size, num_entities = entity_tensor.shape
+    def get_subgraph(self,
+                     entities: Union[List[int], torch.Tensor],
+                     num_hops: int = 0):
+        """
+        Get the k-hop subgraph triples for each entity set in the batch.
+            Input;
+                entities: input batch of entities [batch_size, num_entities]
+                num_hops: int,
+                    = 0, just get the subgraph of the given batches
+                    > 0, k-hop subgraphs
+            Return:
+                RaggedBatch of triples
+        """
+        entity_tensor = tensorize_batch_entities(entities)
+        entity_mask = self.get_entity_mask(entity_tensor)  # [batch_size, num_entities]
 
-        entity_mask = self.__get_entity_mask(entity_tensor)
+        for hop in num_hops:
+            neighbor_entity_mask = torch.sparse.mm(
+                entity_mask.type(torch.float), self.dconnect_index)
+            neighbor_entity_mask.greater_(0)
+            entity_mask = torch.logical_or(entity_mask, neighbor_entity_mask)
 
         # so far you have a mask of shape [batch_size, total_num_entities]
         batch_triple_mask = torch.logical_and(
@@ -174,36 +186,15 @@ class KnowledgeGraph:
         subgraph_flat_triple_ids = batch_triple_mask.nonzero()[:, 1]
         subgraph_flat_triples = self.triple_tensor[subgraph_flat_triple_ids]
 
-        # now do the negative sampling for noisy triples
-        # we generate finite samples and returns the nomalized weights
+        subgraph_triples = RaggedBatch(flatten=subgraph_flat_triples,
+                                       sizes=subgraph_batch_triple_count)
 
-        batch_entity_dist = entity_mask / entity_mask.sum(dim=-1, keepdim=True)
-        noisy_head = torch.multinomial(batch_entity_dist,
-                                       num_samples=k,
-                                       replacement=True).unsqueeze(-1)
-        noisy_tail = torch.multinomial(batch_entity_dist,
-                                       num_samples=k,
-                                       replacement=True).unsqueeze(-1)
-        noisy_rel = torch.randint(
-            low=0, high=self.num_relations, size=noisy_head.shape, device=self.device)
+        return subgraph_triples
 
-        noisy_triples = torch.cat([noisy_head, noisy_rel, noisy_tail], dim=-1)
-        noisy_weights = torch.ones(
-            size=(batch_size, k), device=self.device) / k
-
-        output = {
-            "subgraph_flat_triples": subgraph_flat_triples,
-            "subgraph_batch_triple_count": subgraph_batch_triple_count,
-            "noisy_batch_triples": noisy_triples,
-            "noisy_batch_weights": noisy_weights
-        }
-
-        return output
-
-    def __get_neighbor_triples(self,
-                               entities: Union[List[int], torch.Tensor],
-                               reverse=False,
-                               filtered=True):
+    def _get_neighbor_triples(self,
+                              entities: Union[List[int], torch.Tensor],
+                              reverse=False,
+                              filtered=True) -> RaggedBatch:
         """
         This function finds the triples in the KG but not in the sub graph
             Input args:
@@ -212,13 +203,12 @@ class KnowledgeGraph:
                     - if true, search the entities with reversed edges
                     - if false, search the entities with directed edges
                 - filter:
-                    - if true, exclude the entities with 
+                    - if true, exclude the entities with
             Return args:
-                - neighbor_triples: [num_triples, 3]
-                - batch_selected_triple_count: [batch_size]
+                - RaggedBatch Triples, each batch element is a list of triples
         """
         entity_tensor = tensorize_batch_entities(entities)
-        entity_mask = self.__get_entity_mask(entity_tensor)
+        entity_mask = self.get_entity_mask(entity_tensor)
         # so far you have a mask of shape [batch_size, total_num_entities]
         if reverse:
             # find the triples given the tail entities
@@ -241,18 +231,20 @@ class KnowledgeGraph:
 
         return RaggedBatch(flatten_triples, batch_triple_count)
 
-    def get_triples_by_source(self, entities, filtered) -> RaggedBatch:
-        return self.__get_neighbor_triples(entities,
-                                           reverse=False, filtered=filtered)
+    def get_neighbor_triples_by_head(self, entities, filtered=True) -> RaggedBatch:
+        return self._get_neighbor_triples(entities,
+                                          reverse=False,
+                                          filtered=filtered)
 
-    def get_triples_by_target(self, entities, filtered) -> RaggedBatch:
-        return self.__get_neighbor_triples(entities,
-                                           reverse=True, filtered=filtered)
+    def get_neighbor_triples_by_tail(self, entities, filtered=True) -> RaggedBatch:
+        return self._get_neighbor_triples(entities,
+                                          reverse=True,
+                                          filtered=filtered)
 
-    def get_non_neightbor_triple(self,
-                                 entities: Union[List[int], torch.Tensor],
-                                 k=10,
-                                 reverse=False) -> RaggedBatch:
+    def _get_non_neightbor_triples(self,
+                                   entities: Union[List[int], torch.Tensor],
+                                   k=10,
+                                   reverse=False) -> RaggedBatch:
         """
         This function constructs negative triples not in the KG with
             - head (tail) in the given entites
@@ -269,11 +261,11 @@ class KnowledgeGraph:
             - neg_triples: [batch_size, num_entities, k]
         """
         entity_tensor = tensorize_batch_entities(entities)
-        entity_mask = self.__get_entity_mask(entity_tensor)
         batch_size, num_entities = entity_tensor.shape
 
         # [batch_size * num_entities]
         flat_entity_tensor = entity_tensor.ravel()
+
         if reverse:  # if the reverse is true, it considers the reversed edges
             flat_possible_targets = torch.index_select(
                 self.dconnect_index.t(),
@@ -290,22 +282,30 @@ class KnowledgeGraph:
             flat_impossible_targets.sum(-1, keepdim=True)
 
         flat_neg_target = torch.multinomial(input=flat_impossible_target_dist,
-                                            num_samples=k)
+                                            num_samples=k).reshape(-1, 1)
         flat_neg_source = torch.tile(flat_entity_tensor.unsqueeze(-1),
-                                     dims=(1, k))
+                                     dims=(1, k)).reshape(-1, 1)
 
-        flat_neg_rels = torch.randint(low=0, high=self.num_relations,
-                                      size=flat_neg_source.shape,
-                                      device=self.device)
         if reverse:
             flat_neg_heads, flat_neg_tails = flat_neg_target, flat_neg_source
         else:
             flat_neg_heads, flat_neg_tails = flat_neg_source, flat_neg_target
 
-        neg_heads = flat_neg_heads.view(batch_size, num_entities * k)
-        neg_rels = flat_neg_rels.view(batch_size, num_entities * k)
-        neg_tails = flat_neg_tails.view(batch_size, num_entities * k)
-        return neg_heads, neg_rels, neg_tails
+        flat_neg_rels = torch.randint(low=0, high=self.num_relations,
+                                      size=flat_neg_source.shape,
+                                      device=self.device)
+
+        flat_triples = torch.concat([flat_neg_heads, flat_neg_rels, flat_neg_tails],
+                                     dim=-1)
+        sizes = torch.ones(batch_size, device=self.device) * num_entities * k
+
+        return RaggedBatch(flatten=flat_triples, sizes=sizes)
+
+    def get_non_neightbor_triples_by_head(self, entities, k) -> RaggedBatch:
+        return self._get_non_neightbor_triples(entities, k=k, reverse=False)
+
+    def get_non_neightbor_triples_by_tail(self, entities, k) -> RaggedBatch:
+        return self._get_non_neightbor_triples(entities, k=k, reverse=True)
 
 
 class NeuralBinaryPredicate:
@@ -330,7 +330,7 @@ class NeuralBinaryPredicate:
     def batch_predicate_score(self,
                               triple_tensor: torch.Tensor) -> torch.Tensor:
         """
-        This method computes the scores for the triple. triple tensors the 
+        This method computes the scores for the triple. triple tensors the
         shape of [..., 3]
         It returns the same size of predicate scores.
         """
@@ -350,101 +350,3 @@ class NeuralBinaryPredicate:
         obj = cls(device=device, **kwargs)
         obj = obj.to(device)
         return obj
-
-    # def compute_triple_pair_loss(self,
-    #                              pos_triples: torch.Tensor,
-    #                              neg_triples: torch.Tensor,
-    #                              pairwise_loss=True):
-    #     """
-    #     compute the loss to learn the neural model
-    #     """
-    #     if isinstance(pos_triples, tuple):
-    #         phead, prel, ptail = pos_triples
-    #     elif isinstance(pos_triples, torch.Tensor):
-    #         phead, prel, ptail = pos_triples.split(split_size=1, dim=-1)
-    #     if isinstance(pos_triples, tuple):
-    #         nhead, nrel, ntail = neg_triples
-    #     elif isinstance(pos_triples, torch.Tensor):
-    #         nhead, nrel, ntail = neg_triples.split(split_size=1, dim=-1)
-
-    #     head = self.entity_embedding(torch.cat([phead, nhead]))
-    #     rel = self.relation_embedding(torch.cat([prel, nrel]))
-    #     tail = self.entity_embedding(torch.cat([ptail, ntail]))
-
-    #     scores = self.embedding_score(head, rel, tail)
-
-    #     if pairwise_loss:
-    #         pos_scores = scores[:len(phead)]
-    #         neg_scores = scores[len(phead):]
-    #         loss = torch.relu(neg_scores - pos_scores + 10).mean()
-    #         return loss
-
-    #     labels = torch.tensor([1] * len(pos_triples) + [0] * len(neg_triples))
-
-    #     tv_tensor = torch.tensor(labels, device=self.device)
-    #     return self.criteria(scores, tv_tensor)
-
-    # def compute_efg_pair_loss(self,
-    #                           subgraph_flat_triples,
-    #                           subgraph_batch_triple_count,
-    #                           noisy_batch_triples,
-    #                           noisy_batch_weights,
-    #                           **kwargs):
-    #     phead, prel, ptail = subgraph_flat_triples.split(split_size=1, dim=-1)
-    #     subgraph_flat_scores = self.batch_pred_score(
-    #         phead, prel, ptail).squeeze()
-    #     subgraph_batch_limit = subgraph_batch_triple_count.cumsum(dim=0)
-
-    #     nhead, nrel, ntail = noisy_batch_triples.split(split_size=1, dim=-1)
-    #     noisy_batch_scores = self.batch_pred_score(
-    #         nhead, nrel, ntail).squeeze()
-    #     batch_size, num_neg_trip = noisy_batch_scores.shape
-
-    #     loss = 0
-    #     for i in range(len(subgraph_batch_triple_count)):
-    #         if i == 0:
-    #             begin = 0
-    #         else:
-    #             begin = subgraph_batch_limit[i-1]
-    #         end = subgraph_batch_limit[i]
-
-    #         size = min(end - begin, num_neg_trip)
-
-    #         if end > begin:
-    #             batch_pos = subgraph_flat_scores[begin: begin + size]
-    #             batch_neg = noisy_batch_scores[i, 0:size]
-    #             loss += torch.relu(batch_neg - batch_pos + 10).mean()
-
-    #     return loss / batch_size
-
-    # def compute_efg_nce_loss(self,
-    #                          subgraph_flat_triples,
-    #                          subgraph_batch_triple_count,
-    #                          noisy_batch_triples,
-    #                          noisy_batch_weights,
-    #                          k_nce,
-    #                          margin,
-    #                          **kwargs):
-
-    #     phead, prel, ptail = subgraph_flat_triples.split(split_size=1, dim=-1)
-    #     subgraph_flat_scores = margin + \
-    #         self.batch_pred_score(phead, prel, ptail).squeeze()
-    #     subgraph_flat_ll = torch.log(torch.sigmoid(subgraph_flat_scores))
-    #     subgraph_batch_limit = subgraph_batch_triple_count.cumsum(dim=0)
-    #     loss = 0
-    #     for i in range(len(subgraph_batch_triple_count)):
-    #         if i == 0:
-    #             begin = 0
-    #         else:
-    #             begin = subgraph_batch_limit[i-1]
-    #         end = subgraph_batch_limit[i]
-    #         if end > begin:
-    #             loss -= torch.sum(subgraph_flat_ll[begin: end]) / (end - begin)
-
-    #     phead, prel, ptail = noisy_batch_triples.split(split_size=1, dim=-1)
-    #     noisy_batch_scores = margin + \
-    #         self.batch_pred_score(phead, prel, ptail).squeeze()
-    #     noisy_batch_ll = torch.log(1 - torch.sigmoid(noisy_batch_scores))
-    #     loss -= torch.sum(torch.sum(noisy_batch_ll * noisy_batch_weights,
-    #                       dim=-1)) * k_nce
-    #     return loss / len(subgraph_batch_triple_count)

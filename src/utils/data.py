@@ -66,8 +66,11 @@ class RaggedBatch:
             sizes=self.sizes)
 
     def to_dense_matrix(self, padding_value):
+        # split the first axis of the flattened Tensor by sizes
         flatten_sliced = torch.split(
-            self.flatten, split_size_or_sections=self.sizes)
+            self.flatten, split_size_or_sections=self.sizes, dim=0)
         dense_matrix = pad_sequence(
             flatten_sliced, batch_first=True, padding_value=padding_value)
+        # if the self.flattened is of shape [L, *]
+        # then dense_matrix is of shape [batch_size, max_of_self.sizes, *]
         return dense_matrix

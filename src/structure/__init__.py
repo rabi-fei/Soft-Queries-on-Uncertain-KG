@@ -1,4 +1,4 @@
-from .abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from .models import KnowledgeGraph, NeuralBinaryPredicate
 from .transe import TransE
 
 def get(name):

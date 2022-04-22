@@ -4,7 +4,7 @@ import torch
 
 from .abstract_learner import Learner
 from ..utils.data import tensorize_batch_entities
-from ..structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from ..structure import KnowledgeGraph, NeuralBinaryPredicate
 
 
 class BatchedEFG:
@@ -58,7 +58,7 @@ class BatchedEFG:
             round_mask[:, i] = _round_mask
 
         # get sub_graph from self.finite_model
-        outputs = self.finite_model.get_sub_graph(batch_entities)
+        outputs = self.finite_model.get_subgraph(batch_entities)
         return outputs
 
     def _spoiler_step(self, batch_entities, round_mask, mode, **kwargs):
@@ -94,7 +94,7 @@ class BatchedEFG:
         first_index = torch.arange(batch_size, device=self.device)
 
         # get triples whose head is new entities
-        ragged_head_triples = self.finite_model.get_triples_by_target(
+        ragged_head_triples = self.finite_model.get_neighbor_triples_by_target(
             batch_entities, filtered=True)
 
         # make the batch head scores
@@ -114,7 +114,7 @@ class BatchedEFG:
         head_min_entity = batch_head_ids[first_index, head_min_index]
 
         # get triples whose tail is new entities
-        ragged_tail_triples = self.finite_model.get_triples_by_target(
+        ragged_tail_triples = self.finite_model.get_neighbor_triples_by_target(
             batch_entities, filtered=True)
 
         # make the batch tail scores
@@ -140,12 +140,12 @@ class BatchedEFG:
 
     def _spoiler_act_on_neural_model(self, batch_entities, round_mask):
 
-        Thead, Trel, Ttail = self.finite_model.get_non_neightbor_triple(
+        Thead, Trel, Ttail = self.finite_model._get_non_neightbor_triples(
             batch_entities, k=self.k_neural, reverse=False)
         Tscores = self.neural_model.batch_pred_score(
             Thead, Trel, Ttail).squeeze()
 
-        Hhead, Hrel, Htail = self.finite_model.get_non_neightbor_triple(
+        Hhead, Hrel, Htail = self.finite_model._get_non_neightbor_triples(
             batch_entities, k=self.k_neural, reverse=True)
         Hscores = self.neural_model.batch_pred_score(
             Hhead, Hrel, Htail).squeeze()

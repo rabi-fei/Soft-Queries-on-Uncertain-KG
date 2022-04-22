@@ -3,7 +3,7 @@ from abc import abstractmethod
 import torch
 from torch import nn
 
-from .abstract_models import NeuralBinaryPredicate
+from .models import NeuralBinaryPredicate
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):

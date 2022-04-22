@@ -145,6 +145,7 @@ class Trainer:
         self.optimizer.zero_grad()
 
         batch_input = self.get_next_batch_input()
+
         batch_output = self.learner.forward(
             batch_input, self.num_neg_samples, self.ns_strategy, self.margin)
 

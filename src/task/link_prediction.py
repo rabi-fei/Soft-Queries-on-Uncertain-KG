@@ -6,7 +6,7 @@ import numpy as np
 
 from .abstract_task import AbstractTask
 
-from ..structure.abstract_models import KnowledgeGraph, NeuralBinaryPredicate
+from ..structure import KnowledgeGraph, NeuralBinaryPredicate
 
 
 class LinkPrediction(AbstractTask):
