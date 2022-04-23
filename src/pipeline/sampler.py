@@ -1,4 +1,3 @@
-from re import I
 import torch
 
 from utils.data import tensorize_batch_entities
