@@ -43,7 +43,7 @@ from typing import Dict, List
 class Lobject:
     @abstractmethod
     @classmethod
-    def parse(cls):
+    def parse(cls, ldict):
         pass
 
     @abstractmethod
@@ -60,19 +60,20 @@ class Lobject:
 
 class Term(Lobject):
     @classmethod
-    def parse(cls, term_obj):
-        op = term_obj['op']
+    def parse(cls, term_dict):
+        op = term_dict['op']
         assert op in ['var', 'ltr']
         if op == Variable.op:
-            return Variable.parse(term_obj)
+            return Variable.parse(term_dict)
         if op == Literal.op:
-            return Literal.parse(term_obj)
+            return Literal.parse(term_dict)
+
 
 class Variable(Term):
     EXISTENTIAL = 'E'
     FREE = "F"
     UNIVERSAL = "U"
-    op = 'var'
+    op = "var"
 
     def __init__(self, name, state) -> None:
         """
@@ -83,25 +84,29 @@ class Variable(Term):
         assert state in [self.EXISTENTIAL, self.FREE, self.UNIVERSAL]
         self.state = state
 
+        self._initialized = False
+        self._grounded = False
+        self._embedding = None
+        self.ordered_entities = []
+
+
     @classmethod
-    def parse(cls, term_obj):
-        op = term_obj['op']
+    def parse(cls, ldict):
+        op = ldict['op']
         assert op == cls.op
-        args = term_obj['args']
+        args = ldict['args']
         return cls(**args)
 
     def to_dict(self):
-        obj = {
-            'op': self.op,
-            'args': {
-                'name': self.name,
-                'state': self.state
-            }
-        }
+        obj = {'op': self.op, 'args': {'name': self.name, 'state': self.state}}
         return obj
 
     def get_terms(self) -> Dict[str, 'Term']:
         return {self.name, self}
+
+    def ground(self, nbp):
+        # TODO: get the index and then consider the neural link predictor
+        self._grounded = True
 
 
 class Literal(Term):
@@ -115,10 +120,10 @@ class Literal(Term):
         self.eid = entity_id
 
     @classmethod
-    def parse(cls, term_obj):
-        op = term_obj['op']
+    def parse(cls, ldict):
+        op = ldict['op']
         assert op == 'ltr'
-        args = term_obj['args']
+        args = ldict['args']
         return cls(**args)
 
     def to_dict(self):
@@ -139,29 +144,25 @@ class Formula(Lobject):
     def __init__(self) -> None:
         super().__init__()
 
-    def parse_formula():
-        """Not the same as parse, this is for real logical formula, incase we need it"""
-        pass
-
-    @classmethod
-    def parse():
-        #TODO
-        pass
-
 
 class BinaryPredicate(Formula):
     op = 'pred'
 
-    def __init__(self, relation_id: int, term1: Term, term2: Term) -> None:
+    def __init__(self,
+                 relation_name: str,
+                 relation_id: int,
+                 term1: Term,
+                 term2: Term) -> None:
+        self.relation_name = relation_name
         self.relation_id = relation_id
         self.term1 = term1
         self.term2 = term2
 
     @classmethod
-    def parse(cls, atom_obj):
-        op = atom_obj['op']
+    def parse(cls, ldict):
+        op = ldict['op']
         assert op == cls.op
-        args = atom_obj['args']
+        args = ldict['args']
 
         pid = args['pid']
         term1 = Term.parse(args['term1'])
@@ -192,11 +193,11 @@ class Negation(Formula):
         self.formula = formula
 
     @classmethod
-    def parse(cls, atom_obj):
-        op = atom_obj['op']
+    def parse(cls, ldict):
+        op = ldict['op']
         assert op == cls.op
-        args = atom_obj['args']
-        formula = args['formula']
+        args = ldict['args']
+        formula = parse_dict_formula(args['formula'])
         return cls(formula)
 
     def to_dict(self):
@@ -218,12 +219,12 @@ class Conjunction(Formula):
         self.formulas = formulas
 
     @classmethod
-    def parse(cls, conj_obj):
-        op = conj_obj['op']
+    def parse(cls, ldict):
+        op = ldict['op']
         assert op == cls.op
-        args = conj_obj['args']
+        args = ldict['args']
         formula_dict_list = args['formulas']
-        formulas = [Formula.parse(formula_dict) for formula_dict in formula_dict_list]
+        formulas = [parse_dict_formula(formula_dict) for formula_dict in formula_dict_list]
         return cls(formulas)
 
     def to_dict(self):
@@ -246,17 +247,17 @@ class Disjunction(Formula):
         self.formulas = formulas
 
     @classmethod
-    def parse(cls, disj_obj):
-        op = disj_obj['op']
+    def parse(cls, ldict):
+        op = ldict['op']
         assert op == cls.op
-        args = disj_obj['args']
+        args = ldict['args']
         formula_dict_list = args['formulas']
-        formulas = [Formula.parse(formula_dict) for formula_dict in formula_dict_list]
+        formulas = [parse_dict_formula(formula_dict) for formula_dict in formula_dict_list]
         return cls(formulas)
 
     def to_dict(self):
         obj = {
-            'op': 'disj',
+            'op': self.op,
             'args': {'formulas': [f.to_dict() for f in self.formulas]}
         }
         return obj
@@ -322,3 +323,61 @@ class Disjunction(Formula):
 #             'DNF': self.dnf.to_dict()
 #         }
 #         return json.dumps(obj)
+
+op_dict = {
+    BinaryPredicate.op: BinaryPredicate,
+    Negation.op: Negation,
+    Conjunction.op: Conjunction,
+    Disjunction.op: Disjunction
+}
+
+def parse_dict_formula(formula_dict: Dict):
+    op = formula_dict['op']
+    return op_dict[op].parse(formula_dict)
+
+class FirstOrderFormula:
+    """
+    The first order formula
+    it also includes information about the quantifiers
+    """
+    def __init__(self, formula: Formula, observed_answer=None, hard_answer=None) -> None:
+        self.formula = formula
+        self.observed_answer = observed_answer
+        self.hard_answer = hard_answer
+        self.term_dict = None
+        self.rel_dict = None
+
+    def update_term_dict(self):
+        terms = self.formula.get_terms()
+        self.term_dict = {Variable.op: { Variable.UNIVERSAL: [],
+                                         Variable.EXISTENTIAL: [],
+                                         Variable.FREE: []},
+                          Literal.op: []}
+        for name, term in terms.items():
+            if term.op == Variable.op:
+                self.term_dict[term.op][term.state].append(term)
+            if term.op == Literal.op:
+                self.term_dict[term.op].append(term)
+
+    # TODO implement the initialization
+    def initialize_variable_embeddings(self):
+        """
+        Input args:
+        Return args:
+            evars: list of existential variables
+            uvars: list of universal variables
+            fvars: list of free variables
+        """
+        pass
+
+    # TODO overall probability
+    def evaluate_truth_values(self, tnorm_type):
+        """
+        Input args:
+            tnorm_type: the type of tnorms
+        Return args:
+        """
+        pass
+
+    def signature_of_formula():
+        pass

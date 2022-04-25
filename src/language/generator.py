@@ -4,7 +4,7 @@ from random import random, sample
 import networkx as nx
 from networkx.algorithms.components import connected_components
 
-
+from .fol import *
 
 def sample_efo_dnf_query(p, q, r,
                          per,
