@@ -7,27 +7,34 @@ class Lobject {
     + {abstract} Dict[Str, Term] get_terms(self)
 }
 
-note right of Lobject: connects Lobject and Ldict,\n which represents all first order objects
+note right
+    connects Lobject and Ldict,
+    which represents all first order objects.
+    Ldict contains all the information about a sample,
+    even though the samples information can be empty
+end note
 
+' TODO
 class Term {
     + {static} int EXISTENTIAL
     + {static} int FREE
     + {static} int UNIVERSAL
     + {static} int LITERAL
+    + {static} int op
 
     + int state
     + str name
     + int batch_size
-    + list batch_entity_id
+    + list entity_id_list
     + Tensor batch_embedding
-    + Tensor batch_propagation_proposition_list
+    + List[Tensor] batch_proposal_list
 
     + parse(cls, Ldict Ldict)
     + Ldict to_ldict(self)
     + Dict[Str, Term] get_terms(self)
 
-    + void append_propositions(self, Tensor batch_proposition)
-    + void update_embedding_by_propositions(self)
+    + void append_proposals(self, Tensor batch_proposition)
+    + void update_embedding_by_proposals(self)
     + void update_entity_id_by_embedding(self, NeuralBinaryPredicate nbp)
     + void update_embedding_by_entity_id(self, NeuralBinaryPredicate nbp)
 }
@@ -45,8 +52,8 @@ Formula <|-- BinaryPredicate
 
 class BinaryPredicate {
     + {static} op
-    + relation_name
-    + relation_id
+    + name
+    + relation_id_list
     + term1
     + term2
 

@@ -40,18 +40,50 @@ from abc import abstractmethod
 import json
 from typing import Dict, List
 
+import torch
+
+from ..structure import NeuralBinaryPredicate
+
+"""
+Ldict is a nested dict that stores the GROUNDED information
+"""
+def check_ldict(ldict):
+    assert 'op' in ldict
+    op = ldict['op']
+    assert 'args' in ldict
+    args = ldict['args']
+
+    if op == Term.op:
+        assert 'name' in args
+        assert 'state' in args
+        assert 'entity_id_list' in args
+    if op == BinaryPredicate.op:
+        assert 'name' in args
+        assert 'relation_id_list' in args
+        check_ldict(args['term1'])
+        check_ldict(args['term2'])
+    if op == Negation.op:
+        assert 'formula' in args
+        check_ldict(args['formula'])
+    if op == Conjunction.op or op == Disjunction.op:
+        assert 'formulas' in args
+        for f in args['formulas']:
+            check_ldict(f)
+
+
+def get_ldict(op, **args):
+    ans = {'op': op, 'args': args}
+    check_ldict(ans)
+    return ans
+
+
 class Lobject:
     @abstractmethod
-    @classmethod
-    def parse(cls, ldict):
-        pass
-
-    @abstractmethod
-    def to_dict(self) -> Dict:
+    def to_ldict(self) -> Dict:
         pass
 
     def __repr__(self):
-        return json.dumps(self.to_dict())
+        return json.dumps(self.to_ldict(), indent=1)
 
     @abstractmethod
     def get_terms(self) -> Dict[str, 'Term']:
@@ -59,102 +91,93 @@ class Lobject:
 
 
 class Term(Lobject):
-    @classmethod
-    def parse(cls, term_dict):
-        op = term_dict['op']
-        assert op in ['var', 'ltr']
-        if op == Variable.op:
-            return Variable.parse(term_dict)
-        if op == Literal.op:
-            return Literal.parse(term_dict)
+    EXISTENTIAL = 1
+    FREE = 2
+    UNIVERSAL = 3
+    LITERAL = 4
 
+    op = "term"
 
-class Variable(Term):
-    EXISTENTIAL = 'E'
-    FREE = "F"
-    UNIVERSAL = "U"
-    op = "var"
-
-    def __init__(self, name, state) -> None:
-        """
-        name: the name (identifier) of this variable
-        state: the state of this variable
-        """
-        self.name = name
-        assert state in [self.EXISTENTIAL, self.FREE, self.UNIVERSAL]
+    def __init__(self, state, name, batch_size=-1, entity_id_list=[]):
         self.state = state
+        self.name = name
+        self.batch_size = batch_size
+        self.entity_id_list = entity_id_list
 
-        self._initialized = False
-        self._grounded = False
-        self._embedding = None
-        self.ordered_entities = []
-
+        self.batch_embedding = None
+        self.batch_proposal_list = []
 
     @classmethod
     def parse(cls, ldict):
         op = ldict['op']
         assert op == cls.op
         args = ldict['args']
-        return cls(**args)
+        name = args['name']
+        state = args['state']
+        entity_id_list = args['entity_id_list']
+        return cls(name=name, state=state, entity_id_list=entity_id_list)
 
-    def to_dict(self):
-        obj = {'op': self.op, 'args': {'name': self.name, 'state': self.state}}
-        return obj
-
-    def get_terms(self) -> Dict[str, 'Term']:
-        return {self.name, self}
-
-    def ground(self, nbp):
-        # TODO: get the index and then consider the neural link predictor
-        self._grounded = True
-
-
-class Literal(Term):
-    op = 'lit'
-
-    def __init__(self, name: str, entity_id: int) -> None:
-        """
-        The id of the entities, -1 for placeholder
-        """
-        self.name = name
-        self.eid = entity_id
-
-    @classmethod
-    def parse(cls, ldict):
-        op = ldict['op']
-        assert op == 'ltr'
-        args = ldict['args']
-        return cls(**args)
-
-    def to_dict(self):
-        obj = {
-            'op': self.op,
-            'args': {
-                'name': self.name,
-                'eid': self.eid
-            }
-        }
-        return obj
+    def to_ldict(self):
+        ldict = {'op': self.op,
+                 'args': {
+                   'state': self.state,
+                   'name': self.name,
+                   'entity_id_list': self.entity_id_list
+                   }
+              }
+        return ldict
 
     def get_terms(self) -> Dict[str, 'Term']:
         return {self.name, self}
+
+    def append_proposals(self, proposal):
+        batch_size, embedding_dim = proposal.shape
+        self.batch_proposal_list.append(
+            proposal.view(batch_size, embedding_dim, 1))
+
+    def update_embeddingby_proposals(self):
+        batch_proposal_tensor = torch.cat(self.batch_proposal_list, dim=-1)
+        self.batch_embedding = torch.mean(batch_proposal_tensor, dim=-1)
+        self.batch_proposal_list = []
+
+    # TODO
+    def update_entity_id_by_embedding(self, nbp: NeuralBinaryPredicate):
+        pass
+
+    # TODO
+    def update_embedding_by_entity_id(self, nbp: NeuralBinaryPredicate):
+        pass
 
 
 class Formula(Lobject):
     def __init__(self) -> None:
         super().__init__()
 
+    @staticmethod
+    def parse(ldict):
+        op = ldict['op']
+        if op == BinaryPredicate.op:
+            return BinaryPredicate.parse(ldict)
+        elif op == Negation.op:
+            return Negation.parse(ldict)
+        elif op == Conjunction.op:
+            return Conjunction.parse(ldict)
+        elif op == Disjunction.op:
+            return Disjunction.parse(ldict)
+        else:
+            raise NotImplementedError("Unsupported Operator")
+
 
 class BinaryPredicate(Formula):
     op = 'pred'
 
     def __init__(self,
-                 relation_name: str,
-                 relation_id: int,
+                 name: str,
+                 relation_id_list: int,
                  term1: Term,
                  term2: Term) -> None:
-        self.relation_name = relation_name
-        self.relation_id = relation_id
+        self.name = name
+        self.relation_id_list = relation_id_list
         self.term1 = term1
         self.term2 = term2
 
@@ -164,18 +187,20 @@ class BinaryPredicate(Formula):
         assert op == cls.op
         args = ldict['args']
 
-        pid = args['pid']
+        name = args['name']
+        relation_id_list = args['relation_id_list']
         term1 = Term.parse(args['term1'])
         term2 = Term.parse(args['term2'])
-        return cls(relation_id=pid, term1=term1, term2=term2)
+        return cls(name=name, relation_id_list=relation_id_list, term1=term1, term2=term2)
 
-    def to_dict(self):
+    def to_ldict(self):
         obj = {
             'op': self.op,
             'args': {
-                'pid': self.relation_id,
-                'term1': self.term1.to_dict(),
-                'term2': self.term2.to_dict()
+                'name': self.name,
+                'relation_id_list': self.relation_id_list,
+                'term1': self.term1.to_ldict(),
+                'term2': self.term2.to_ldict()
             }
         }
         return obj
@@ -197,19 +222,19 @@ class Negation(Formula):
         op = ldict['op']
         assert op == cls.op
         args = ldict['args']
-        formula = parse_dict_formula(args['formula'])
+        formula = Formula.parse(args['formula'])
         return cls(formula)
 
-    def to_dict(self):
+    def to_ldict(self):
         obj = {
             'op': self.op,
-            'args': {'pred': self.pred.to_dict()}
+            'args': {'pred': self.formula.to_ldict()}
         }
         return obj
 
     def get_terms(self) -> Dict[str, 'Term']:
         ans = {}
-        ans.update(self.formula.get_terms)
+        ans.update(self.formula.get_terms())
         return ans
 
 
@@ -224,13 +249,13 @@ class Conjunction(Formula):
         assert op == cls.op
         args = ldict['args']
         formula_dict_list = args['formulas']
-        formulas = [parse_dict_formula(formula_dict) for formula_dict in formula_dict_list]
+        formulas = [Formula.parse(formula_dict) for formula_dict in formula_dict_list]
         return cls(formulas)
 
-    def to_dict(self):
+    def to_ldict(self):
         obj = {
             'op': self.op,
-            'args': {'formulas': [f.to_dict() for f in self.formulas]}
+            'args': {'formulas': [f.to_ldict() for f in self.formulas]}
         }
         return obj
 
@@ -252,13 +277,13 @@ class Disjunction(Formula):
         assert op == cls.op
         args = ldict['args']
         formula_dict_list = args['formulas']
-        formulas = [parse_dict_formula(formula_dict) for formula_dict in formula_dict_list]
+        formulas = [Formula.parse(formula_dict) for formula_dict in formula_dict_list]
         return cls(formulas)
 
-    def to_dict(self):
+    def to_ldict(self):
         obj = {
             'op': self.op,
-            'args': {'formulas': [f.to_dict() for f in self.formulas]}
+            'args': {'formulas': [f.to_ldict() for f in self.formulas]}
         }
         return obj
 
@@ -268,72 +293,6 @@ class Disjunction(Formula):
             ans.update(f.get_terms)
         return ans
 
-# class DNF(Form):
-#     def __init__(self, conjunctions: List[Conjunction]) -> None:
-#         self.conjunctions = conjunctions
-
-#     @classmethod
-#     def parse(cls, dnf_obj):
-#         op = dnf_obj['op']
-#         assert op == 'dnf'
-#         args = dnf_obj['args']
-#         conj_obj_list = args['conjs']
-#         conjunctions = [Conjunction.parse(conj_obj)
-#                         for conj_obj in conj_obj_list]
-#         return cls(conjunctions)
-
-#     def to_dict(self):
-#         obj = {
-#             'op': 'dnf',
-#             'args': {'conjs': [c.to_dict() for c in self.conjunctions]}
-#         }
-
-
-# class DNFFormula:
-#     """
-#     A base class for the string input of the entire formula structure
-#     """
-
-#     def __init__(self,
-#                  exist_vars: Dict[str, Variable],
-#                  free_vars: Dict[str, Variable],
-#                  literals: Dict[str, Variable],
-#                  dnf: DNF):
-#         self.exist_vars = exist_vars
-#         self.free_vars = free_vars
-#         self.literals = literals
-#         self.dnf = dnf
-
-#     @classmethod
-#     def loads(cls, s: str):
-#         obj = json.loads(s)
-
-#         evars = obj['EVAR'].split(',')
-#         fvars = obj['FVAR'].split(',')
-#         ltrs = obj['LTR'].split(',')
-#         dnf_obj = obj['DNF']
-#         dnf = DNF.parse(dnf_obj)
-#         return cls(evars, fvars, ltrs, dnf)
-
-#     def dumps(self):
-#         obj = {
-#             'EVAR': ','.join([str(k) for k in self.exist_vars]),
-#             'FVAR': ','.join([str(k) for k in self.free_vars]),
-#             'LTR': ','.join([str(k) for k in self.literals]),
-#             'DNF': self.dnf.to_dict()
-#         }
-#         return json.dumps(obj)
-
-op_dict = {
-    BinaryPredicate.op: BinaryPredicate,
-    Negation.op: Negation,
-    Conjunction.op: Conjunction,
-    Disjunction.op: Disjunction
-}
-
-def parse_dict_formula(formula_dict: Dict):
-    op = formula_dict['op']
-    return op_dict[op].parse(formula_dict)
 
 class FirstOrderFormula:
     """
