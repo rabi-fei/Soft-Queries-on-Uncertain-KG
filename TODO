@@ -1,37 +1,9 @@
-Implementation:
-    Features:
-        ☐ device maintainer
-    Neural Binary Predicate:
-        ☐ TurkER
-        ☐ KBGAT
-    Logic Query Language:
-        ☐ Base classes
-        ☐ Inference algorithm
-    Trainer:
-        Negative Sampling Strategy:
-            ✔ head/tail replacement @done(22-01-11 12:22)
-            ☐ rel replacement
-            ☐ entity scope sampling
-        Learner:
-            Sample Type:
-                ✔ triple @done(22-01-09 16:59)
-                ☐ subgraph triples induced by single triple and number of hops
-                ☐ subgraph triples induced by EFG generated entity set
-    Evaluator:
-        ☐ `QueryAnswering` Class
-    Framework:
-        ✔ cmd entry @started(22-01-11 11:46) @done(22-01-11 12:22) @lasted(36m8s)
-    Graph Generator:
-        ☐ cross validation graph and configuration
-Performance Optimization:
-    ✔ cuda memory usage minimization @done(22-01-14 15:12)
-Experiment:
-    Task1: Correct Implementation:
-        We aim to recover the results from the RotatE paper on both FB15k-237 and WR18RR
-        TransE:
-            we choose this because it is very classic
-            ✔ FB15k @done(22-01-17 13:02)
-
-        TurkER:
-            we choose this because it is very compatitive
-            ☐ 
+Checkpoints:
+    Data Conversion:
+        ☐ load `ldict`
+            ☐ test file
+            ☐ index data structure
+        ☐ converting the `beta dataset` into the formula of `ldict`
+    CQD reimplementation
+        ☐ DistMult as NBP
+        ☐

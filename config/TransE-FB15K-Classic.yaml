@@ -1,7 +1,6 @@
 cuda: 0
 
 knowledge_graph:
-  # TODO: generated graph in the uniform format
   filelist:
     - datasets-knowledge-embedding/FB15K/edges_as_id_train.tsv
 
@@ -38,7 +37,6 @@ learner:
 dev_evaluation:
   eval_every_step: -1
   eval_every_epoch: 5
-  # TODO: implement the task interface
   task_dict:
     dev:
       name: LinkPrediction

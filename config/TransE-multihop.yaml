@@ -1,7 +1,6 @@
 cuda: 1
 
-knowledge_graph: 
-  # TODO: generated graph in the uniform format
+knowledge_graph:
   filelist:
     - data/multihop/edges_as_id_train.tsv
 
@@ -26,12 +25,12 @@ optimizer:
   params:
     lr: 0.01
 
-learner: 
+learner:
   name: I
   params:
     efg_round: 5
     efg_mode: random  # random or greedy
-    efg_rand_thr: 0.5 # only worked when random 
+    efg_rand_thr: 0.5 # only worked when random
                           # 0 for totally finite, 1 for totally neural
     neural_act_search_size: 10
 
@@ -39,16 +38,16 @@ evaluation:
   eval_every_step: -1
   eval_every_epoch: 5
   # implement the task interface
-  task_dict: 
-    valid: 
+  task_dict:
+    valid:
       name: LinkPrediction
-      params: 
-        filelist: 
+      params:
+        filelist:
           - data/multihop/edges_as_id_valid.tsv
     test:
       name: LinkPrediction
-      params: 
-        filelist: 
+      params:
+        filelist:
           - data/multihop/edges_as_id_test.tsv
 
 logdir: log/multihop/transe

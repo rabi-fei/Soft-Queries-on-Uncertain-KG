@@ -1,3 +1,9 @@
+"""
+This file models the basic data types including
+- KG index
+- Knowledge graph
+- Neural binary predictor
+"""
 import os
 import time
 from abc import abstractmethod
