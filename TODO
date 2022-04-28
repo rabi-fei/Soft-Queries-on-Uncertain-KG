@@ -2,7 +2,8 @@ Checkpoints:
     Data Conversion:
         ☐ load `ldict`
             ☐ test file
-            ☐ index data structure
+        ☐ Convert beta datasets into `ldict`
+        ☐ index data structure
         ☐ converting the `beta dataset` into the formula of `ldict`
     CQD reimplementation
         ☐ DistMult as NBP

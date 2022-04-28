@@ -42,7 +42,7 @@ from typing import Dict, List
 
 import torch
 
-from ..structure import NeuralBinaryPredicate
+from src.structure import NeuralBinaryPredicate
 
 """
 Ldict is a nested dict that stores the GROUNDED information
@@ -83,6 +83,7 @@ class Lobject:
         pass
 
     def __repr__(self):
+        check_ldict(self.to_ldict())
         return json.dumps(self.to_ldict(), indent=1)
 
     @abstractmethod
@@ -228,7 +229,7 @@ class Negation(Formula):
     def to_ldict(self):
         obj = {
             'op': self.op,
-            'args': {'pred': self.formula.to_ldict()}
+            'args': {'formula': self.formula.to_ldict()}
         }
         return obj
 
@@ -306,17 +307,9 @@ class FirstOrderFormula:
         self.term_dict = None
         self.rel_dict = None
 
+    # TODO
     def update_term_dict(self):
-        terms = self.formula.get_terms()
-        self.term_dict = {Variable.op: { Variable.UNIVERSAL: [],
-                                         Variable.EXISTENTIAL: [],
-                                         Variable.FREE: []},
-                          Literal.op: []}
-        for name, term in terms.items():
-            if term.op == Variable.op:
-                self.term_dict[term.op][term.state].append(term)
-            if term.op == Literal.op:
-                self.term_dict[term.op].append(term)
+        pass
 
     # TODO implement the initialization
     def initialize_variable_embeddings(self):
