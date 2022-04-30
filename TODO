@@ -1,10 +1,11 @@
 Checkpoints:
     Data Conversion:
-        ☐ load `ldict`
-            ☐ test file
-        ☐ Convert beta datasets into `ldict`
+        ✔ load `ldict` @done(22-04-29 16:38)
+            ✔ test file @done(22-04-29 16:38)
+        ✔ Convert beta formart file into `ldict` @done(22-04-29 16:38)
         ☐ index data structure
-        ☐ converting the `beta dataset` into the formula of `ldict`
+        ☐ converting the entire beta dataset folder into the basic dataset folder
+        ☐ run through the data iterator
     CQD reimplementation
         ☐ DistMult as NBP
         ☐

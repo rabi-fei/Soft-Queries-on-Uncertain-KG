@@ -12,7 +12,6 @@ Term = e[number]
      = f[number]
 """
 
-from re import A
 from .fol import Conjunction, Disjunction, Lobject, Negation, BinaryPredicate, Term
 
 def remove_outmost_backets(lstr: str):
@@ -49,8 +48,8 @@ def map_term_name_to_type(name: str):
         return Term.FREE, True
     elif c == 'u':
         return Term.UNIVERSAL, True
-    elif c == 'l':
-        return Term.LITERAL, True
+    elif c == 's':
+        return Term.SYMBOL, True
     else:
         assert name.isnumeric()
         term_id = int(name)
@@ -61,15 +60,14 @@ def parse_term(term_name):
     if is_abstract:
         term = Term(state=term_state, name=term_name)
     else:
-        term = Term(state=Term.LITERAL,
-                    name="literal_by_id",
-                    entity_id_list=[term_state])
+        term = Term(state=Term.SYMBOL, name="symbol_by_id")
+        term.entity_id_list.append(term_state)
     return term
 
 
 def parse_lstr(lstr: str) -> Lobject:
     """
-    parse the string a.k.a, lformula to lobject
+    parse the string a.k.a, lstr to lobject
     """
     _lstr = remove_brackets(lstr)
 
@@ -107,12 +105,11 @@ def parse_lstr(lstr: str) -> Lobject:
         if predicate_name.isnumeric():
             predicate_id = int(predicate_name)
             predicate = BinaryPredicate(name="predicate_by_id",
-                                        relation_id_list=[predicate_id],
                                         term1=term1,
                                         term2=term2)
+            predicate.relation_id_list.append(predicate_id)
         else:
             predicate = BinaryPredicate(name=predicate_name,
-                                        relation_id_list=[],
                                         term1=term1,
                                         term2=term2)
 

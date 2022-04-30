@@ -1,9 +1,7 @@
-from abc import abstractmethod
-
 import torch
 from torch import nn
 
-from .models import NeuralBinaryPredicate
+from .neural_binary_predicate import NeuralBinaryPredicate
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):

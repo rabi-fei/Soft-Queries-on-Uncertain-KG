@@ -1,7 +1,6 @@
 import logging
 import os
 
-from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
 
 from src.utils.config import ExperimentConfigCollection
 from src.trainer import Trainer
@@ -18,7 +17,7 @@ if __name__ == "__main__":
     logging.basicConfig(filename=log_file,
                         level=logging.INFO)
 
-    # create trainer 
+    # create trainer
     trainer = Trainer.create(ecc)
 
     trainer.run()

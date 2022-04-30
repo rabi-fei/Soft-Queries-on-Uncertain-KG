@@ -74,3 +74,7 @@ class RaggedBatch:
         # if the self.flattened is of shape [L, *]
         # then dense_matrix is of shape [batch_size, max_of_self.sizes, *]
         return dense_matrix
+
+def collate_beta2first_order_formulas():
+    # TODO
+    pass

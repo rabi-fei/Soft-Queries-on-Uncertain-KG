@@ -4,7 +4,7 @@ This file models the basic data types including
 - Knowledge graph
 - Neural binary predictor
 """
-import os
+import json
 import time
 from abc import abstractmethod
 from collections import defaultdict
@@ -13,65 +13,35 @@ from typing import List, Tuple, Union
 import torch
 from torch.utils.data import DataLoader
 
+from .knowledge_graph_index import KGIndex
+
 from ..utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
-from ..utils.config import KnowledgeGraphConfig, NeuralBinaryPredicateConfig
+from ..utils.config import KnowledgeGraphConfig
 
 Triple = Tuple[int, int, int]
-
-
-def register(index, object):
-    if object in index:
-        return index[object]
-    else:
-        idx = len(index)
-        index[object] = idx
-        return idx
-
 
 class KnowledgeGraph:
     """
     Fully tensorized
     """
 
-    def __init__(self, triple_files, num_entities=None, num_relations=None, device='cpu', tensorize=False, **kwargs):
+    def __init__(self, triples: List[Triple], kgindex: KGIndex, device='cpu', tensorize=False, **kwargs):
+        self.triples = triples
+        self.kgindex = kgindex
+        self.num_entities = kgindex.num_entities
+        self.num_relations = kgindex.num_relations
         self.device = device
-        self.triples = []
-
-        if num_entities is None:
-            self.entity_index = dict()
-        else:
-            self.num_entities = num_entities
-
-        if num_relations is None:
-            self.relation_index = dict()
-        else:
-            self.num_relations = num_relations
 
         self.hr2t = defaultdict(list)
         self.tr2h = defaultdict(list)
         self.r2ht = defaultdict(list)
         self.ht2r = defaultdict(list)
 
-        for h, r, t in iter_triple_from_tsv(triple_files):
-            if num_entities is None:
-                h = register(h, self.entity_index)
-                t = register(t, self.entity_index)
-            if num_relations is None:
-                r = register(r, self.relation_index)
-
-            self.triples.append((h, r, t))
+        for h, r, t in self.triples:
             self.hr2t[(h, r)].append(t)
             self.tr2h[(t, r)].append(h)
             self.r2ht[r].append((h, t))
             self.ht2r[(h, t)].append(r)
-
-        if num_entities is None:
-            self.num_entities = len(self.entity_index)
-
-        if num_relations is None:
-            self.num_relations = len(self.relation_index)
-
-        self.entities = list(range(self.num_entities))
 
         if tensorize:
             self._build_triple_tensor()
@@ -121,21 +91,27 @@ class KnowledgeGraph:
         print("use time", time.time() - t0)
 
     @classmethod
-    def create(cls, triple_files, **kwargs):
+    def create(cls, triple_files, kgindex: KGIndex, **kwargs):
         """
         Create the class
         TO be modified when certain parameters controls the triple_file
-        triple files can be a list, but they should be in the same folder
+        triple files can be a list
         """
-        assert 'device' in kwargs
-        base_dir = os.path.dirname(triple_files[0])
-        if 'num_entities' not in kwargs:
-            with open(os.path.join(base_dir, 'map_entity_id_to_text.tsv')) as f:
-                kwargs['num_entities'] = len(f.readlines())
-        if 'num_relations' not in kwargs:
-            with open(os.path.join(base_dir, 'map_relation_id_to_text.tsv')) as f:
-                kwargs['num_relations'] = len(f.readlines())
-        return cls(triple_files, **kwargs)
+        triples = []
+        for h, r, t in iter_triple_from_tsv(triple_files):
+            assert h in kgindex.inverse_entity_id_to_name
+            assert r in kgindex.inverse_relation_id_to_name
+            assert t in kgindex.inverse_entity_id_to_name
+            triples.append((h, r, t))
+
+        return cls(triples,
+                   kgindex=kgindex,
+                   **kwargs)
+
+    def dump(self, filename):
+        with open(filename, 'wt') as f:
+            for h, r, t in self.triples:
+                f.write(f"{h}\t{r}\t{t}\n")
 
     @classmethod
     def from_config(cls, config: KnowledgeGraphConfig):
@@ -312,47 +288,3 @@ class KnowledgeGraph:
 
     def get_non_neightbor_triples_by_tail(self, entities, k) -> RaggedBatch:
         return self._get_non_neightbor_triples(entities, k=k, reverse=True)
-
-
-class NeuralBinaryPredicate:
-    def __init__(self):
-        pass
-
-    @abstractmethod
-    def embedding_score(self, head_emb, rel_emb, tail_emb):
-        """
-        This method computes the score for the triple given the head, tail and
-        relation embedding. The higher score means more likely to be a predicate.
-        Inputs:
-            Three embeddings are in the shape [..., embed_dim]
-        Returns:
-            The tensor of scores in the shape [...]
-        """
-        pass
-
-    def score2prob(self, score, margin):
-        pass
-
-    def batch_predicate_score(self,
-                              triple_tensor: torch.Tensor) -> torch.Tensor:
-        """
-        This method computes the scores for the triple. triple tensors the
-        shape of [..., 3]
-        It returns the same size of predicate scores.
-        """
-        if isinstance(triple_tensor, list):
-            assert len(triple_tensor) == 3
-            head_id_ten, rel_id_ten, tail_id_ten = triple_tensor
-        else:
-            head_id_ten, rel_id_ten, tail_id_ten = torch.split(
-                triple_tensor, 1, dim=-1)
-        head_emb = self.entity_embedding(head_id_ten)
-        rel_emb = self.relation_embedding(rel_id_ten)
-        tail_emb = self.entity_embedding(tail_id_ten)
-        return self.embedding_score(head_emb, rel_emb, tail_emb)
-
-    @classmethod
-    def create(cls, device, **kwargs):
-        obj = cls(device=device, **kwargs)
-        obj = obj.to(device)
-        return obj

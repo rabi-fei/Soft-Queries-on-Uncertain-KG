@@ -3,8 +3,9 @@ package fol {
 class Lobject {
     + {abstract} parse(cls, Ldict)
     + {abstract} Ldict to_ldict(self)
-    + __repr__()
+    + {abstract} lstr to_lstr(self)
     + {abstract} Dict[Str, Term] get_terms(self)
+    + __repr__()
 }
 
 note right

@@ -22,10 +22,10 @@ evar1 = fol.get_ldict(fol.Term.op,
 uvar1 = fol.get_ldict(fol.Term.op,
                       name='uvar1', state=fol.Term.UNIVERSAL, entity_id_list=[])
 lit1  = fol.get_ldict(fol.Term.op,
-                      name='lit1', state=fol.Term.LITERAL, entity_id_list=[])
+                      name='lit1', state=fol.Term.SYMBOL, entity_id_list=[])
 
 lit2 = fol.get_ldict(fol.Term.op,
-                     name='lit2', state=fol.Term.LITERAL, entity_id_list=[])
+                     name='lit2', state=fol.Term.SYMBOL, entity_id_list=[])
 
 atom1 = fol.get_ldict(fol.BinaryPredicate.op,
                       name='f1f2',
@@ -73,4 +73,6 @@ ldict = fol.get_ldict(fol.Conjunction.op, formulas=[clause1, clause2])
 
 if __name__ == "__main__":
     print(ldict)
-    print(fol.Formula.parse(ldict))
+    lobject = fol.Formula.parse(ldict)
+    print(lobject)
+    print(lobject.to_lstr())
