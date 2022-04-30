@@ -65,7 +65,7 @@ def parse_term(term_name):
     return term
 
 
-def parse_lstr(lstr: str) -> Lobject:
+def parse_lstr_to_lformula(lstr: str) -> Lobject:
     """
     parse the string a.k.a, lstr to lobject
     """
@@ -74,7 +74,7 @@ def parse_lstr(lstr: str) -> Lobject:
     # identify top-level operator
     if lstr[0] == '!':
         sub_lstr = _lstr[1:]
-        sub_formula = parse_lstr(sub_lstr)
+        sub_formula = parse_lstr_to_lformula(sub_lstr)
         return Negation(formula=sub_formula)
 
     binary_operator_index = -1
@@ -86,9 +86,9 @@ def parse_lstr(lstr: str) -> Lobject:
 
     if binary_operator_index >= 0:
         left_lstr = _lstr[:binary_operator_index]
-        left_formula = parse_lstr(left_lstr)
+        left_formula = parse_lstr_to_lformula(left_lstr)
         right_lstr = _lstr[binary_operator_index+1:]
-        right_formula = parse_lstr(right_lstr)
+        right_formula = parse_lstr_to_lformula(right_lstr)
         if binary_operator == '&':
             return Conjunction(formulas=[left_formula, right_formula])
         if binary_operator == '|':

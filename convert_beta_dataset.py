@@ -1,15 +1,15 @@
 import os
 import os.path as osp
-from pprint import pprint
+import json
 import pickle
 from typing import Dict
 
-from src.language import fol
-from src.language import parse_lstr
-from src.structure.knowledge_graph_index import KGIndex
-from src.structure.knowledge_graph import KnowledgeGraph
+from tqdm import tqdm
 
-beta_types_list = [
+from src.language import fol, parse_lstr_to_lformula
+from src.structure import KGIndex, KnowledgeGraph
+
+beta_types_key_list = [
     ('e', ('r',)),
     ('e', ('r', 'r')),
     ('e', ('r', 'r', 'r')),
@@ -99,16 +99,25 @@ def convert_beta_folder(beta_folder, output_folder):
 
         evaluation queries
         {test/valid}-queries.pkl
-        {test/valid}-easy_answers.pkl
-        {test/valid}-hard_answers.pkl
+        {test/valid}-easy-answers.pkl
+        {test/valid}-hard-answers.pkl
 
     the structure of output folder
-        kgindex.json, aggregrates the indices files into one
-
+        kgindex.json: aggregrates the indices files into one
+                      used by the KGIndex.load()
+        {train/test/valid}.tsv: triple information in the tsv
+                                used by KnowledgeGraph.create()
+        {train/test/valid}_qaa.json: dictionary
+            key: lstr of each type
+            value: List of triples (mapping dict, easy_answer, hard_answer)
+            for train, the hard answer is empty list
 
     """
 
     # build knowledge graph indices
+
+    print("converting KGIndex")
+
     os.makedirs(output_folder, exist_ok=True)
 
     kgidx = KGIndex()
@@ -129,51 +138,136 @@ def convert_beta_folder(beta_folder, output_folder):
         rids.append(rid)
     assert max(rids) - min(rids) + 1 == len(kgidx.map_relation_name_to_id)
 
+    print("dump converted KGIndex")
     kgidx.dump(osp.join(output_folder, 'kgindex.json'))
     kgidx = KGIndex.load(osp.join(output_folder, 'kgindex.json'))
 
     # train knowledge graphs
+    print("converting train KnowledgeGraph")
     train_kg = KnowledgeGraph.create(
         triple_files=osp.join(beta_folder, 'train.txt'),
         kgindex=kgidx)
-
+    print("dump converted train KnowledgeGraph")
     train_kg.dump(osp.join(output_folder, 'train_kg.tsv'))
 
+    print("converting valid KnowledgeGraph")
     valid_kg = KnowledgeGraph.create(
         triple_files=[osp.join(beta_folder, 'train.txt'),
                       osp.join(beta_folder, 'valid.txt')],
         kgindex=kgidx)
-
+    print("dump converted valid KnowledgeGraph")
     valid_kg.dump(osp.join(output_folder, 'valid_kg.tsv'))
 
+    print("converting test KnowledgeGraph")
     test_kg = KnowledgeGraph.create(
         triple_files=[osp.join(beta_folder, 'train.txt'),
                       osp.join(beta_folder, 'valid.txt'),
                       osp.join(beta_folder, 'test.txt')],
         kgindex=kgidx)
-
+    print("dump converted test KnowledgeGraph")
     test_kg.dump(osp.join(output_folder, 'test_kg.tsv'))
 
     # knowledge graph queries
 
     # train queries
     with open(osp.join(beta_folder, "train-queries.pkl"), 'rb') as f:
-        train_query = pickle.load(f)
+        train_queries = pickle.load(f)
 
-    for beta_type, labeled_beta_type, lstr in zip(
-        beta_types_list, labeled_beta_types_list, beta_lstr_list):
+    with open(osp.join(beta_folder, "train-answers.pkl"), 'rb') as f:
+        train_answers = pickle.load(f)
 
-        samples = list(train_query[beta_type])[:3]
-        lformula = parse_lstr(lstr)
+    lstr_xy_dict = {}
+    for key, labeled_type, lstr in zip(
+        beta_types_key_list, labeled_beta_types_list, beta_lstr_list):
+        samples = list(train_queries[key])
+
+        lformula = parse_lstr_to_lformula(lstr)
         folf = fol.FirstOrderFormula(lformula)
         print(folf.formula.to_lstr())
-        for sample in samples:
-            d = align_entities_relations(labeled_beta_type, sample)
+
+        lstr_xy_dict[lstr] = []
+        for sample in tqdm(samples, desc='train query answer processing'):
+            d = align_entities_relations(labeled_type, sample)
+            answer = list(train_answers[sample])
             folf.append_relation_and_symbols(d)
-        print(folf.formula)
+            lstr_xy_dict[lstr].append(
+                (d, answer, [])
+            )
+    with open(osp.join(output_folder, 'train-qaa.json'), 'wt') as f:
+        json.dump(lstr_xy_dict, f)
+
+    # valid queries
+    with open(osp.join(beta_folder, "valid-queries.pkl"), 'rb') as f:
+        valid_queries = pickle.load(f)
+
+    with open(osp.join(beta_folder, "valid-easy-answers.pkl"), 'rb') as f:
+        valid_easy_answers = pickle.load(f)
+
+    with open(osp.join(beta_folder, "valid-hard-answers.pkl"), 'rb') as f:
+        valid_hard_answers = pickle.load(f)
+
+    lstr_xy_dict = {}
+    for key, labeled_type, lstr in zip(
+        beta_types_key_list, labeled_beta_types_list, beta_lstr_list):
+        samples = list(valid_queries[key])
+
+        lformula = parse_lstr_to_lformula(lstr)
+        folf = fol.FirstOrderFormula(lformula)
+        print(folf.formula.to_lstr())
+
+        lstr_xy_dict[lstr] = []
+        for sample in tqdm(samples, desc="valid query answer processing"):
+            d = align_entities_relations(labeled_type, sample)
+            easy_answer = list(valid_easy_answers[sample])
+            hard_answer = list(valid_hard_answers[sample])
+            folf.append_relation_and_symbols(d)
+            lstr_xy_dict[lstr].append(
+                (d, easy_answer, hard_answer)
+            )
+
+    with open(osp.join(output_folder, 'valid-qaa.json'), 'wt') as f:
+        json.dump(lstr_xy_dict, f)
+
+
+    # test queries
+    with open(osp.join(beta_folder, "test-queries.pkl"), 'rb') as f:
+        test_queries = pickle.load(f)
+
+    with open(osp.join(beta_folder, "test-easy-answers.pkl"), 'rb') as f:
+        test_easy_answers = pickle.load(f)
+
+    with open(osp.join(beta_folder, "test-hard-answers.pkl"), 'rb') as f:
+        test_hard_answers = pickle.load(f)
+
+    lstr_xy_dict = {}
+    for key, labeled_type, lstr in zip(
+        beta_types_key_list, labeled_beta_types_list, beta_lstr_list):
+        samples = list(test_queries[key])
+
+        lformula = parse_lstr_to_lformula(lstr)
+        folf = fol.FirstOrderFormula(lformula)
+        print(folf.formula.to_lstr())
+
+        lstr_xy_dict[lstr] = []
+        for sample in tqdm(samples, desc='test query answer processing'):
+            d = align_entities_relations(labeled_type, sample)
+            easy_answer = list(test_easy_answers[sample])
+            hard_answer = list(test_hard_answers[sample])
+            folf.append_relation_and_symbols(d)
+            lstr_xy_dict[lstr].append(
+                (d, easy_answer, hard_answer)
+            )
+
+    with open(osp.join(output_folder, 'test-qaa.json'), 'wt') as f:
+        json.dump(lstr_xy_dict, f)
+
 
 if __name__ == "__main__":
-    beta_folder = "/Users/zihao/Project/FirstOrderQueryEstimation/data/FB15k-237-betae"
-    output_folder = "./data/FB15k-237-betae"
+    beta_folder = "/Users/zihao/Project/FirstOrderQueryEstimation/data/{}"
+    output_folder = "./data/{}"
 
-    convert_beta_folder(beta_folder, output_folder)
+    for dataset in [
+        # "FB15k-237-betae",
+        "FB15k-betae", "NELL-betae"]:
+        convert_beta_folder(beta_folder.format(dataset),
+                            output_folder.format(dataset))
