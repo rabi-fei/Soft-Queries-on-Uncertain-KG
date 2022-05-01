@@ -93,6 +93,42 @@ class QAACollator:
             fof.hard_answer.append(hard_ans)
         return fof
 
+class QueryAnsweringSeqDataLoader:
+
+    def __init__(self, qaafile, **dataloader_kwargs) -> None:
+        self.dataloader_kwargs = dataloader_kwargs
+
+        with open(qaafile, 'rt') as f:
+            self.lstr_qaa = json.load(f)
+
+        self.lstr_iterator = {}
+
+        self.batch_buffer = []
+
+    def __iter__(self):
+        for lstr, qaa in self.lstr_qaa.items():
+            self.lstr_iterator[lstr] = iter(DataLoader(qaa,
+                collate_fn=QAACollator(lstr),
+                **self.dataloader_kwargs))
+        return self
+
+    def __next__(self):
+        if len(self.batch_buffer) == 0:
+            for lstr, iterator in self.lstr_iterator.items():
+                try:
+                    self.batch_buffer.append(
+                        next(iterator)
+                    )
+                except StopIteration:
+                    print(f"{lstr} iterator run out")
+
+            if len(self.batch_buffer) == 0:
+                raise StopIteration
+            else:
+                shuffle(self.batch_buffer)
+        print("fetched buffer")
+        return [self.batch_buffer.pop()]
+
 
 class QueryAnsweringMixDataLoader:
     def __init__(self, qaafile, **dataloader_kwargs) -> None:
