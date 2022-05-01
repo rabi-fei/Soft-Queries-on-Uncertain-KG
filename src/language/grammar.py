@@ -12,7 +12,7 @@ Term = e[number]
      = f[number]
 """
 
-from .fol import Conjunction, Disjunction, Lobject, Negation, BinaryPredicate, Term
+from .fol import Conjunction, Disjunction, Formula, Lobject, Negation, BinaryPredicate, Term
 
 def remove_outmost_backets(lstr: str):
     if not (lstr[0] == '(' and lstr[-1] == ')'):
@@ -65,7 +65,7 @@ def parse_term(term_name):
     return term
 
 
-def parse_lstr_to_lformula(lstr: str) -> Lobject:
+def parse_lstr_to_lformula(lstr: str) -> Formula:
     """
     parse the string a.k.a, lstr to lobject
     """

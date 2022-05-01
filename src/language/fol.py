@@ -43,8 +43,6 @@ from typing import Dict, List
 
 import torch
 
-from src.structure import NeuralBinaryPredicate
-
 def check_ldict(ldict):
     """
     Ldict is a nested dict that stores the GROUNDED information
@@ -156,12 +154,8 @@ class Term(Lobject):
         self.batch_proposal_list = []
 
     # TODO
-    def update_entity_id_by_embedding(self, nbp: NeuralBinaryPredicate):
-        pass
 
     # TODO
-    def update_embedding_by_entity_id(self, nbp: NeuralBinaryPredicate):
-        pass
 
 
 class Formula(Lobject):
@@ -348,9 +342,9 @@ class FirstOrderFormula:
     The first order formula
     it also includes information about the quantifiers
     """
-    def __init__(self, formula: Formula, observed_answer=None, hard_answer=None) -> None:
+    def __init__(self, formula: Formula, easy_answer=None, hard_answer=None) -> None:
         self.formula = formula
-        self.observed_answer = observed_answer
+        self.easy_answer = easy_answer
         self.hard_answer = hard_answer
 
         # update internal storage

@@ -1,8 +1,14 @@
 from typing import Union, List
 from itertools import chain
+import json
+from random import shuffle
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader
+
+from src.language.fol import FirstOrderFormula
+from src.language.grammar import parse_lstr_to_lformula
 
 
 def _iter_triple_from_tsv(triple_file):
@@ -75,6 +81,58 @@ class RaggedBatch:
         # then dense_matrix is of shape [batch_size, max_of_self.sizes, *]
         return dense_matrix
 
-def collate_beta2first_order_formulas():
-    # TODO
-    pass
+class QAACollator:
+    def __init__(self, lstr):
+        self.lformula = parse_lstr_to_lformula(lstr)
+
+    def __call__(self, batch_input):
+        fof = FirstOrderFormula(self.lformula, easy_answer=[], hard_answer=[])
+        for rsdict, easy_ans, hard_ans in batch_input:
+            fof.append_relation_and_symbols(rsdict)
+            fof.easy_answer.append(easy_ans)
+            fof.hard_answer.append(hard_ans)
+        return fof
+
+
+class QueryAnsweringMixDataLoader:
+    def __init__(self, qaafile, **dataloader_kwargs) -> None:
+        self.dataloader_kwargs = dataloader_kwargs
+
+        with open(qaafile, 'rt') as f:
+            self.lstr_qaa = json.load(f)
+
+        samples_per_query = {}
+        total_samplers = 0
+        for k in self.lstr_qaa:
+            size_k = len(self.lstr_qaa[k])
+            samples_per_query[k] = size_k
+            total_samplers += size_k
+
+        total_num_iterations = total_samplers//dataloader_kwargs.pop('batch_size')+1
+
+        self.batch_size_per_query = {
+            k: samples_per_query[k] // total_num_iterations + 1
+            for k in samples_per_query}
+        self.lstr_iterator = {}
+
+    def __iter__(self):
+        for lstr, qaa in self.lstr_qaa.items():
+            self.lstr_iterator[lstr] = iter(DataLoader(qaa,
+                batch_size=self.batch_size_per_query[lstr],
+                collate_fn=QAACollator(lstr),
+                **self.dataloader_kwargs))
+
+        return self
+
+    def __next__(self):
+        buffer = []
+        for _, dataloader in self.lstr_iterator.items():
+            try:
+                buffer.append(next(dataloader))
+            except StopIteration:
+                pass
+
+        if len(buffer) == 0:
+            raise StopIteration
+
+        return buffer

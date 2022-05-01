@@ -15,8 +15,8 @@ from torch.utils.data import DataLoader
 
 from .knowledge_graph_index import KGIndex
 
-from ..utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
-from ..utils.config import KnowledgeGraphConfig
+from src.utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
+from src.utils.config import KnowledgeGraphConfig
 
 Triple = Tuple[int, int, int]
 
