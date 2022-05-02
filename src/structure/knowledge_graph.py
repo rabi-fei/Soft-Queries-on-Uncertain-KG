@@ -1,22 +1,14 @@
-"""
-This file models the basic data types including
-- KG index
-- Knowledge graph
-- Neural binary predictor
-"""
-import json
 import time
-from abc import abstractmethod
 from collections import defaultdict
 from typing import List, Tuple, Union
 
 import torch
 from torch.utils.data import DataLoader
 
-from .knowledge_graph_index import KGIndex
-
-from src.utils.data import RaggedBatch, iter_triple_from_tsv, tensorize_batch_entities
 from src.utils.config import KnowledgeGraphConfig
+from src.utils.data import (RaggedBatch, iter_triple_from_tsv,
+                            tensorize_batch_entities)
+from .knowledge_graph_index import KGIndex
 
 Triple = Tuple[int, int, int]
 

@@ -43,6 +43,8 @@ from typing import Dict, List
 
 import torch
 
+from src.structure.neural_binary_predicate import NeuralBinaryPredicate
+
 def check_ldict(ldict):
     """
     Ldict is a nested dict that stores the GROUNDED information
@@ -97,6 +99,7 @@ class Lobject:
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
         pass
 
+
 class Term(Lobject):
     EXISTENTIAL = 1
     FREE = 2
@@ -120,18 +123,18 @@ class Term(Lobject):
         args = ldict['args']
         name = args['name']
         state = args['state']
-        object =  cls(name=name, state=state)
+        object = cls(name=name, state=state)
         object.entity_id_list = args['entity_id_list']
         return object
 
     def to_ldict(self):
         ldict = {'op': self.op,
                  'args': {
-                   'state': self.state,
-                   'name': self.name,
-                   'entity_id_list': self.entity_id_list
-                   }
-              }
+                     'state': self.state,
+                     'name': self.name,
+                     'entity_id_list': self.entity_id_list
+                 }
+                 }
         return ldict
 
     def to_lstr(self) -> str:
@@ -143,7 +146,7 @@ class Term(Lobject):
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
         return dict()
 
-    def append_proposals(self, proposal):
+    def append_proposal(self, proposal):
         batch_size, embedding_dim = proposal.shape
         self.batch_proposal_list.append(
             proposal.view(batch_size, embedding_dim, 1))
@@ -153,9 +156,20 @@ class Term(Lobject):
         self.batch_embedding = torch.mean(batch_proposal_tensor, dim=-1)
         self.batch_proposal_list = []
 
-    # TODO
+    @property
+    def has_proposal(self):
+        return len(self.batch_proposal_list) > 0
 
-    # TODO
+    @property
+    def has_embedding(self):
+        return self.batch_embedding is not None
+
+    @property
+    def not_initialized_at_all(self):
+        if self.state == Term.SYMBOL:
+            return False
+        else:
+            return not (self.has_proposal or self.has_embedding)
 
 
 class Formula(Lobject):
@@ -200,6 +214,7 @@ class BinaryPredicate(Formula):
         term2 = Term.parse(args['term2'])
         object = cls(name=name, term1=term1, term2=term2)
         object.relation_id_list = args['relation_id_list']
+
     def to_ldict(self):
         obj = {
             'op': self.op,
@@ -226,9 +241,21 @@ class BinaryPredicate(Formula):
         ans = {self.name: self}
         return ans
 
+    def predict_term2_emb(self, nbp):
+        head_emb = self.term1.batch_embedding
+        rel_emb = nbp.get_relation_embedding(self.relation_id_list)
+        tail_emb = nbp.estimate_tail_emb(head_emb, rel_emb)
+        return tail_emb
+
+    def predict_term1_emb(self, nbp: NeuralBinaryPredicate):
+        tail_emb = self.term2.batch_embedding
+        rel_emb = nbp.get_relation_embedding(self.relation_id_list)
+        head_emb = nbp.estimate_head_emb(tail_emb, rel_emb)
+        return head_emb
 
 class Negation(Formula):
     op = 'neg'
+
     def __init__(self, formula: Formula) -> None:
         self.formula = formula
 
@@ -261,8 +288,10 @@ class Negation(Formula):
         ans.update(self.formula.get_predicates())
         return ans
 
+
 class Conjunction(Formula):
     op = 'conj'
+
     def __init__(self, formulas: List[Formula]) -> None:
         self.formulas = formulas
 
@@ -272,7 +301,8 @@ class Conjunction(Formula):
         assert op == cls.op
         args = ldict['args']
         formula_dict_list = args['formulas']
-        formulas = [Formula.parse(formula_dict) for formula_dict in formula_dict_list]
+        formulas = [Formula.parse(formula_dict)
+                    for formula_dict in formula_dict_list]
         return cls(formulas)
 
     def to_ldict(self):
@@ -301,6 +331,7 @@ class Conjunction(Formula):
 
 class Disjunction(Formula):
     op = 'disj'
+
     def __init__(self, formulas: List[Formula]) -> None:
         self.formulas = formulas
 
@@ -310,7 +341,8 @@ class Disjunction(Formula):
         assert op == cls.op
         args = ldict['args']
         formula_dict_list = args['formulas']
-        formulas = [Formula.parse(formula_dict) for formula_dict in formula_dict_list]
+        formulas = [Formula.parse(formula_dict)
+                    for formula_dict in formula_dict_list]
         return cls(formulas)
 
     def to_ldict(self):
@@ -342,7 +374,15 @@ class FirstOrderFormula:
     The first order formula
     it also includes information about the quantifiers
     """
-    def __init__(self, formula: Formula, easy_answer=None, hard_answer=None) -> None:
+    existential_variable_dict: Dict[str, Term]
+    universal_variable_dict: Dict[str, Term]
+    free_variable_dict: Dict[str, Term]
+    symbol_dict: Dict[str, Term]
+
+    def __init__(self,
+                 formula: Formula,
+                 easy_answer=None,
+                 hard_answer=None) -> None:
         self.formula = formula
         self.easy_answer = easy_answer
         self.hard_answer = hard_answer
@@ -374,20 +414,8 @@ class FirstOrderFormula:
             assert pred_name in append_dict
             pred.relation_id_list.append(append_dict[pred_name])
 
-
     # TODO
     def update_term_dict(self):
-        pass
-
-    # TODO implement the initialization
-    def initialize_variable_embeddings(self):
-        """
-        Input args:
-        Return args:
-            evars: list of existential variables
-            uvars: list of universal variables
-            fvars: list of free variables
-        """
         pass
 
     # TODO overall probability
