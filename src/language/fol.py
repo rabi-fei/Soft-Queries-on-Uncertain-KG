@@ -40,9 +40,7 @@ from abc import abstractmethod
 from collections import defaultdict
 import json
 from typing import Dict, List
-
-import torch
-
+from src.language.tnorm import ProductTNorm, Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 
 def check_ldict(ldict):
@@ -79,6 +77,7 @@ def get_ldict(op, **args):
 
 
 class Lobject:
+    op = "default"
     @abstractmethod
     def to_ldict(self) -> Dict:
         pass
@@ -90,10 +89,6 @@ class Lobject:
     def __repr__(self):
         check_ldict(self.to_ldict())
         return json.dumps(self.to_ldict(), indent=1)
-
-    @abstractmethod
-    def get_terms(self) -> Dict[str, 'Term']:
-        pass
 
     @abstractmethod
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
@@ -113,9 +108,6 @@ class Term(Lobject):
         self.name = name
         self.entity_id_list = []
 
-        self.batch_embedding = None
-        self.batch_proposal_list = []
-
     @classmethod
     def parse(cls, ldict):
         op = ldict['op']
@@ -132,45 +124,27 @@ class Term(Lobject):
                  'args': {
                      'state': self.state,
                      'name': self.name,
-                     'entity_id_list': self.entity_id_list
-                 }
-                 }
+                     'entity_id_list': self.entity_id_list}}
         return ldict
 
     def to_lstr(self) -> str:
         return self.name
 
-    def get_terms(self) -> Dict[str, 'Term']:
-        return {self.name: self}
-
-    def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
-        return dict()
-
-    def append_proposal(self, proposal):
-        batch_size, embedding_dim = proposal.shape
-        self.batch_proposal_list.append(
-            proposal.view(batch_size, embedding_dim, 1))
-
-    def update_embeddingby_proposals(self):
-        batch_proposal_tensor = torch.cat(self.batch_proposal_list, dim=-1)
-        self.batch_embedding = torch.mean(batch_proposal_tensor, dim=-1)
-        self.batch_proposal_list = []
+    @property
+    def is_free(self):
+        return self.state == self.FREE
 
     @property
-    def has_proposal(self):
-        return len(self.batch_proposal_list) > 0
+    def is_existential(self):
+        return self.state == self.EXISTENTIAL
 
     @property
-    def has_embedding(self):
-        return self.batch_embedding is not None
+    def is_universal(self):
+        return self.state == self.UNIVERSAL
 
     @property
-    def not_initialized_at_all(self):
-        if self.state == Term.SYMBOL:
-            return False
-        else:
-            return not (self.has_proposal or self.has_embedding)
-
+    def is_symbol(self):
+        return self.state == self.SYMBOL
 
 class Formula(Lobject):
     def __init__(self) -> None:
@@ -231,29 +205,17 @@ class BinaryPredicate(Formula):
         lstr = f"{self.name}({self.term1.name},{self.term2.name})"
         return lstr
 
-    def get_terms(self) -> Dict[str, 'Term']:
-        ans = {}
-        ans.update(self.term1.get_terms())
-        ans.update(self.term2.get_terms())
-        return ans
-
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
         ans = {self.name: self}
         return ans
 
-    def predict_term2_emb(self, nbp):
-        head_emb = self.term1.batch_embedding
-        rel_emb = nbp.get_relation_embedding(self.relation_id_list)
-        tail_emb = nbp.estimate_tail_emb(head_emb, rel_emb)
-        return tail_emb
+    def get_terms(self):
+        return [self.term1, self.term2]
 
-    def predict_term1_emb(self, nbp: NeuralBinaryPredicate):
-        tail_emb = self.term2.batch_embedding
-        rel_emb = nbp.get_relation_embedding(self.relation_id_list)
-        head_emb = nbp.estimate_head_emb(tail_emb, rel_emb)
-        return head_emb
+class Connective(Formula):
+    pass
 
-class Negation(Formula):
+class Negation(Connective):
     op = 'neg'
 
     def __init__(self, formula: Formula) -> None:
@@ -278,18 +240,13 @@ class Negation(Formula):
         lstr = f"!({self.formula.to_lstr()})"
         return lstr
 
-    def get_terms(self) -> Dict[str, 'Term']:
-        ans = {}
-        ans.update(self.formula.get_terms())
-        return ans
-
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
         ans = {}
         ans.update(self.formula.get_predicates())
         return ans
 
 
-class Conjunction(Formula):
+class Conjunction(Connective):
     op = 'conj'
 
     def __init__(self, formulas: List[Formula]) -> None:
@@ -316,12 +273,6 @@ class Conjunction(Formula):
         lstr = "&".join(f"({f.to_lstr()})" for f in self.formulas)
         return lstr
 
-    def get_terms(self) -> Dict[str, 'Term']:
-        ans = {}
-        for f in self.formulas:
-            ans.update(f.get_terms())
-        return ans
-
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
         ans = {}
         for f in self.formulas:
@@ -329,7 +280,7 @@ class Conjunction(Formula):
         return ans
 
 
-class Disjunction(Formula):
+class Disjunction(Connective):
     op = 'disj'
 
     def __init__(self, formulas: List[Formula]) -> None:
@@ -356,12 +307,6 @@ class Disjunction(Formula):
         lstr = "|".join(f"({f.to_lstr()})" for f in self.formulas)
         return lstr
 
-    def get_terms(self) -> Dict[str, 'Term']:
-        ans = {}
-        for f in self.formulas:
-            ans.update(f.get_terms())
-        return ans
-
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
         ans = {}
         for f in self.formulas:
@@ -373,6 +318,19 @@ class FirstOrderFormula:
     """
     The first order formula
     it also includes information about the quantifiers
+
+    self.formula is parsed from the formula and provide the operator tree for
+        evaluation
+    self.predicate_dict stores each predicates by its name, which are edges
+    self.symbol_dict stores each symbol by its name
+    self.variable_dict stores each variable by its name
+
+    self.easy_answer_list list for easy answers
+    self.hard_answer_list list for hard answers
+    self.noisy_answer_list list for noisy answers
+
+    each answer is a dict whose keys are the variable and values are the list of possible answers
+
     """
     existential_variable_dict: Dict[str, Term]
     universal_variable_dict: Dict[str, Term]
@@ -380,30 +338,23 @@ class FirstOrderFormula:
     symbol_dict: Dict[str, Term]
 
     def __init__(self,
-                 formula: Formula,
-                 easy_answer=None,
-                 hard_answer=None) -> None:
-        self.formula = formula
-        self.easy_answer = easy_answer
-        self.hard_answer = hard_answer
+                 formula: Formula) -> None:
 
+        self.formula: Formula = formula
+        self.easy_answer_list = []
+        self.hard_answer_list = []
+        self.noisy_answer_list = []
         # update internal storage
-        self.existential_variable_dict = dict()
-        self.universal_variable_dict = dict()
-        self.free_variable_dict = dict()
-        self.symbol_dict = dict()
-        terms = self.formula.get_terms()
-        for tname, t in terms.items():
-            if t.state == Term.EXISTENTIAL:
-                self.existential_variable_dict[tname] = t
-            if t.state == Term.UNIVERSAL:
-                self.universal_variable_dict[tname] = t
-            if t.state == Term.FREE:
-                self.free_variable_dict[tname] = t
-            if t.state == Term.SYMBOL:
-                self.symbol_dict[tname] = t
-
         self.predicate_dict = self.formula.get_predicates()
+        self.symbol_dict = {}
+        self.variable_dict: Dict[str, Term] = {}
+        for _, pred in self.predicate_dict.items():
+            for t in pred.get_terms():
+                if t.state == Term.SYMBOL:
+                    self.symbol_dict[t.name] = t
+                else:
+                    self.variable_dict[t.name] = t
+        self.variable_local_embedding_dict = {k: None for k in self.variable_dict}
 
     def append_relation_and_symbols(self, append_dict):
         for symb_name, symb in self.symbol_dict.items():
@@ -414,18 +365,130 @@ class FirstOrderFormula:
             assert pred_name in append_dict
             pred.relation_id_list.append(append_dict[pred_name])
 
-    # TODO
-    def update_term_dict(self):
-        pass
+    def append_qa_instances(self,
+                            append_dict,
+                            easy_answers=[],
+                            hard_answers=[],
+                            noisy_answer=[]):
+        self.append_relation_and_symbols(append_dict)
+        self.easy_answer_list.append(easy_answers)
+        self.hard_answer_list.append(hard_answers)
+        self.noisy_answer_list.append(noisy_answer)
+
+    def append_qa_instances_as_sentence(self, append_dict, answers):
+        for k in answers:
+            num_of_answers = len(answers[k])
+            break
+
+        # setting the free variable as symbol
+        for k in answers:
+            if k in self.variable_dict:
+                self.symbol_dict[k] = self.variable_dict.pop(k)
+                self.symbol_dict[k].state = Term.SYMBOL
+            else:
+                assert k in self.symbol_dict
+                assert k not in self.free_variable_dict
+
+        for i in range(num_of_answers):
+            for k in answers:
+                append_dict[k] = answers[k][i]
+
+            self.append_relation_and_symbols(append_dict)
+
 
     # TODO overall probability
-    def evaluate_truth_values(self, tnorm_type):
+    def evaluate_truth_values(self, tnorm: Tnorm, nbp: NeuralBinaryPredicate, margin):
+
         """
         Input args:
             tnorm_type: the type of tnorms
         Return args:
         """
-        pass
+        return self._evaluate_truth_values(self.formula, tnorm, nbp, margin)
 
-    def signature_of_formula():
-        pass
+    def _evaluate_truth_values(self, formula, tnorm, nbp: NeuralBinaryPredicate, margin):
+        """
+        Input args:
+            tnorm_type: the type of tnorms
+        Return args:
+        """
+        if formula.op == Conjunction.op:
+            return tnorm.conjunction(
+                self._evaluate_truth_values(formula.formulas[0], tnorm, nbp, margin),
+                self._evaluate_truth_values(formula.formulas[1], tnorm, nbp, margin)
+            )
+
+        elif formula.op == Disjunction.op:
+            return tnorm.disjunction(
+                self._evaluate_truth_values(formula.formulas[0], tnorm, nbp, margin),
+                self._evaluate_truth_values(formula.formulas[1], tnorm, nbp, margin)
+            )
+
+        elif formula.op == Negation.op:
+            return tnorm.negation(
+                self._evaluate_truth_values(formula.formula, tnorm, nbp, margin)
+            )
+
+        elif formula.op == BinaryPredicate.op:
+            head_term = formula.term1
+            if head_term.is_symbol:
+                head_emb = nbp.get_entity_emb(head_term.entity_id_list)
+            else:
+                head_emb = self.get_var_local_embedding(head_term.name)
+
+            tail_term = formula.term2
+            if tail_term.is_symbol:
+                tail_emb = nbp.get_entity_emb(tail_term.entity_id_list)
+            else:
+                tail_emb = self.get_var_local_embedding(tail_term.name)
+
+            rel_emb = nbp.get_relation_emb(formula.relation_id_list)
+            batch_score = nbp.embedding_score(
+                head_emb, rel_emb, tail_emb
+            )
+            batch_truth_value = nbp.score2prob(batch_score, margin)
+            return batch_truth_value
+
+
+    @property
+    def free_variable_dict(self):
+        return {k: v
+                for k, v in self.variable_dict.items()
+                if v.state == Term.FREE}
+
+    @property
+    def universal_variable_dict(self):
+        return {k: v
+                for k, v in self.variable_dict.items()
+                if v.state == Term.UNIVERSAL}
+
+    @property
+    def existential_variable_dict(self):
+        return {k: v
+                for k, v in self.variable_dict.items()
+                if v.state == Term.EXISTENTIAL}
+
+    @property
+    def is_sentence(self):
+        """
+        Determine the state of the formula
+        A formula is sentence when all variables are quantified
+        """
+        return len(self.free_variable_dict) == 0
+
+    @property
+    def num_instances(self):
+        return len(self.easy_answer)
+
+    def get_var_local_embedding(self, key):
+        return self.variable_local_embedding_dict[key]
+
+    def has_var_local_embedding(self, key):
+        return self.variable_local_embedding_dict[key] is not None
+
+    def set_var_local_embedding(self, key, value):
+        self.variable_local_embedding_dict[key] = value.detach_()
+        self.variable_local_embedding_dict[key].requires_grad = True
+
+    def to_lstr(self):
+        return self.formula.to_lstr()

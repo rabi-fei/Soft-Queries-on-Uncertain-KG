@@ -81,20 +81,46 @@ class RaggedBatch:
         # then dense_matrix is of shape [batch_size, max_of_self.sizes, *]
         return dense_matrix
 
+class QAACollatorWithNegativeSampling:
+    def __init__(self, lstr, answer_size=-1, negative_sample_size=-1):
+        self.lformula = parse_lstr_to_lformula(lstr)
+        self.answer_size = answer_size
+        self.negative_sample_size = negative_sample_size
+
+    def __call__(self, batch_input):
+        positive_fof = FirstOrderFormula(self.lformula)
+        negative_fof = FirstOrderFormula(self.lformula)
+
+        for rsdict, _easy_ans, _hard_ans in batch_input:
+            positive_fof.append_qa_instances_as_sentence(rsdict,
+                                                         answers=_easy_ans)
+
+            noisy_samples_tensor = torch.randint(
+                low=0, high=self.answer_size, size=(self.negative_sample_size))
+            noisy_samples = noisy_samples_tensor.numpy().tolist()
+
+            negative_fof.append_qa_instances_as_sentence(rsdict,
+                                                         answers=noisy_samples)
+
+        return positive_fof, negative_fof
+
 class QAACollator:
     def __init__(self, lstr):
         self.lformula = parse_lstr_to_lformula(lstr)
 
     def __call__(self, batch_input):
         fof = FirstOrderFormula(self.lformula, easy_answer=[], hard_answer=[])
-        for rsdict, easy_ans, hard_ans in batch_input:
+        for rsdict, _easy_ans, _hard_ans in batch_input:
+            easy_ans = torch.tensor(_easy_ans).view(1, -1)
+            hard_ans = torch.tensor(_hard_ans).view(1, -1)
+
             fof.append_relation_and_symbols(rsdict)
-            fof.easy_answer.append(easy_ans)
-            fof.hard_answer.append(hard_ans)
+            fof.easy_answer_list.append(easy_ans)
+            fof.hard_answer_list.append(hard_ans)
+
         return fof
 
 class QueryAnsweringSeqDataLoader:
-
     def __init__(self, qaafile, **dataloader_kwargs) -> None:
         self.dataloader_kwargs = dataloader_kwargs
 
@@ -102,7 +128,6 @@ class QueryAnsweringSeqDataLoader:
             self.lstr_qaa = json.load(f)
 
         self.lstr_iterator = {}
-
         self.batch_buffer = []
 
     def __iter__(self):
@@ -126,7 +151,7 @@ class QueryAnsweringSeqDataLoader:
                 raise StopIteration
             else:
                 shuffle(self.batch_buffer)
-        print("fetched buffer")
+
         return [self.batch_buffer.pop()]
 
 
@@ -172,3 +197,42 @@ class QueryAnsweringMixDataLoader:
             raise StopIteration
 
         return buffer
+
+class TrainQueryAnsweringWithSentenceVerificationDataLoader:
+    def __init__(self, qaafile, answer_size, neg_sample_size, **dataloader_kwargs) -> None:
+        self.qaafile = qaafile
+        self.answer_size = answer_size
+        self.neg_sample_size = neg_sample_size
+        self.dataloader_kwargs = dataloader_kwargs
+
+        with open(qaafile, 'rt') as f:
+            self.lstr_qaa = json.load(f)
+
+        self.lstr_iterator = {}
+        self.batch_buffer = []
+
+    def __iter__(self):
+        for lstr, qaa in self.lstr_qaa.items():
+            self.lstr_iterator[lstr] = iter(DataLoader(qaa,
+                collate_fn=QAACollatorWithNegativeSampling(
+                    lstr, self.answer_size, self.neg_sample_size),
+                **self.dataloader_kwargs))
+        return self
+
+    def __next__(self):
+        if len(self.batch_buffer) == 0:
+            for lstr, iterator in self.lstr_iterator.items():
+                try:
+                    self.batch_buffer.append(
+                        next(iterator)
+                    )
+                except StopIteration:
+                    print(f"{lstr} iterator run out")
+
+            if len(self.batch_buffer) == 0:
+                raise StopIteration
+            else:
+                shuffle(self.batch_buffer)
+        print("fetched buffer")
+
+        return [self.batch_buffer.pop()]

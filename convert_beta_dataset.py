@@ -6,8 +6,10 @@ from typing import Dict
 
 from tqdm import tqdm
 
-from src.language import fol, parse_lstr_to_lformula
-from src.structure import KGIndex, KnowledgeGraph
+from src.language import fol
+from src.language.grammar import parse_lstr_to_lformula
+from src.structure.knowledge_graph_index import KGIndex
+from src.structure.knowledge_graph import KnowledgeGraph
 
 beta_types_key_list = [
     ('e', ('r',)),
@@ -64,6 +66,10 @@ beta_lstr_list = [
     "!(!r1(s1,f)&!r2(s2,f))",
     "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",
 ]
+
+
+universal_case = "r1(f_author, u_paper) -> r2(u_paper, s_nips)"
+ucaes = "(!r1(f_author, u_paper))|r2(u_paper, s_nips)"
 
 def beta_type_to_ldict():
     pass
@@ -188,7 +194,7 @@ def convert_beta_folder(beta_folder, output_folder):
         lstr_xy_dict[lstr] = []
         for sample in tqdm(samples, desc='train query answer processing'):
             d = align_entities_relations(labeled_type, sample)
-            answer = list(train_answers[sample])
+            answer = {'f': list(train_answers[sample])}
             folf.append_relation_and_symbols(d)
             lstr_xy_dict[lstr].append(
                 (d, answer, [])
@@ -218,8 +224,8 @@ def convert_beta_folder(beta_folder, output_folder):
         lstr_xy_dict[lstr] = []
         for sample in tqdm(samples, desc="valid query answer processing"):
             d = align_entities_relations(labeled_type, sample)
-            easy_answer = list(valid_easy_answers[sample])
-            hard_answer = list(valid_hard_answers[sample])
+            easy_answer = {'f': list(valid_easy_answers[sample])}
+            hard_answer = {'f': list(valid_hard_answers[sample])}
             folf.append_relation_and_symbols(d)
             lstr_xy_dict[lstr].append(
                 (d, easy_answer, hard_answer)
@@ -251,8 +257,9 @@ def convert_beta_folder(beta_folder, output_folder):
         lstr_xy_dict[lstr] = []
         for sample in tqdm(samples, desc='test query answer processing'):
             d = align_entities_relations(labeled_type, sample)
-            easy_answer = list(test_easy_answers[sample])
-            hard_answer = list(test_hard_answers[sample])
+            # possible answers into the key-value form
+            easy_answer = {'f': list(test_easy_answers[sample])}
+            hard_answer = {'f': list(test_hard_answers[sample])}
             folf.append_relation_and_symbols(d)
             lstr_xy_dict[lstr].append(
                 (d, easy_answer, hard_answer)
@@ -267,7 +274,8 @@ if __name__ == "__main__":
     output_folder = "./data/{}"
 
     for dataset in [
-        # "FB15k-237-betae",
+        "FB15k-237-betae",
         "FB15k-betae", "NELL-betae"]:
+        print(dataset)
         convert_beta_folder(beta_folder.format(dataset),
                             output_folder.format(dataset))

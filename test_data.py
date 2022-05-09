@@ -3,7 +3,7 @@ from src.utils.data import QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoa
 
 if __name__ == "__main__":
 
-    qad = QueryAnsweringMixDataLoader('data/FB15k-237-betae/test-qaa.json',
+    qad = QueryAnsweringMixDataLoader('data/FB15k-237-betae/train-qaa.json',
                                 batch_size=7,
                                 shuffle=True,
                                 num_workers=2)

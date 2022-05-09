@@ -8,6 +8,7 @@ class NeuralBinaryPredicate:
     num_entities: int
     num_relations: int
     device: torch.device
+    margin: float
 
     @abstractmethod
     def embedding_score(self, head_emb, rel_emb, tail_emb):
@@ -72,12 +73,13 @@ class NeuralBinaryPredicate:
 
 
 class TransE(nn.Module, NeuralBinaryPredicate):
-    def __init__(self, num_entities, num_relations, embedding_dim, p, device):
+    def __init__(self, num_entities, num_relations, embedding_dim, p, margin, device):
         super(TransE, self).__init__()
         self.num_entities = num_entities
         self.num_relations = num_relations
         self.embedding_dim = embedding_dim
         self.device = device
+        self.margin = margin
         self.p = p
         self.entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
         nn.init.xavier_uniform_(self.entity_embedding.weight)
