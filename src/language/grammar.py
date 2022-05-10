@@ -105,12 +105,12 @@ def parse_lstr_to_lformula(lstr: str) -> Formula:
         if predicate_name.isnumeric():
             predicate_id = int(predicate_name)
             predicate = BinaryPredicate(name="predicate_by_id",
-                                        term1=term1,
-                                        term2=term2)
+                                        head=term1,
+                                        tail=term2)
             predicate.relation_id_list.append(predicate_id)
         else:
             predicate = BinaryPredicate(name=predicate_name,
-                                        term1=term1,
-                                        term2=term2)
+                                        head=term1,
+                                        tail=term2)
 
         return predicate

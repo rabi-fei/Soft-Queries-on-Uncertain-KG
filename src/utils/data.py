@@ -91,16 +91,20 @@ class QAACollatorWithNegativeSampling:
         positive_fof = FirstOrderFormula(self.lformula)
         negative_fof = FirstOrderFormula(self.lformula)
 
-        for rsdict, _easy_ans, _hard_ans in batch_input:
+        for rsdict, easy_ans, _ in batch_input:
             positive_fof.append_qa_instances_as_sentence(rsdict,
-                                                         answers=_easy_ans)
+                                                         answers=easy_ans)
 
-            noisy_samples_tensor = torch.randint(
-                low=0, high=self.answer_size, size=(self.negative_sample_size))
-            noisy_samples = noisy_samples_tensor.numpy().tolist()
+
+            noisy_ans = {}
+            for k in easy_ans:
+                noisy_samples_tensor = torch.randint(
+                    low=0, high=self.answer_size, size=(self.negative_sample_size,))
+                noisy_samples = noisy_samples_tensor.numpy().tolist()
+                noisy_ans[k] = noisy_samples
 
             negative_fof.append_qa_instances_as_sentence(rsdict,
-                                                         answers=noisy_samples)
+                                                         answers=noisy_ans)
 
         return positive_fof, negative_fof
 
@@ -109,15 +113,9 @@ class QAACollator:
         self.lformula = parse_lstr_to_lformula(lstr)
 
     def __call__(self, batch_input):
-        fof = FirstOrderFormula(self.lformula, easy_answer=[], hard_answer=[])
-        for rsdict, _easy_ans, _hard_ans in batch_input:
-            easy_ans = torch.tensor(_easy_ans).view(1, -1)
-            hard_ans = torch.tensor(_hard_ans).view(1, -1)
-
-            fof.append_relation_and_symbols(rsdict)
-            fof.easy_answer_list.append(easy_ans)
-            fof.hard_answer_list.append(hard_ans)
-
+        fof = FirstOrderFormula(self.lformula)
+        for rsdict, easy_ans, hard_ans in batch_input:
+            fof.append_qa_instances(rsdict, easy_ans, hard_ans)
         return fof
 
 class QueryAnsweringSeqDataLoader:
@@ -199,7 +197,11 @@ class QueryAnsweringMixDataLoader:
         return buffer
 
 class TrainQueryAnsweringWithSentenceVerificationDataLoader:
-    def __init__(self, qaafile, answer_size, neg_sample_size, **dataloader_kwargs) -> None:
+    def __init__(self,
+                 qaafile,
+                 answer_size,
+                 neg_sample_size,
+                 **dataloader_kwargs) -> None:
         self.qaafile = qaafile
         self.answer_size = answer_size
         self.neg_sample_size = neg_sample_size
@@ -213,6 +215,7 @@ class TrainQueryAnsweringWithSentenceVerificationDataLoader:
 
     def __iter__(self):
         for lstr, qaa in self.lstr_qaa.items():
+            if not qaa: continue
             self.lstr_iterator[lstr] = iter(DataLoader(qaa,
                 collate_fn=QAACollatorWithNegativeSampling(
                     lstr, self.answer_size, self.neg_sample_size),
@@ -235,4 +238,4 @@ class TrainQueryAnsweringWithSentenceVerificationDataLoader:
                 shuffle(self.batch_buffer)
         print("fetched buffer")
 
-        return [self.batch_buffer.pop()]
+        return self.batch_buffer.pop()

@@ -75,4 +75,4 @@ if __name__ == "__main__":
     print(ldict)
     lobject = fol.Formula.parse(ldict)
     print(lobject)
-    print(lobject.to_lstr())
+    print(lobject.lstr())

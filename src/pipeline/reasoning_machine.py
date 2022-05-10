@@ -7,7 +7,7 @@ import torch
 from src.language.tnorm import ProductTNorm
 
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.language.fol import FirstOrderFormula, Term
+from src.language.fol import FirstOrderFormula, Term, get_term_embed_from_formula
 
 def gather_formula(formula_list) -> Dict:
     pass
@@ -34,46 +34,66 @@ class GradientReasoningMachine:
         """
         # first initialize all variables
         self.initialize_variable_embeddings(formula)
-        evar_local_emb = [formula.get_var_local_embedding(k)
-            for k in formula.existential_variable_dict]
-        fvar_local_emb = [formula.get_var_local_embedding(k)
-            for k in formula.free_variable_dict]
-        uvar_local_emb = [formula.get_var_local_embedding(k)
-            for k in formula.universal_variable_dict]
+        evar_local_emb = list(filter(
+            lambda x: x is not None,
+            [formula.get_var_local_embedding(k)
+             for k in formula.existential_variable_dict]))
+        fvar_local_emb = list(filter(
+            lambda x: x is not None,
+            [formula.get_var_local_embedding(k)
+             for k in formula.free_variable_dict]))
+        efvar_local_emb = evar_local_emb + fvar_local_emb
+
+        uvar_local_emb = list(filter(
+            lambda x: x is not None,
+            [formula.get_var_local_embedding(k)
+             for k in formula.universal_variable_dict]))
+
 
         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
-        EF_opt = optimizer_class(evar_local_emb + fvar_local_emb)
+
+        if efvar_local_emb:
+            EF_opt = optimizer_class(evar_local_emb + fvar_local_emb)
         if uvar_local_emb:
             U_opt = optimizer_class(uvar_local_emb)
 
         for i in range(self.reasoning_steps):
             # maximize the truth value with repect to evars and fvars
-            EF_opt.zero_grad()
-            efloss = - formula.evaluate_truth_values(ProductTNorm, self.nbp, self.nbp.margin).mean()
-            efloss.backward()
-            EF_opt.step()
+            if efvar_local_emb:
+                EF_opt.zero_grad()
+                efloss = - formula.evaluate_truth_values(
+                    ProductTNorm, self.nbp, self.nbp.margin).mean()
+                efloss.backward()
+                EF_opt.step()
+            else:
+                efloss = None
 
 
             if uvar_local_emb:
                 # minimize the truth value with respect to uvars
                 U_opt.zero_grad()
-                uloss = formula.evaluate_truth_values().mean()
+                uloss = formula.evaluate_truth_values(
+                    ProductTNorm, self.nbp, self.nbp.margin).mean()
                 uloss.backward()
                 U_opt.step()
+            else:
+                uloss = None
 
-        truth_values = formula.evaluate_truth_values(
-            ProductTNorm, self.nbp, self.nbp.margin)
-        return truth_values, fvar_local_emb
+            truth_values = formula.evaluate_truth_values(
+                ProductTNorm, self.nbp, self.nbp.margin)
 
-    def _train_single_formula(self, formula: FirstOrderFormula):
-        self.initialize_variable_embeddings(formula)
-        evar_local_emb = [formula.get_var_local_embedding(k)
-            for k in formula.existential_variable_dict]
-        fvar_local_emb = [formula.get_var_local_embedding(k)
-            for k in formula.free_variable_dict]
-        uvar_local_emb = [formula.get_var_local_embedding(k)
-            for k in formula.universal_variable_dict]
+            if efloss is None:
+                break
+            elif torch.abs(truth_values.mean() + efloss) < 1e-6:
+                break
 
+            if uloss is None:
+                break
+            elif torch.abs(truth_values.mean() - uloss) < 1e-6:
+                break
+
+
+        return {'tv': truth_values, 'fvar_loc_emb': fvar_local_emb}
 
 
     def initialize_variable_embeddings(self, formula: FirstOrderFormula):
@@ -85,69 +105,41 @@ class GradientReasoningMachine:
             fvars: list of free variables
         """
         def check_all_var_initialized():
-            for emb in formula.variable_local_embedding_dict.values():
-                if emb is None:
-                    return False
-            return True
+            return all(formula.term_initialized(term_name)
+                       for term_name in formula.term_dict)
 
         while not check_all_var_initialized():
-            for k, pred in formula.predicate_dict.items():
-                term1, term2 = pred.term1, pred.term2
+            for rel_name, pred in formula.predicate_dict.items():
+                head_name, tail_name = pred.head.name, pred.tail.name
+                print(head_name, rel_name, tail_name)
 
-                if term1.is_symbol or term2.is_symbol:
-                    if term1.is_symbol and not term2.is_symbol:
-                        formula.set_var_local_embedding(
-                            term2.name,
-                            self.nbp.estimate_tail_emb(
-                                self.nbp.get_entity_emb(term1.entity_id_list),
-                                self.nbp.get_relation_emb(pred.relation_id_list)
-                            )
-                        )
-                    elif not term1.is_symbol and term2.is_symbol:
-                        formula.set_var_local_embedding(
-                            term1.name,
-                            self.nbp.estimate_head_emb(
-                                self.nbp.get_entity_emb(term2.entity_id_list),
-                                self.nbp.get_relation_emb(pred.relation_id_list)
-                            )
-                        )
-                    else:
-                        break
+                if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
+                    head_emb = get_term_embed_from_formula(
+                        self.nbp, formula, head_name
+                    )
+                    rel_emb = self.nbp.get_relation_emb(
+                        formula.pred_grounded_relation_id_dict[rel_name]
+                    )
+
+                    tail_emb = self.nbp.estimate_tail_emb(head_emb, rel_emb)
+                    formula.set_var_local_embedding(tail_name, tail_emb)
+
+                elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
+                    tail_emb = get_term_embed_from_formula(
+                        self.nbp, formula, tail_name
+                    )
+
+                    rel_emb = self.nbp.get_relation_emb(
+                        formula.pred_grounded_relation_id_dict[rel_name]
+                    )
+
+                    head_emb = self.nbp.estimate_head_emb(tail_emb, rel_emb)
+                    formula.set_var_local_embedding(head_name, head_emb)
+
                 else:
-                    tn1, tn2 = term1.name, term2.name
-                    if (formula.has_var_local_embedding(tn1)
-                        and not formula.has_var_local_embedding(tn2)):
-                        formula.set_var_local_embedding(
-                            tn2,
-                            self.nbp.estimate_tail_emb(
-                                formula.get_var_local_embedding(tn1),
-                                self.nbp.get_relation_emb(pred.relation_id_list)
-                            )
-                        )
-                    elif (not formula.has_var_local_embedding(tn1)
-                          and formula.has_var_local_embedding(tn2)):
-                        formula.set_var_local_embedding(
-                            tn1,
-                            self.nbp.estimate_head_emb(
-                                formula.get_var_local_embedding(tn2),
-                                self.nbp.get_relation_emb(pred.relation_id_list)
-                            )
-                        )
-                    else:
-                        break
+                    continue
         return
 
-    def inference_with_reasoning(self, fof_list: List[FirstOrderFormula]):
+    def reasoning(self, fof_list: List[FirstOrderFormula]):
         # then it comes into a batched formula list
-        for formula in fof_list:
-            # for each batch formula,
-            truth_values, fvar_local_emb = self._reason_single_formula(formula)
-
-        return {'tv': truth_values, 'fvar_local_emb': fvar_local_emb}
-
-    def train_forward_with_reasoning(self, fof_list: List[FirstOrderFormula]):
-        for formula in fof_list:
-            self._train_single_formula(formula)
-
-        return {'pos_mean_tv': None,
-                'neg_mean_tv': None}
+        return [self._reason_single_formula(fof) for fof in fof_list]

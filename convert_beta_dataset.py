@@ -189,7 +189,7 @@ def convert_beta_folder(beta_folder, output_folder):
 
         lformula = parse_lstr_to_lformula(lstr)
         folf = fol.FirstOrderFormula(lformula)
-        print(folf.formula.to_lstr())
+        print(folf.formula.lstr())
 
         lstr_xy_dict[lstr] = []
         for sample in tqdm(samples, desc='train query answer processing'):
@@ -219,7 +219,7 @@ def convert_beta_folder(beta_folder, output_folder):
 
         lformula = parse_lstr_to_lformula(lstr)
         folf = fol.FirstOrderFormula(lformula)
-        print(folf.formula.to_lstr())
+        print(folf.formula.lstr())
 
         lstr_xy_dict[lstr] = []
         for sample in tqdm(samples, desc="valid query answer processing"):
@@ -252,7 +252,7 @@ def convert_beta_folder(beta_folder, output_folder):
 
         lformula = parse_lstr_to_lformula(lstr)
         folf = fol.FirstOrderFormula(lformula)
-        print(folf.formula.to_lstr())
+        print(folf.formula.lstr())
 
         lstr_xy_dict[lstr] = []
         for sample in tqdm(samples, desc='test query answer processing'):

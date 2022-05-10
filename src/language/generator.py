@@ -57,7 +57,7 @@ def sample_efo_dnf_query(p, q, r,
             pred2termpair[pid] = termpair
 
             _pred = BinaryPredicate(
-                relation_id=-1, term1=terms[k1], term2=terms[k2])
+                relation_id=-1, head=terms[k1], tail=terms[k2])
             predicates[pid] = _pred
 
             term2pred[k1].append(pid)
