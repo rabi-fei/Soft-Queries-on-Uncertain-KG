@@ -76,6 +76,9 @@ class NeuralBinaryPredicate:
         tail_emb = self.entity_embedding(tail_id_ten)
         return self.embedding_score(head_emb, rel_emb, tail_emb)
 
+    @abstractmethod
+    def get_all_entity_rankings(self, batch_embedding_input):
+        pass
 
 class TransE(nn.Module, NeuralBinaryPredicate):
     def __init__(self, num_entities, num_relations, embedding_dim, p, margin, device):
@@ -93,8 +96,7 @@ class TransE(nn.Module, NeuralBinaryPredicate):
 
     @property
     def entity_embedding(self):
-        return self._entity_embedding(
-            torch.arange(self.num_entities, device=self.device))
+        return self._entity_embedding.weight
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
         """
@@ -121,3 +123,15 @@ class TransE(nn.Module, NeuralBinaryPredicate):
     def get_entity_emb(self, entity_id_or_tensor):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
+
+    def get_all_entity_rankings(self, batch_embedding_input):
+        batch_embedding_input = batch_embedding_input.unsqueeze(-2)
+        # batch_size, all_candidates
+        # ranking score should be the higher the better
+        # ranking_score[entity_id] = the score of {entity_id}
+        ranking_score = - torch.norm(batch_embedding_input - self.entity_embedding, p=self.p, dim=-1)
+        # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
+        ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
+        # entity_rankings[entity_id] = {rankings} of the entity
+        entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
+        return entity_rankings

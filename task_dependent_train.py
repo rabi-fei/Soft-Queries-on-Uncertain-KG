@@ -88,12 +88,55 @@ def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate,
 def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine):
     # first level key: lstr
     # second level key: metric name
-    metric = defaultdict(defaultdict(list))
+    metric = defaultdict(lambda: defaultdict(list))
     with tqdm.tqdm(dataloader, desc=desc) as t:
         for i, fofs in enumerate(t):
             fetched = grm.reasoning(fofs, all_candidates=False)
             for fof, fof_reasoning_kv in zip(fofs, fetched):
-                estimate_free_var_embedding = fof_reasoning_kv['']
+                fvar_local_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']
+
+                # for each free variable name
+                for k, batch_est_emb in fvar_local_emb_dict.items():
+                    # [batch_size, num_entities]
+                    batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
+                    for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
+                        ranking = ranking.squeeze()
+                        # [1, num_entities]
+                        hard_answers = torch.tensor(fof.hard_answer_list[i][k],
+                                                    device=nbp.device)
+                        hard_answer_rank = ranking[hard_answers]
+                        # [1, num_entities]
+                        if fof.easy_answer_list[i][k]:
+                            easy_answers = torch.tensor(fof.easy_answer_list[i][k],
+                                                        device=nbp.device)
+                            easy_answer_rank = ranking[easy_answers].view(-1, 1)
+
+                            num_skipped_answers = torch.sum(
+                                hard_answer_rank > easy_answer_rank, dim=0)
+                            pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
+                        else:
+                            pure_hard_ans_rank = hard_answer_rank.squeeze()
+
+                        rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
+                        hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
+                        hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
+                        hit10 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
+
+                        metric[fof.lstr()]['rr'].append(rr.mean())
+                        metric[fof.lstr()]['hit1'].append(hit1.mean())
+                        metric[fof.lstr()]['hit3'].append(hit3.mean())
+                        metric[fof.lstr()]['hit10'].append(hit10.mean())
+
+    sum_metric = defaultdict(dict)
+    for k1 in metric:
+        for k2 in metric:
+            metric[k1][k2] = np.mean(metric[k1][k2])
+
+    logging.info(f"{sum_metric}")
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -138,7 +181,6 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        answer_size=kgidx.num_entities,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=0
@@ -146,7 +188,6 @@ if __name__ == "__main__":
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
-        answer_size=kgidx.num_entities,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=0
@@ -159,8 +200,9 @@ if __name__ == "__main__":
         nbp=nbp)
 
     for e in range(args.epoch):
-        train_epoch_K_verses_All(f"training epoch {e}",
-                                 train_dataloader, nbp, grm, args)
+        # train_epoch_K_verses_All(f"training epoch {e}",
+                                #  train_dataloader, nbp, grm, args)
         evaluate(f"validate epoch {e}",
                  valid_dataloader, nbp, grm)
-        evaluate(test_dataloader, nbp, grm)
+        evaluate(f"test epoch {e}",
+                 test_dataloader, nbp, grm)

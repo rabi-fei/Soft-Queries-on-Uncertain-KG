@@ -95,7 +95,7 @@ class GradientReasoningMachine:
             fvar_local_emb_dict = None
         else:
             fvar_local_emb_dict = {
-                    k: formula.get_var_local_embedding() for k in formula.free_variable_dict
+                    k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict
                 }
         return {'tv': truth_values,
                 'fvar_local_emb_dict': fvar_local_emb_dict}
