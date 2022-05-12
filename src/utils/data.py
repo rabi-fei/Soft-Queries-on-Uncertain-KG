@@ -7,7 +7,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
-from src.language.fol import FirstOrderFormula
+from src.language.fof import FirstOrderFormula
 from src.language.grammar import parse_lstr_to_lformula
 
 
@@ -95,7 +95,6 @@ class QAACollatorWithNegativeSampling:
             positive_fof.append_qa_instances_as_sentence(rsdict,
                                                          answers=easy_ans)
 
-
             noisy_ans = {}
             for k in easy_ans:
                 noisy_samples_tensor = torch.randint(
@@ -110,10 +109,11 @@ class QAACollatorWithNegativeSampling:
 
 class QAACollator:
     def __init__(self, lstr):
-        self.lformula = parse_lstr_to_lformula(lstr)
+        self.lstr = lstr
 
     def __call__(self, batch_input):
-        fof = FirstOrderFormula(self.lformula)
+        lformula = parse_lstr_to_lformula(self.lstr)
+        fof = FirstOrderFormula(lformula)
         for rsdict, easy_ans, hard_ans in batch_input:
             fof.append_qa_instances(rsdict, easy_ans, hard_ans)
         return fof
@@ -130,6 +130,7 @@ class QueryAnsweringSeqDataLoader:
 
     def __iter__(self):
         for lstr, qaa in self.lstr_qaa.items():
+            if not qaa: continue
             self.lstr_iterator[lstr] = iter(DataLoader(qaa,
                 collate_fn=QAACollator(lstr),
                 **self.dataloader_kwargs))
@@ -152,6 +153,8 @@ class QueryAnsweringSeqDataLoader:
 
         return [self.batch_buffer.pop()]
 
+    def __len__(self):
+        return sum([len(iterator) for iterator in self.lstr_iterator.values()])
 
 class QueryAnsweringMixDataLoader:
     def __init__(self, qaafile, **dataloader_kwargs) -> None:
@@ -176,6 +179,7 @@ class QueryAnsweringMixDataLoader:
 
     def __iter__(self):
         for lstr, qaa in self.lstr_qaa.items():
+            if not qaa: continue
             self.lstr_iterator[lstr] = iter(DataLoader(qaa,
                 batch_size=self.batch_size_per_query[lstr],
                 collate_fn=QAACollator(lstr),
@@ -196,7 +200,11 @@ class QueryAnsweringMixDataLoader:
 
         return buffer
 
-class TrainQueryAnsweringWithSentenceVerificationDataLoader:
+    def __len__(self):
+        return sum([len(iterator) for iterator in self.lstr_iterator.values()])
+
+# fixme: use when needed
+class TrainRandomSentencePairDataLoader:
     def __init__(self,
                  qaafile,
                  answer_size,
@@ -226,9 +234,7 @@ class TrainQueryAnsweringWithSentenceVerificationDataLoader:
         if len(self.batch_buffer) == 0:
             for lstr, iterator in self.lstr_iterator.items():
                 try:
-                    self.batch_buffer.append(
-                        next(iterator)
-                    )
+                    self.batch_buffer.append(next(iterator))
                 except StopIteration:
                     print(f"{lstr} iterator run out")
 

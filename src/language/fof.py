@@ -331,6 +331,26 @@ class Disjunction(Connective):
         return ans
 
 
+def get_term_embed_from_formula(nbp: NeuralBinaryPredicate,
+                                formula: "FirstOrderFormula",
+                                term_name,
+                                all_candidates=False):
+    if all_candidates:
+        if formula.term_dict[term_name].state == Term.FREE:
+            return nbp.entity_embedding.unsqueeze(-2)
+
+    if formula.has_term_grounded_entity_id_list(term_name):
+        emb = nbp.get_entity_emb(
+            formula.get_term_grounded_entity_id_list(term_name)
+        )
+    elif formula.has_var_local_embedding(term_name):
+        emb = formula.get_var_local_embedding(term_name)
+    else:
+        raise KeyError("Embedding does not found")
+    return emb
+
+
+
 class FirstOrderFormula:
     """
     The first order formula
@@ -399,8 +419,10 @@ class FirstOrderFormula:
         self.easy_answer_list.append(easy_answers)
         self.hard_answer_list.append(hard_answers)
         self.noisy_answer_list.append(noisy_answer)
+        self.num_instances
 
-    def append_qa_instances_as_sentence(self, append_dict, answers):
+    # TODO  random add sequences
+    def append_qa_instances_as_sentence(self, append_dict, answers, random=True):
         for k in answers:
             num_of_answers = len(answers[k])
             break
@@ -414,26 +436,41 @@ class FirstOrderFormula:
                 assert k in self.free_variable_dict, "answer for free variables"
 
         # random ground an answer into the instance
-        for k in answers:
-            answer_sample = sample(answers[k], 1)
-            append_dict[k] = answer_sample
+        if random:
+            for k in answers:
+                answer_sample = sample(answers[k], 1)
+                append_dict[k] = answer_sample
+            self.append_relation_and_symbols(append_dict)
 
-        self.append_relation_and_symbols(append_dict)
+        else:
+            for i in range(num_of_answers):
+                for k in answers:
+                    answer_sample = answers[k][i]
+                    append_dict[k] = answer_sample
+                self.append_relation_and_symbols(append_dict)
+
+
 
     # TODO overall probability
-    def evaluate_truth_values(self, tnorm: Tnorm, nbp: NeuralBinaryPredicate, margin):
+    def evaluate_truth_values(self,
+                              tnorm: Tnorm,
+                              nbp: NeuralBinaryPredicate,
+                              margin,
+                              all_candidates):
         """
         Input args:
             tnorm_type: the type of tnorms
         Return args:
         """
-        return self._evaluate_truth_values(self.formula, tnorm, nbp, margin)
+        return self._evaluate_truth_values(
+            self.formula, tnorm, nbp, margin, all_candidates)
 
     def _evaluate_truth_values(self,
                                formula: Formula,
                                tnorm: Tnorm,
                                nbp: NeuralBinaryPredicate,
-                               margin):
+                               margin,
+                               all_candidates):
         """
         Input args:
             tnorm_type: the type of tnorms
@@ -442,30 +479,30 @@ class FirstOrderFormula:
         if isinstance(formula, Conjunction):
             return tnorm.conjunction(
                 self._evaluate_truth_values(
-                    formula.formulas[0], tnorm, nbp, margin),
+                    formula.formulas[0], tnorm, nbp, margin, all_candidates),
                 self._evaluate_truth_values(
-                    formula.formulas[1], tnorm, nbp, margin)
+                    formula.formulas[1], tnorm, nbp, margin, all_candidates)
             )
 
         elif isinstance(formula, Disjunction):
             return tnorm.disjunction(
                 self._evaluate_truth_values(
-                    formula.formulas[0], tnorm, nbp, margin),
+                    formula.formulas[0], tnorm, nbp, margin, all_candidates),
                 self._evaluate_truth_values(
-                    formula.formulas[1], tnorm, nbp, margin)
+                    formula.formulas[1], tnorm, nbp, margin, all_candidates)
             )
 
         elif isinstance(formula, Negation):
             return tnorm.negation(
                 self._evaluate_truth_values(
-                    formula.formula, tnorm, nbp, margin)
+                    formula.formula, tnorm, nbp, margin, all_candidates)
             )
 
         elif isinstance(formula, BinaryPredicate):
             head_name = formula.head.name
             tail_name = formula.tail.name
-            head_emb = get_term_embed_from_formula(nbp, self, head_name)
-            tail_emb = get_term_embed_from_formula(nbp, self, tail_name)
+            head_emb = get_term_embed_from_formula(nbp, self, head_name, all_candidates)
+            tail_emb = get_term_embed_from_formula(nbp, self, tail_name, all_candidates)
 
             rel_emb = nbp.get_relation_emb(formula.relation_id_list)
             batch_score = nbp.embedding_score(
@@ -493,6 +530,12 @@ class FirstOrderFormula:
                 if v.state == Term.EXISTENTIAL}
 
     @property
+    def symbol_dict(self):
+        return {k: v
+                for k, v in self.term_dict.items()
+                if v.state == Term.SYMBOL}
+
+    @property
     def is_sentence(self):
         """
         Determine the state of the formula
@@ -503,6 +546,14 @@ class FirstOrderFormula:
 
     @property
     def num_instances(self):
+        num_instances = len(self.easy_answer_list)
+        assert num_instances == len(self.hard_answer_list)
+        for k in self.symbol_dict:
+            assert num_instances == len(self.get_term_grounded_entity_id_list(k))
+
+        for k in self.predicate_dict:
+            assert num_instances == len(self.get_pred_grounded_relation_id_list(k))
+
         return len(self.easy_answer_list)
 
     def has_var_local_embedding(self, key):
@@ -539,15 +590,3 @@ class FirstOrderFormula:
     def term_initialized(self, term_name):
         return (self.has_var_local_embedding(term_name) or
                 self.has_term_grounded_entity_id_list(term_name))
-
-
-def get_term_embed_from_formula(nbp, formula, term_name):
-    if formula.has_term_grounded_entity_id_list(term_name):
-        emb = nbp.get_entity_emb(
-            formula.get_term_grounded_entity_id_list(term_name)
-        )
-    elif formula.has_var_local_embedding(term_name):
-        emb = formula.get_var_local_embedding(term_name)
-    else:
-        raise KeyError("Embedding does not found")
-    return emb

@@ -7,7 +7,7 @@ import torch
 from src.language.tnorm import ProductTNorm
 
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.language.fol import FirstOrderFormula, Term, get_term_embed_from_formula
+from src.language.fof import FirstOrderFormula, Term, get_term_embed_from_formula
 
 def gather_formula(formula_list) -> Dict:
     pass
@@ -24,7 +24,7 @@ class GradientReasoningMachine:
         self.reasoinng_optimizer = reasoning_optimizer
         self.nbp = nbp
 
-    def _reason_single_formula(self, formula: FirstOrderFormula):
+    def _reason_single_formula(self, formula: FirstOrderFormula, all_candidates):
         """
         reasoning the first order formula
         Input args:
@@ -62,7 +62,7 @@ class GradientReasoningMachine:
             if efvar_local_emb:
                 EF_opt.zero_grad()
                 efloss = - formula.evaluate_truth_values(
-                    ProductTNorm, self.nbp, self.nbp.margin).mean()
+                    ProductTNorm, self.nbp, self.nbp.margin, all_candidates).mean()
                 efloss.backward()
                 EF_opt.step()
             else:
@@ -73,14 +73,14 @@ class GradientReasoningMachine:
                 # minimize the truth value with respect to uvars
                 U_opt.zero_grad()
                 uloss = formula.evaluate_truth_values(
-                    ProductTNorm, self.nbp, self.nbp.margin).mean()
+                    ProductTNorm, self.nbp, self.nbp.margin, all_candidates).mean()
                 uloss.backward()
                 U_opt.step()
             else:
                 uloss = None
 
             truth_values = formula.evaluate_truth_values(
-                ProductTNorm, self.nbp, self.nbp.margin)
+                ProductTNorm, self.nbp, self.nbp.margin, all_candidates)
 
             if efloss is None:
                 break
@@ -91,9 +91,14 @@ class GradientReasoningMachine:
                 break
             elif torch.abs(truth_values.mean() - uloss) < 1e-6:
                 break
-
-
-        return {'tv': truth_values, 'fvar_loc_emb': fvar_local_emb}
+        if all_candidates:
+            fvar_local_emb_dict = None
+        else:
+            fvar_local_emb_dict = {
+                    k: formula.get_var_local_embedding() for k in formula.free_variable_dict
+                }
+        return {'tv': truth_values,
+                'fvar_local_emb_dict': fvar_local_emb_dict}
 
 
     def initialize_variable_embeddings(self, formula: FirstOrderFormula):
@@ -111,7 +116,6 @@ class GradientReasoningMachine:
         while not check_all_var_initialized():
             for rel_name, pred in formula.predicate_dict.items():
                 head_name, tail_name = pred.head.name, pred.tail.name
-                print(head_name, rel_name, tail_name)
 
                 if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
                     head_emb = get_term_embed_from_formula(
@@ -140,6 +144,6 @@ class GradientReasoningMachine:
                     continue
         return
 
-    def reasoning(self, fof_list: List[FirstOrderFormula]):
+    def reasoning(self, fof_list: List[FirstOrderFormula], all_candidates=False):
         # then it comes into a batched formula list
-        return [self._reason_single_formula(fof) for fof in fof_list]
+        return [self._reason_single_formula(fof, all_candidates) for fof in fof_list]

@@ -12,7 +12,7 @@ Term = e[number]
      = f[number]
 """
 
-from .fol import Conjunction, Disjunction, Formula, Lobject, Negation, BinaryPredicate, Term
+from .fof import Conjunction, Disjunction, Formula, Lobject, Negation, BinaryPredicate, Term
 
 def remove_outmost_backets(lstr: str):
     if not (lstr[0] == '(' and lstr[-1] == ')'):

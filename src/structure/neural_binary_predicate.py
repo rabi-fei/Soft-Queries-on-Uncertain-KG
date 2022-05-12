@@ -38,14 +38,19 @@ class NeuralBinaryPredicate:
     def estiamte_rel_emb(self, head_emb, tail_emb):
         pass
 
+    @abstractmethod
     def get_relation_emb(self, relation_id_or_tensor):
         rel_id = torch.tensor(relation_id_or_tensor, device=self.device)
-        return self.relation_embedding(rel_id)
+        return self._relation_embedding(rel_id)
 
+    @abstractmethod
     def get_entity_emb(self, entity_id_or_tensor):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
-        return self.entity_embedding(ent_id)
+        return self._entity_embedding(ent_id)
 
+    @property
+    def entity_embedding(self):
+        pass
 
     @classmethod
     def create(cls, device, **kwargs):
@@ -81,10 +86,15 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         self.device = device
         self.margin = margin
         self.p = p
-        self.entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
-        nn.init.xavier_uniform_(self.entity_embedding.weight)
-        self.relation_embedding = nn.Embedding(num_relations, embedding_dim)
-        nn.init.xavier_uniform_(self.relation_embedding.weight)
+        self._entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
+        nn.init.xavier_uniform_(self._entity_embedding.weight)
+        self._relation_embedding = nn.Embedding(num_relations, embedding_dim)
+        nn.init.xavier_uniform_(self._relation_embedding.weight)
+
+    @property
+    def entity_embedding(self):
+        return self._entity_embedding(
+            torch.arange(self.num_entities, device=self.device))
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
         """
@@ -103,3 +113,11 @@ class TransE(nn.Module, NeuralBinaryPredicate):
 
     def estiamte_rel_emb(self, head_emb, tail_emb):
         return tail_emb - head_emb
+
+    def get_relation_emb(self, relation_id_or_tensor):
+        rel_id = torch.tensor(relation_id_or_tensor, device=self.device)
+        return self._relation_embedding(rel_id)
+
+    def get_entity_emb(self, entity_id_or_tensor):
+        ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
+        return self._entity_embedding(ent_id)
