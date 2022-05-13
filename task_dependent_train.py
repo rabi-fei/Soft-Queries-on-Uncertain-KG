@@ -16,7 +16,8 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate, TransE
 from src.utils.data import (QueryAnsweringSeqDataLoader,
-                            TrainRandomSentencePairDataLoader)
+                            TrainRandomSentencePairDataLoader,
+                            RaggedBatch)
 
 parser = argparse.ArgumentParser()
 
@@ -52,21 +53,23 @@ def train_epoch_noisy_v2(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm
             ####################
             optimizer.zero_grad()
             pos_fetched, neg_fetched = grm.reasoning((pos_fof, neg_fof), all_candidates=False, infer_free=False)
+            plogtv = torch.log(pos_fetched['tv'] + 1e-20)
 
-            pos_answer_sizes = [len(gdict['f']) for gdict in pos_fof.grounding_dict_list]
-            pos_tv_list = torch.split(pos_fetched['tv'], pos_answer_sizes)
+            # plogtv_list = torch.split(plogtv, pos_answer_sizes)
+            ragged_plogtv = RaggedBatch(
+                flatten=plogtv,
+                sizes=[len(gdict['f']) for gdict in pos_fof.grounding_dict_list])
+            padded_plogtv = ragged_plogtv.to_dense_matrix(padding_value=0)
+            pos_losses = torch.sum(padded_plogtv, dim=-1) / torch.tensor(ragged_plogtv.sizes, device=nbp.device)
 
-            neg_answer_sizes = [len(gdict['f']) for gdict in neg_fof.grounding_dict_list]
-            neg_tv_list = torch.split(neg_fetched['tv'], neg_answer_sizes)
+            nlog1mtv = torch.log(1 - neg_fetched['tv'] + 1e-20)
+            ragged_nlog1mtv = RaggedBatch(
+                flatten=nlog1mtv,
+                sizes=[len(gdict['f']) for gdict in neg_fof.grounding_dict_list])
+            padded_nlog1mtv = ragged_nlog1mtv.to_dense_matrix(padding_value=0)
+            neg_losses = torch.sum(padded_nlog1mtv, dim=-1) / torch.tensor(ragged_nlog1mtv.sizes, device=nbp.device)
 
-            batch_size = len(pos_tv_list)
-
-            pos_loss, neg_loss = 0, 0
-            for ptv, ntv in zip(pos_tv_list, neg_tv_list):
-                pos_loss -= torch.mean(torch.log(ptv + 1e-20)) / batch_size
-                neg_loss -= torch.mean(torch.log(1 - ntv + 1e-20)) / batch_size
-
-            loss = pos_loss + neg_loss
+            loss = pos_losses.mean() + neg_losses.mean()
 
             loss.backward()
             optimizer.step()
