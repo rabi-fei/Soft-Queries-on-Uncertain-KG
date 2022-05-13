@@ -144,7 +144,7 @@ class QueryAnsweringSeqDataLoader:
                         next(iterator)
                     )
                 except StopIteration:
-                    print(f"{lstr} iterator run out")
+                    pass
 
             if len(self.batch_buffer) == 0:
                 raise StopIteration
@@ -236,12 +236,11 @@ class TrainRandomSentencePairDataLoader:
                 try:
                     self.batch_buffer.append(next(iterator))
                 except StopIteration:
-                    print(f"{lstr} iterator run out")
+                    pass
 
             if len(self.batch_buffer) == 0:
                 raise StopIteration
             else:
                 shuffle(self.batch_buffer)
-        print("fetched buffer")
 
         return self.batch_buffer.pop()

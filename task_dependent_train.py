@@ -10,6 +10,7 @@ from torch import nn
 import torch.nn.functional as F
 import numpy as np
 
+from src.language.tnorm import GodelTNorm, ProductTNorm
 from src.pipeline.reasoning_machine import GradientReasoningMachine
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
@@ -20,7 +21,7 @@ from src.utils.data import (QueryAnsweringSeqDataLoader,
 parser = argparse.ArgumentParser()
 
 # base environment
-parser.add_argument("--device", type=str, default="cpu")
+parser.add_argument("--device", type=str, default="cuda:0")
 parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
@@ -28,27 +29,30 @@ parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='transe')
-parser.add_argument("--embedding_dim", type=int, default=100)
-parser.add_argument("--margin", type=float, default=5)
+parser.add_argument("--embedding_dim", type=int, default=300)
+parser.add_argument("--margin", type=float, default=20)
 parser.add_argument("--p", type=int, default=1)
 
 # optimization
 parser.add_argument("--epoch", type=int, default=100)
-parser.add_argument("--batch_size", type=int, default=2)
+parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--learning_rate", type=float, default=1e-1)
+parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 
 
 def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
-    loss_func = nn.MultiLabelSoftMarginLoss()
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
 
-    with tqdm.tqdm(enumerate(train_dataloader), desc=desc) as t:
+    with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
+        trajectory = defaultdict(list)
         for i, fofs in t:
-            metric_step = defaultdict(list)
             ####################
             optimizer.zero_grad()
             fetched = grm.reasoning(fofs, all_candidates=True)
+
+            metric_step = defaultdict(list)
             loss = 0
+
             for fof, fof_reasoning_kv in zip(fofs, fetched):
                 # batch_size, all entities
                 batch_truth_value_of_grounded_cases = torch.transpose(
@@ -57,7 +61,7 @@ def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate,
                 # only works for single free variable with name f
                 true_answers = []
                 for easy_answer in fof.easy_answer_list:
-                    target_sparse = torch.tensor(easy_answer['f'])
+                    target_sparse = torch.tensor(easy_answer['f'], device=args.device)
                     target_one_hot = torch.sum(
                         F.one_hot(target_sparse, num_classes=answer_size),
                         dim=0,
@@ -66,30 +70,47 @@ def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate,
                     true_answers.append(target_one_hot)
 
                 multi_true_answer_tensor = torch.cat(true_answers, dim=0)
+                this_loss = - multi_true_answer_tensor * torch.log(batch_truth_value_of_grounded_cases + 1e-10)
+                this_loss -= (1-multi_true_answer_tensor) * torch.log(1-batch_truth_value_of_grounded_cases + 1e-10)
+                loss += this_loss.mean()
 
-                loss += loss_func(batch_truth_value_of_grounded_cases,
-                                    multi_true_answer_tensor)
+                metric_step['loss'].append(this_loss.mean().item())
+
+                true_positive = torch.sum((multi_true_answer_tensor * batch_truth_value_of_grounded_cases) > 0.5, -1).tolist()
+                all_true = torch.sum(multi_true_answer_tensor, -1).tolist()
+                all_positive = torch.sum(batch_truth_value_of_grounded_cases > 0.5, -1).tolist()
+                precision, recall = [], []
+                for tp, at, ap in zip(true_positive, all_true, all_positive):
+                    precision.append(tp / ap if ap > 0 else 0)
+                    recall.append(tp / at)
+
+                metric_step['precision'].extend(precision)
+                metric_step['recall'].extend(recall)
+
             loss.backward()
             optimizer.step()
             ####################
-            metric_step['loss'].append(loss.item())
 
-            logging.info(f"[Train]"
-                        f"batch_step: {i+1};"
-                        f"average K verses All loss: {np.mean(metric_step['loss'])}")
-            postfix = {
-                "step": i+1,
-                "average loss": np.mean(metric_step['loss'])
-            }
+
+            postfix = {'step': i+1}
+            for k in metric_step:
+                postfix[k] = np.mean(metric_step[k])
+                trajectory[k].append(postfix[k])
+            logging.info(f"[train] {postfix}")
+            postfix['acc_loss'] = np.mean(trajectory['loss'])
             t.set_postfix(postfix)
-    return postfix
+
+        metric = {'step': i+1}
+        for k in trajectory:
+            metric[k] = np.mean(trajectory[k])
+    return metric
 
 
 def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine):
     # first level key: lstr
     # second level key: metric name
     metric = defaultdict(lambda: defaultdict(list))
-    with tqdm.tqdm(dataloader, desc=desc) as t:
+    with tqdm.tqdm(dataloader, desc=desc, total=len(dataloader)) as t:
         for i, fofs in enumerate(t):
             fetched = grm.reasoning(fofs, all_candidates=False)
             for fof, fof_reasoning_kv in zip(fofs, fetched):
@@ -129,8 +150,8 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
 
     sum_metric = defaultdict(dict)
     for k1 in metric:
-        for k2 in metric:
-            metric[k1][k2] = np.mean(metric[k1][k2])
+        for k2 in metric[k1]:
+            sum_metric[k1][k2] = np.mean(metric[k1][k2])
 
     logging.info(f"{sum_metric}")
 
@@ -146,7 +167,8 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     logging.basicConfig(filename=osp.join(args.output_dir, 'output.log'),
                         format='%(asctime)s %(message)s',
-                        level=logging.INFO)
+                        level=logging.INFO,
+                        filemode='wt')
 
     kgidx = KGIndex.load(
         osp.join(args.task_folder, "kgindex.json"))
@@ -172,6 +194,8 @@ if __name__ == "__main__":
         margin=args.margin,
         device=args.device)
 
+    nbp.to(args.device)
+
     # may change to other ways of teps
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
@@ -181,28 +205,39 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=args.batch_size,
+        batch_size=512,
         shuffle=False,
         num_workers=0
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
-        batch_size=args.batch_size,
+        batch_size=512,
         shuffle=False,
         num_workers=0
     )
 
-    grm = GradientReasoningMachine(
-        reasoning_rate=1e-1,
-        reasoning_steps=20,
-        reasoning_optimizer='Adam',
-        nbp=nbp)
 
+    # train_epoch_K_verses_All(f"initial from cold start",
+                            #    train_dataloader, nbp, grm0, args)
     for e in range(args.epoch):
-        # train_epoch_K_verses_All(f"training epoch {e}",
-                                #  train_dataloader, nbp, grm, args)
+
+        train_grm = GradientReasoningMachine(
+            reasoning_rate=args.reasoning_rate,
+            reasoning_steps=3,
+            reasoning_optimizer='Adam',
+            nbp=nbp,
+            tnorm=ProductTNorm)
+        train_epoch_K_verses_All(f"training epoch {e}",
+                                 train_dataloader, nbp, train_grm, args)
+
+        eval_grm = GradientReasoningMachine(
+            reasoning_rate=args.reasoning_rate,
+            reasoning_steps=30,
+            reasoning_optimizer='Adam',
+            nbp=nbp,
+            tnorm=ProductTNorm)
         evaluate(f"validate epoch {e}",
-                 valid_dataloader, nbp, grm)
+                 valid_dataloader, nbp, eval_grm)
         evaluate(f"test epoch {e}",
-                 test_dataloader, nbp, grm)
+                 test_dataloader, nbp, eval_grm)

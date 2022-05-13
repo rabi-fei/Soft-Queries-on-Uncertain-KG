@@ -6,7 +6,7 @@ from typing import Dict
 
 from tqdm import tqdm
 
-from language import fof
+from src.language import fof
 from src.language.grammar import parse_lstr_to_lformula
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.knowledge_graph import KnowledgeGraph
@@ -270,7 +270,7 @@ def convert_beta_folder(beta_folder, output_folder):
 
 
 if __name__ == "__main__":
-    beta_folder = "/Users/zihao/Project/FirstOrderQueryEstimation/data/{}"
+    beta_folder = "/home/zwanggc/Project/FirstOrderQueryEstimation/data/{}"
     output_folder = "./data/{}"
 
     for dataset in [

@@ -4,7 +4,6 @@ A file maintains reasoning machine
 from typing import Dict, List
 
 import torch
-from src.language.tnorm import ProductTNorm
 
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.language.fof import FirstOrderFormula, Term, get_term_embed_from_formula
@@ -18,11 +17,13 @@ class GradientReasoningMachine:
                  reasoning_rate,
                  reasoning_steps,
                  reasoning_optimizer,
-                 nbp: NeuralBinaryPredicate):
+                 nbp: NeuralBinaryPredicate,
+                 tnorm):
         self.reasoning_rate = reasoning_rate
         self.reasoning_steps = reasoning_steps
         self.reasoinng_optimizer = reasoning_optimizer
         self.nbp = nbp
+        self.tnorm = tnorm
 
     def _reason_single_formula(self, formula: FirstOrderFormula, all_candidates):
         """
@@ -62,7 +63,7 @@ class GradientReasoningMachine:
             if efvar_local_emb:
                 EF_opt.zero_grad()
                 efloss = - formula.evaluate_truth_values(
-                    ProductTNorm, self.nbp, self.nbp.margin, all_candidates).mean()
+                    self.tnorm, self.nbp, self.nbp.margin, all_candidates).mean()
                 efloss.backward()
                 EF_opt.step()
             else:
@@ -73,30 +74,21 @@ class GradientReasoningMachine:
                 # minimize the truth value with respect to uvars
                 U_opt.zero_grad()
                 uloss = formula.evaluate_truth_values(
-                    ProductTNorm, self.nbp, self.nbp.margin, all_candidates).mean()
+                    self.tnorm, self.nbp, self.nbp.margin, all_candidates).mean()
                 uloss.backward()
                 U_opt.step()
             else:
                 uloss = None
 
-            truth_values = formula.evaluate_truth_values(
-                ProductTNorm, self.nbp, self.nbp.margin, all_candidates)
 
-            if efloss is None:
-                break
-            elif torch.abs(truth_values.mean() + efloss) < 1e-6:
-                break
-
-            if uloss is None:
-                break
-            elif torch.abs(truth_values.mean() - uloss) < 1e-6:
-                break
         if all_candidates:
             fvar_local_emb_dict = None
         else:
             fvar_local_emb_dict = {
                     k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict
                 }
+        truth_values = formula.evaluate_truth_values(
+            self.tnorm, self.nbp, self.nbp.margin, all_candidates)
         return {'tv': truth_values,
                 'fvar_local_emb_dict': fvar_local_emb_dict}
 
