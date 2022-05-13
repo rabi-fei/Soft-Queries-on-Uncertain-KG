@@ -40,6 +40,84 @@ parser.add_argument("--learning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 
 
+def train_epoch_margin(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
+    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+
+    with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
+        trajectory = defaultdict(list)
+        for i, fofs in t:
+            ####################
+            optimizer.zero_grad()
+            fetched = grm.reasoning(fofs, all_candidates=True)
+
+            metric_step = defaultdict(list)
+            loss = 0
+
+            for fof, fof_reasoning_kv in zip(fofs, fetched):
+                # batch_size, all entities
+                batch_truth_value_of_grounded_cases = torch.transpose(
+                    fof_reasoning_kv['tv'], dim0=0, dim1=1)
+                batch_size, answer_size = batch_truth_value_of_grounded_cases.shape
+
+                # only works for single free variable with name
+                true_answers = []
+                tv4target = 0
+                tv4noisy = 0
+                for j, easy_answer in enumerate(fof.easy_answer_list):
+                    target_index = torch.tensor(easy_answer['f'],
+                                                device=args.device)
+                    target_one_hot = torch.sum(
+                        F.one_hot(target_index, num_classes=answer_size),
+                        dim=0,
+                        keepdim=True
+                    )
+                    true_answers.append(target_one_hot)
+
+                    noisy_index = torch.randint(low=0,
+                                                high=nbp.num_entities,
+                                                size=(128,),
+                                                device=args.device)
+                    tv4target -= torch.mean(torch.log(
+                        batch_truth_value_of_grounded_cases[j, target_index] + 1e-10))
+                    tv4noisy -= torch.mean(torch.log( 1 -
+                        batch_truth_value_of_grounded_cases[j, noisy_index] + 1e-10))
+
+                    this_loss = tv4target + tv4noisy
+
+                multi_true_answer_tensor = torch.cat(true_answers, dim=0)
+
+                loss += this_loss / len(fof.easy_answer_list)
+                metric_step['loss'].append(this_loss.item())
+
+                true_positive = torch.sum((multi_true_answer_tensor * batch_truth_value_of_grounded_cases) > 0.5, -1).tolist()
+                all_true = torch.sum(multi_true_answer_tensor, -1).tolist()
+                all_positive = torch.sum(batch_truth_value_of_grounded_cases > 0.5, -1).tolist()
+                precision, recall = [], []
+                for tp, at, ap in zip(true_positive, all_true, all_positive):
+                    precision.append(tp / ap if ap > 0 else 0)
+                    recall.append(tp / at)
+                metric_step['precision'].extend(precision)
+                metric_step['recall'].extend(recall)
+                metric_step['all_possitive'].extend(all_positive)
+
+            loss.backward()
+            optimizer.step()
+            ####################
+
+            postfix = {'step': i+1}
+            for k in metric_step:
+                postfix[k] = np.mean(metric_step[k])
+                trajectory[k].append(postfix[k])
+            logging.info(f"[{desc}] {postfix}")
+            postfix['acc_loss'] = np.mean(trajectory['loss'])
+            t.set_postfix(postfix)
+
+        metric = {'step': i+1}
+        for k in trajectory:
+            metric[k] = np.mean(trajectory[k])
+    return metric
+
+
 def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
 
@@ -58,7 +136,7 @@ def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate,
                 batch_truth_value_of_grounded_cases = torch.transpose(
                     fof_reasoning_kv['tv'], dim0=0, dim1=1)
                 batch_size, answer_size = batch_truth_value_of_grounded_cases.shape
-                # only works for single free variable with name f
+                # only works for single free variable with name
                 true_answers = []
                 for easy_answer in fof.easy_answer_list:
                     target_sparse = torch.tensor(easy_answer['f'], device=args.device)
@@ -86,6 +164,7 @@ def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate,
 
                 metric_step['precision'].extend(precision)
                 metric_step['recall'].extend(recall)
+                metric_step['all_possitive'].extend(all_positive)
 
             loss.backward()
             optimizer.step()
@@ -96,7 +175,7 @@ def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate,
             for k in metric_step:
                 postfix[k] = np.mean(metric_step[k])
                 trajectory[k].append(postfix[k])
-            logging.info(f"[train] {postfix}")
+            logging.info(f"[{desc}] {postfix}")
             postfix['acc_loss'] = np.mean(trajectory['loss'])
             t.set_postfix(postfix)
 
@@ -153,10 +232,7 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
         for k2 in metric[k1]:
             sum_metric[k1][k2] = np.mean(metric[k1][k2])
 
-    logging.info(f"{sum_metric}")
-
-
-
+    logging.info(f"[{desc}] {sum_metric}")
 
 
 
@@ -224,12 +300,14 @@ if __name__ == "__main__":
 
         train_grm = GradientReasoningMachine(
             reasoning_rate=args.reasoning_rate,
-            reasoning_steps=3,
+            reasoning_steps=int(30 * ((e + 1) // args.epoch)),
             reasoning_optimizer='Adam',
             nbp=nbp,
             tnorm=ProductTNorm)
-        train_epoch_K_verses_All(f"training epoch {e}",
-                                 train_dataloader, nbp, train_grm, args)
+        # train_epoch_K_verses_All(f"training epoch {e}",
+        #                          train_dataloader, nbp, train_grm, args)
+        train_epoch_margin(f"training epoch {e}",
+                           train_dataloader, nbp, train_grm, args)
 
         eval_grm = GradientReasoningMachine(
             reasoning_rate=args.reasoning_rate,
