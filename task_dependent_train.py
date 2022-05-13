@@ -344,21 +344,20 @@ if __name__ == "__main__":
         shuffle=True,
         answer_size=kgidx.num_entities,
         noisy_sample_size=args.noisy_sample_size,
-        num_workers=0)
-
+        num_workers=2)
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
         batch_size=512,
         shuffle=False,
-        num_workers=0
+        num_workers=1
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
         batch_size=512,
         shuffle=False,
-        num_workers=0
+        num_workers=1
     )
 
 
