@@ -1,6 +1,7 @@
 """
 A file maintains reasoning machine
 """
+from tkinter import W
 from typing import Dict, List
 
 import torch
@@ -25,7 +26,7 @@ class GradientReasoningMachine:
         self.nbp = nbp
         self.tnorm = tnorm
 
-    def _reason_single_formula(self, formula: FirstOrderFormula, all_candidates):
+    def _reason_single_formula(self, formula: FirstOrderFormula, all_candidates, infer_free):
         """
         reasoning the first order formula
         Input args:
@@ -44,6 +45,9 @@ class GradientReasoningMachine:
             [formula.get_var_local_embedding(k)
              for k in formula.free_variable_dict]))
         efvar_local_emb = evar_local_emb + fvar_local_emb
+
+        if infer_free: assert len(fvar_local_emb) > 0
+        else: assert len(fvar_local_emb) == 0
 
         uvar_local_emb = list(filter(
             lambda x: x is not None,
@@ -136,6 +140,6 @@ class GradientReasoningMachine:
                     continue
         return
 
-    def reasoning(self, fof_list: List[FirstOrderFormula], all_candidates=False):
+    def reasoning(self, fof_list: List[FirstOrderFormula], all_candidates=False, infer_free=False):
         # then it comes into a batched formula list
-        return [self._reason_single_formula(fof, all_candidates) for fof in fof_list]
+        return [self._reason_single_formula(fof, all_candidates, infer_free) for fof in fof_list]

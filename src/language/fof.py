@@ -375,6 +375,7 @@ class FirstOrderFormula:
         self.easy_answer_list = []
         self.hard_answer_list = []
         self.noisy_answer_list = []
+        self.grounding_dict_list = []
 
         # update internal storage
         self.predicate_dict: Dict[str, BinaryPredicate] = {}
@@ -421,8 +422,10 @@ class FirstOrderFormula:
         self.noisy_answer_list.append(noisy_answer)
         self.num_instances
 
-    # TODO  random add sequences
-    def append_qa_instances_as_sentence(self, append_dict, answers, random=True):
+
+    def append_qa_instances_as_sentence(self, append_dict, answers):
+        self.grounding_dict_list.append(answers)
+
         for k in answers:
             num_of_answers = len(answers[k])
             break
@@ -436,18 +439,11 @@ class FirstOrderFormula:
                 assert k in self.free_variable_dict, "answer for free variables"
 
         # random ground an answer into the instance
-        if random:
+        for i in range(num_of_answers):
             for k in answers:
-                answer_sample = sample(answers[k], 1)
+                answer_sample = answers[k][i]
                 append_dict[k] = answer_sample
             self.append_relation_and_symbols(append_dict)
-
-        else:
-            for i in range(num_of_answers):
-                for k in answers:
-                    answer_sample = answers[k][i]
-                    append_dict[k] = answer_sample
-                self.append_relation_and_symbols(append_dict)
 
 
 

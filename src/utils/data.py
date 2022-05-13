@@ -81,15 +81,17 @@ class RaggedBatch:
         # then dense_matrix is of shape [batch_size, max_of_self.sizes, *]
         return dense_matrix
 
-class QAACollatorWithNegativeSampling:
-    def __init__(self, lstr, answer_size=-1, negative_sample_size=-1):
-        self.lformula = parse_lstr_to_lformula(lstr)
+class QAACollatorWithNoisySentencePair:
+    def __init__(self, lstr, answer_size=-1, noisy_sample_size=-1):
+        self.lstr = lstr
         self.answer_size = answer_size
-        self.negative_sample_size = negative_sample_size
+        self.noisy_sample_size = noisy_sample_size
 
     def __call__(self, batch_input):
-        positive_fof = FirstOrderFormula(self.lformula)
-        negative_fof = FirstOrderFormula(self.lformula)
+        lformula = parse_lstr_to_lformula(self.lstr)
+        positive_fof = FirstOrderFormula(lformula)
+        lformula = parse_lstr_to_lformula(self.lstr)
+        negative_fof = FirstOrderFormula(lformula)
 
         for rsdict, easy_ans, _ in batch_input:
             positive_fof.append_qa_instances_as_sentence(rsdict,
@@ -98,8 +100,8 @@ class QAACollatorWithNegativeSampling:
             noisy_ans = {}
             for k in easy_ans:
                 noisy_samples_tensor = torch.randint(
-                    low=0, high=self.answer_size, size=(self.negative_sample_size,))
-                noisy_samples = noisy_samples_tensor.numpy().tolist()
+                    low=0, high=self.answer_size, size=(self.noisy_sample_size,))
+                noisy_samples = noisy_samples_tensor.tolist()
                 noisy_ans[k] = noisy_samples
 
             negative_fof.append_qa_instances_as_sentence(rsdict,
@@ -208,11 +210,11 @@ class TrainRandomSentencePairDataLoader:
     def __init__(self,
                  qaafile,
                  answer_size,
-                 neg_sample_size,
+                 noisy_sample_size,
                  **dataloader_kwargs) -> None:
         self.qaafile = qaafile
         self.answer_size = answer_size
-        self.neg_sample_size = neg_sample_size
+        self.noisy_sample_size = noisy_sample_size
         self.dataloader_kwargs = dataloader_kwargs
 
         with open(qaafile, 'rt') as f:
@@ -225,8 +227,8 @@ class TrainRandomSentencePairDataLoader:
         for lstr, qaa in self.lstr_qaa.items():
             if not qaa: continue
             self.lstr_iterator[lstr] = iter(DataLoader(qaa,
-                collate_fn=QAACollatorWithNegativeSampling(
-                    lstr, self.answer_size, self.neg_sample_size),
+                collate_fn=QAACollatorWithNoisySentencePair(
+                    lstr, self.answer_size, self.noisy_sample_size),
                 **self.dataloader_kwargs))
         return self
 
@@ -244,3 +246,6 @@ class TrainRandomSentencePairDataLoader:
                 shuffle(self.batch_buffer)
 
         return self.batch_buffer.pop()
+
+    def __len__(self):
+        return sum([len(iterator) for iterator in self.lstr_iterator.values()])

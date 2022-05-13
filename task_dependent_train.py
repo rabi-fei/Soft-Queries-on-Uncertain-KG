@@ -21,7 +21,7 @@ from src.utils.data import (QueryAnsweringSeqDataLoader,
 parser = argparse.ArgumentParser()
 
 # base environment
-parser.add_argument("--device", type=str, default="cuda:0")
+parser.add_argument("--device", type=str, default="cpu")
 parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
@@ -38,7 +38,54 @@ parser.add_argument("--epoch", type=int, default=100)
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--learning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
-parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy'])
+parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy', 'none'], default='none')
+parser.add_argument("--noisy_sample_size", type=int, default=128)
+
+
+def train_epoch_noisy_v2(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
+    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+
+    with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
+        trajectory = defaultdict(list)
+        for i, (pos_fof, neg_fof) in t:
+            metric_step = defaultdict(list)
+            ####################
+            optimizer.zero_grad()
+            pos_fetched, neg_fetched = grm.reasoning((pos_fof, neg_fof), all_candidates=False, infer_free=False)
+
+            pos_answer_sizes = [len(gdict['f']) for gdict in pos_fof.grounding_dict_list]
+            pos_tv_list = torch.split(pos_fetched['tv'], pos_answer_sizes)
+
+            neg_answer_sizes = [len(gdict['f']) for gdict in neg_fof.grounding_dict_list]
+            neg_tv_list = torch.split(neg_fetched['tv'], neg_answer_sizes)
+
+            batch_size = len(pos_tv_list)
+
+            pos_loss, neg_loss = 0, 0
+            for ptv, ntv in zip(pos_tv_list, neg_tv_list):
+                pos_loss -= torch.mean(torch.log(ptv + 1e-20)) / batch_size
+                neg_loss -= torch.mean(torch.log(1 - ntv + 1e-20)) / batch_size
+
+            loss = pos_loss + neg_loss
+
+            loss.backward()
+            optimizer.step()
+            ####################
+            metric_step['loss'].append(loss.item())
+
+            postfix = {'step': i+1}
+            for k in metric_step:
+                postfix[k] = np.mean(metric_step[k])
+                trajectory[k].append(postfix[k])
+            logging.info(f"[{desc}] {postfix}")
+            postfix['acc_loss'] = np.mean(trajectory['loss'])
+            t.set_postfix(postfix)
+
+        metric = {'step': i+1}
+        for k in trajectory:
+            metric[k] = np.mean(trajectory[k])
+    return metric
+
 
 
 def train_epoch_noisy(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
@@ -119,6 +166,7 @@ def train_epoch_noisy(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: G
     return metric
 
 
+# The K-verses-all objective, shown to be suboptimal
 def train_epoch_K_verses_All(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
 
@@ -192,7 +240,7 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
     metric = defaultdict(lambda: defaultdict(list))
     with tqdm.tqdm(dataloader, desc=desc, total=len(dataloader)) as t:
         for i, fofs in enumerate(t):
-            fetched = grm.reasoning(fofs, all_candidates=False)
+            fetched = grm.reasoning(fofs, all_candidates=False, infer_free=True)
             for fof, fof_reasoning_kv in zip(fofs, fetched):
                 fvar_local_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']
 
@@ -225,7 +273,7 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
                         num_skipped_answers = torch.sum(
                             pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
                         )
-                        pure_hard_ans_rank -= num_skipped_answers
+                        pure_hard_ans_rank -= num_skipped_answers.reshape(pure_hard_ans_rank.shape)
 
                         rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
                         hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
@@ -282,12 +330,22 @@ if __name__ == "__main__":
 
     nbp.to(args.device)
 
-    # may change to other ways of teps
-    train_dataloader = QueryAnsweringSeqDataLoader(
+    # this dataloader is for k-vs-all objective. works for noisy v1
+    # train_dataloader = QueryAnsweringSeqDataLoader(
+    #     osp.join(args.task_folder, 'train-qaa.json'),
+    #     batch_size=args.batch_size,
+    #     shuffle=True,
+    #     num_workers=0)
+
+    # for noisy objective
+    train_dataloader = TrainRandomSentencePairDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
         batch_size=args.batch_size,
         shuffle=True,
+        answer_size=kgidx.num_entities,
+        noisy_sample_size=args.noisy_sample_size,
         num_workers=0)
+
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
@@ -316,10 +374,10 @@ if __name__ == "__main__":
             tnorm=ProductTNorm)
         if args.objective.lower() == 'kvsall':
             train_epoch_K_verses_All(f"training epoch {e}",
-                                    train_dataloader, nbp, train_grm, args)
-        elif args.objeective.lower() == 'noisy':
-            train_epoch_noisy(f"training epoch {e}",
-                            train_dataloader, nbp, train_grm, args)
+                                     train_dataloader, nbp, train_grm, args)
+        elif args.objective.lower() == 'noisy':
+            train_epoch_noisy_v2(f"training epoch {e}",
+                              train_dataloader, nbp, train_grm, args)
 
 
         eval_grm = GradientReasoningMachine(
