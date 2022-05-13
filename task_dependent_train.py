@@ -206,6 +206,8 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
                                                     device=nbp.device)
                         hard_answer_rank = ranking[hard_answers]
                         # [1, num_entities]
+
+                        # remove better easy answers from its rankings
                         if fof.easy_answer_list[i][k]:
                             easy_answers = torch.tensor(fof.easy_answer_list[i][k],
                                                         device=nbp.device)
@@ -216,6 +218,13 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
                             pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
                         else:
                             pure_hard_ans_rank = hard_answer_rank.squeeze()
+
+                        # remove better hard answers from its ranking
+                        _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
+                        num_skipped_answers = torch.sum(
+                            pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
+                        )
+                        pure_hard_ans_rank -= num_skipped_answers
 
                         rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
                         hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
