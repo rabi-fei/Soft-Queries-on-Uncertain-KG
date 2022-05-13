@@ -38,9 +38,10 @@ parser.add_argument("--epoch", type=int, default=100)
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--learning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
+parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy'])
 
 
-def train_epoch_margin(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
+def train_epoch_noisy(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
 
     with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
@@ -313,10 +314,13 @@ if __name__ == "__main__":
             reasoning_optimizer='Adam',
             nbp=nbp,
             tnorm=ProductTNorm)
-        # train_epoch_K_verses_All(f"training epoch {e}",
-        #                          train_dataloader, nbp, train_grm, args)
-        train_epoch_margin(f"training epoch {e}",
-                           train_dataloader, nbp, train_grm, args)
+        if args.objective.lower() == 'kvsall':
+            train_epoch_K_verses_All(f"training epoch {e}",
+                                    train_dataloader, nbp, train_grm, args)
+        elif args.objeective.lower() == 'noisy':
+            train_epoch_noisy(f"training epoch {e}",
+                            train_dataloader, nbp, train_grm, args)
+
 
         eval_grm = GradientReasoningMachine(
             reasoning_rate=args.reasoning_rate,
