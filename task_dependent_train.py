@@ -30,7 +30,7 @@ parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
-parser.add_argument("--embedding_dim", type=int, default=300)
+parser.add_argument("--embedding_dim", type=int, default=500)
 parser.add_argument("--margin", type=float, default=20)
 parser.add_argument("--p", type=int, default=1)
 parser.add_argument("--checkpoint_path")
@@ -338,6 +338,10 @@ if __name__ == "__main__":
         p=args.p,
         margin=args.margin,
         device=args.device)
+
+    if args.checkpoint_path:
+        nbp.load_state_dict(torch.load(args.checkpoint_path))
+        print(f"model loaded from {args.checkpoint_path}")
 
     nbp.to(args.device)
 
