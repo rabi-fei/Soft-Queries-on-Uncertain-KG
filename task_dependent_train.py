@@ -291,12 +291,14 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
                     metric[fof.lstr()]['hit3'].append(hit3.mean())
                     metric[fof.lstr()]['hit10'].append(hit10.mean())
 
-    sum_metric = defaultdict(dict)
-    for lstr in metric:
-        for score_name in metric[lstr]:
-            sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
+            sum_metric = defaultdict(dict)
+            for lstr in metric:
+                for score_name in metric[lstr]:
+                    sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
+            t.set_postfix(sum_metric)
+            logging.info(f"[{desc}] {sum_metric}")
 
-    logging.info(f"[{desc}] {sum_metric}")
+    logging.info(f"[{desc}][final] {sum_metric}")
 
 
 
@@ -366,14 +368,14 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=512,
+        batch_size=32,
         shuffle=False,
-        num_workers=0
+        num_workers=1
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
-        batch_size=512,
+        batch_size=32,
         shuffle=False,
         num_workers=1
     )
@@ -400,17 +402,17 @@ if __name__ == "__main__":
             print("no training")
             eval_only = True
 
-
-        eval_grm = GradientReasoningMachine(
-            reasoning_rate=args.reasoning_rate,
-            reasoning_steps=30,
-            reasoning_optimizer='Adam',
-            nbp=nbp,
-            tnorm=ProductTNorm)
-        evaluate(f"validate epoch {e}",
-                 valid_dataloader, nbp, eval_grm)
-        evaluate(f"test epoch {e}",
-                 test_dataloader, nbp, eval_grm)
-
-        if eval_only:
-            break
+        if (e+1) / 10 == 0:
+            eval_grm = GradientReasoningMachine(
+                reasoning_rate=args.reasoning_rate,
+                reasoning_steps=30,
+                reasoning_optimizer='Adam',
+                nbp=nbp,
+                tnorm=ProductTNorm)
+            evaluate(f"validate epoch {e}",
+                     valid_dataloader, nbp, eval_grm)
+            evaluate(f"test epoch {e}",
+                     test_dataloader, nbp, eval_grm)
+     
+            if eval_only:
+                break
