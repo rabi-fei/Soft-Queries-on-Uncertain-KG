@@ -3,6 +3,7 @@
 **/__pycache__
 data
 log
+pretrain
 
 BATCH.md
 run_batch.sh

@@ -14,7 +14,7 @@ from src.language.tnorm import GodelTNorm, ProductTNorm
 from src.pipeline.reasoning_machine import GradientReasoningMachine
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
-from src.structure.neural_binary_predicate import NeuralBinaryPredicate, TransE
+from src.structure.neural_binary_predicate import ComplEx, NeuralBinaryPredicate, TransE
 from src.utils.data import (QueryAnsweringSeqDataLoader,
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)
@@ -243,50 +243,50 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
     metric = defaultdict(lambda: defaultdict(list))
     with tqdm.tqdm(dataloader, desc=desc, total=len(dataloader)) as t:
         for i, fofs in enumerate(t):
-            fetched = grm.reasoning(fofs, all_candidates=False, infer_free=True)
+            fetched = grm.reasoning(fofs, all_candidates=True, infer_free=False)
             for fof, fof_reasoning_kv in zip(fofs, fetched):
-                fvar_local_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']
+                batch_truth_value_of_grounded_cases = torch.transpose(
+                    fof_reasoning_kv['tv'], dim0=0, dim1=1)
+                batch_entity_rankings = torch.argsort(batch_truth_value_of_grounded_cases, dim=-1, descending=True)
 
-                # for each free variable name
-                for k, batch_est_emb in fvar_local_emb_dict.items():
-                    # [batch_size, num_entities]
-                    batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
-                    for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
-                        ranking = ranking.squeeze()
-                        # [1, num_entities]
-                        hard_answers = torch.tensor(fof.hard_answer_list[i][k],
+                # batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
+                k = 'f' # FIXME: only applies for single free variable named as f
+                for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
+                    ranking = ranking.squeeze()
+                    # [1, num_entities
+                    hard_answers = torch.tensor(fof.hard_answer_list[i]['f'],
+                                                device=nbp.device)
+                    hard_answer_rank = ranking[hard_answers]
+                    # [1, num_entities]
+
+                    # remove better easy answers from its rankings
+                    if fof.easy_answer_list[i][k]:
+                        easy_answers = torch.tensor(fof.easy_answer_list[i][k],
                                                     device=nbp.device)
-                        hard_answer_rank = ranking[hard_answers]
-                        # [1, num_entities]
+                        easy_answer_rank = ranking[easy_answers].view(-1, 1)
 
-                        # remove better easy answers from its rankings
-                        if fof.easy_answer_list[i][k]:
-                            easy_answers = torch.tensor(fof.easy_answer_list[i][k],
-                                                        device=nbp.device)
-                            easy_answer_rank = ranking[easy_answers].view(-1, 1)
-
-                            num_skipped_answers = torch.sum(
-                                hard_answer_rank > easy_answer_rank, dim=0)
-                            pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
-                        else:
-                            pure_hard_ans_rank = hard_answer_rank.squeeze()
-
-                        # remove better hard answers from its ranking
-                        _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
                         num_skipped_answers = torch.sum(
-                            pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
-                        )
-                        pure_hard_ans_rank -= num_skipped_answers.reshape(pure_hard_ans_rank.shape)
+                            hard_answer_rank > easy_answer_rank, dim=0)
+                        pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
+                    else:
+                        pure_hard_ans_rank = hard_answer_rank.squeeze()
 
-                        rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
-                        hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
-                        hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
-                        hit10 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
+                    # remove better hard answers from its ranking
+                    _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
+                    num_skipped_answers = torch.sum(
+                        pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
+                    )
+                    pure_hard_ans_rank -= num_skipped_answers.reshape(pure_hard_ans_rank.shape)
 
-                        metric[fof.lstr()]['rr'].append(rr.mean())
-                        metric[fof.lstr()]['hit1'].append(hit1.mean())
-                        metric[fof.lstr()]['hit3'].append(hit3.mean())
-                        metric[fof.lstr()]['hit10'].append(hit10.mean())
+                    rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
+                    hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
+                    hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
+                    hit10 =  (pure_hard_ans_rank < 10).detach().cpu().numpy()
+
+                    metric[fof.lstr()]['rr'].append(rr.mean())
+                    metric[fof.lstr()]['hit1'].append(hit1.mean())
+                    metric[fof.lstr()]['hit3'].append(hit3.mean())
+                    metric[fof.lstr()]['hit10'].append(hit10.mean())
 
     sum_metric = defaultdict(dict)
     for k1 in metric:
@@ -323,7 +323,7 @@ if __name__ == "__main__":
     #     kgidx,
     #     device=args.device)
 
-    nbp = TransE(
+    nbp = ComplEx(
         num_entities=kgidx.num_entities,
         num_relations=kgidx.num_relations,
         embedding_dim=args.embedding_dim,
@@ -334,13 +334,14 @@ if __name__ == "__main__":
     nbp.to(args.device)
 
     # this dataloader is for k-vs-all objective. works for noisy v1
+    # depreciated
     # train_dataloader = QueryAnsweringSeqDataLoader(
     #     osp.join(args.task_folder, 'train-qaa.json'),
     #     batch_size=args.batch_size,
     #     shuffle=True,
     #     num_workers=0)
 
-    # for noisy objective
+    # for noisy objective v2
     train_dataloader = TrainRandomSentencePairDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
         batch_size=args.batch_size,
@@ -351,9 +352,9 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=512,
+        batch_size=12,
         shuffle=False,
-        num_workers=1
+        num_workers=0
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
@@ -366,6 +367,7 @@ if __name__ == "__main__":
 
     # train_epoch_K_verses_All(f"initial from cold start",
                             #    train_dataloader, nbp, grm0, args)
+    eval_only = False
     for e in range(args.epoch):
 
         train_grm = GradientReasoningMachine(
@@ -374,12 +376,15 @@ if __name__ == "__main__":
             reasoning_optimizer='Adam',
             nbp=nbp,
             tnorm=ProductTNorm)
-        if args.objective.lower() == 'kvsall':
+        if args.objective.lower() == 'noisy':
+            train_epoch_noisy_v2(f"training epoch {e}",
+                                 train_dataloader, nbp, train_grm, args)
+        elif args.objective.lower() == 'kvsall':
             train_epoch_K_verses_All(f"training epoch {e}",
                                      train_dataloader, nbp, train_grm, args)
-        elif args.objective.lower() == 'noisy':
-            train_epoch_noisy_v2(f"training epoch {e}",
-                              train_dataloader, nbp, train_grm, args)
+        else:
+            print("no training")
+            eval_only = True
 
 
         eval_grm = GradientReasoningMachine(
@@ -392,3 +397,6 @@ if __name__ == "__main__":
                  valid_dataloader, nbp, eval_grm)
         evaluate(f"test epoch {e}",
                  test_dataloader, nbp, eval_grm)
+
+        if eval_only:
+            break

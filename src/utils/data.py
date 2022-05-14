@@ -151,7 +151,8 @@ class QueryAnsweringSeqDataLoader:
             if len(self.batch_buffer) == 0:
                 raise StopIteration
             else:
-                shuffle(self.batch_buffer)
+                if self.dataloader_kwargs.get('shuffle', False):
+                    shuffle(self.batch_buffer)
 
         return [self.batch_buffer.pop()]
 

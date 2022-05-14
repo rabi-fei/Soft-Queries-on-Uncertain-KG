@@ -7,7 +7,7 @@ from typing import Dict, List
 import torch
 
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.language.fof import FirstOrderFormula, Term, get_term_embed_from_formula
+from src.language.fof import FirstOrderFormula, get_head_embed_from_formula, get_tail_embed_from_formula
 
 def gather_formula(formula_list) -> Dict:
     pass
@@ -40,14 +40,16 @@ class GradientReasoningMachine:
             lambda x: x is not None,
             [formula.get_var_local_embedding(k)
              for k in formula.existential_variable_dict]))
-        fvar_local_emb = list(filter(
-            lambda x: x is not None,
-            [formula.get_var_local_embedding(k)
-             for k in formula.free_variable_dict]))
-        efvar_local_emb = evar_local_emb + fvar_local_emb
 
-        if infer_free: assert len(fvar_local_emb) > 0
-        else: assert len(fvar_local_emb) == 0
+        if infer_free:
+            fvar_local_emb = list(filter(
+                lambda x: x is not None,
+                [formula.get_var_local_embedding(k)
+                for k in formula.free_variable_dict]))
+            assert fvar_local_emb
+            efvar_local_emb = evar_local_emb + fvar_local_emb
+        else:
+            efvar_local_emb = evar_local_emb
 
         uvar_local_emb = list(filter(
             lambda x: x is not None,
@@ -58,7 +60,7 @@ class GradientReasoningMachine:
         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
 
         if efvar_local_emb:
-            EF_opt = optimizer_class(evar_local_emb + fvar_local_emb)
+            EF_opt = optimizer_class(efvar_local_emb)
         if uvar_local_emb:
             U_opt = optimizer_class(uvar_local_emb)
 
@@ -114,7 +116,7 @@ class GradientReasoningMachine:
                 head_name, tail_name = pred.head.name, pred.tail.name
 
                 if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
-                    head_emb = get_term_embed_from_formula(
+                    head_emb = get_head_embed_from_formula(
                         self.nbp, formula, head_name
                     )
                     rel_emb = self.nbp.get_relation_emb(
@@ -125,7 +127,7 @@ class GradientReasoningMachine:
                     formula.set_var_local_embedding(tail_name, tail_emb)
 
                 elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
-                    tail_emb = get_term_embed_from_formula(
+                    tail_emb = get_tail_embed_from_formula(
                         self.nbp, formula, tail_name
                     )
 

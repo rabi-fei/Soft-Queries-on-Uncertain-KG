@@ -331,7 +331,7 @@ class Disjunction(Connective):
         return ans
 
 
-def get_term_embed_from_formula(nbp: NeuralBinaryPredicate,
+def get_head_embed_from_formula(nbp: NeuralBinaryPredicate,
                                 formula: "FirstOrderFormula",
                                 term_name,
                                 all_candidates=False):
@@ -340,7 +340,7 @@ def get_term_embed_from_formula(nbp: NeuralBinaryPredicate,
             return nbp.entity_embedding.unsqueeze(-2)
 
     if formula.has_term_grounded_entity_id_list(term_name):
-        emb = nbp.get_entity_emb(
+        emb = nbp.get_head_emb(
             formula.get_term_grounded_entity_id_list(term_name)
         )
     elif formula.has_var_local_embedding(term_name):
@@ -349,6 +349,23 @@ def get_term_embed_from_formula(nbp: NeuralBinaryPredicate,
         raise KeyError("Embedding does not found")
     return emb
 
+def get_tail_embed_from_formula(nbp: NeuralBinaryPredicate,
+                                formula: "FirstOrderFormula",
+                                term_name,
+                                all_candidates=False):
+    if all_candidates:
+        if formula.term_dict[term_name].state == Term.FREE:
+            return nbp.entity_embedding.unsqueeze(-2)
+
+    if formula.has_term_grounded_entity_id_list(term_name):
+        emb = nbp.get_tail_emb(
+            formula.get_term_grounded_entity_id_list(term_name)
+        )
+    elif formula.has_var_local_embedding(term_name):
+        emb = formula.get_var_local_embedding(term_name)
+    else:
+        raise KeyError("Embedding does not found")
+    return emb
 
 
 class FirstOrderFormula:
@@ -497,14 +514,14 @@ class FirstOrderFormula:
         elif isinstance(formula, BinaryPredicate):
             head_name = formula.head.name
             tail_name = formula.tail.name
-            head_emb = get_term_embed_from_formula(nbp, self, head_name, all_candidates)
-            tail_emb = get_term_embed_from_formula(nbp, self, tail_name, all_candidates)
+            head_emb = get_head_embed_from_formula(nbp, self, head_name, all_candidates)
+            tail_emb = get_tail_embed_from_formula(nbp, self, tail_name, all_candidates)
 
             rel_emb = nbp.get_relation_emb(formula.relation_id_list)
             batch_score = nbp.embedding_score(
                 head_emb, rel_emb, tail_emb
             )
-            batch_truth_value = nbp.score2prob(batch_score, margin)
+            batch_truth_value = nbp.score2truth_value(batch_score, margin)
             return batch_truth_value
 
     @property
