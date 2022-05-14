@@ -405,7 +405,7 @@ if __name__ == "__main__":
             print("no training")
             eval_only = True
 
-        if (e+1) / 10 == 0:
+        if (e+1) % 10 == 0:
             eval_grm = GradientReasoningMachine(
                 reasoning_rate=args.reasoning_rate,
                 reasoning_steps=30,
