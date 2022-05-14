@@ -29,10 +29,11 @@ parser.add_argument("--output_dir", type=str, default='log')
 parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
 
 # model, defines the neural binary predicate
-parser.add_argument("--model_name", type=str, default='transe')
+parser.add_argument("--model_name", type=str, default='complex')
 parser.add_argument("--embedding_dim", type=int, default=300)
 parser.add_argument("--margin", type=float, default=20)
 parser.add_argument("--p", type=int, default=1)
+parser.add_argument("--checkpoint_path")
 
 # optimization
 parser.add_argument("--epoch", type=int, default=100)
@@ -323,7 +324,14 @@ if __name__ == "__main__":
     #     kgidx,
     #     device=args.device)
 
-    nbp = ComplEx(
+    if args.model_name.lower() == 'transe':
+        nbp_class = TransE
+    elif args.model_name.lower() == 'complex':
+        nbp_class = ComplEx
+    else:
+        raise NotImplementedError
+
+    nbp = nbp_class(
         num_entities=kgidx.num_entities,
         num_relations=kgidx.num_relations,
         embedding_dim=args.embedding_dim,

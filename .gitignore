@@ -4,6 +4,7 @@
 data
 log
 pretrain
+kbc
 
 BATCH.md
 run_batch.sh
