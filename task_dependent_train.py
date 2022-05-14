@@ -286,7 +286,7 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
                     hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
                     hit10 =  (pure_hard_ans_rank < 10).detach().cpu().numpy()
 
-                    metric[fof.lstr()]['rr'].append(rr.mean())
+                    metric[fof.lstr()]['mrr'].append(rr.mean())
                     metric[fof.lstr()]['hit1'].append(hit1.mean())
                     metric[fof.lstr()]['hit3'].append(hit3.mean())
                     metric[fof.lstr()]['hit10'].append(hit10.mean())
@@ -295,8 +295,11 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
             for lstr in metric:
                 for score_name in metric[lstr]:
                     sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
-            t.set_postfix(sum_metric)
-            logging.info(f"[{desc}] {sum_metric}")
+
+            postfix = {}
+            for name in ['1p', '3p', '2i', 'inp']:
+                postfix[name + 'mrr'] = sum_metric[name]['mrr']
+            t.set_postfix(postfix)
 
     logging.info(f"[{desc}][final] {sum_metric}")
 
@@ -413,6 +416,6 @@ if __name__ == "__main__":
                      valid_dataloader, nbp, eval_grm)
             evaluate(f"test epoch {e}",
                      test_dataloader, nbp, eval_grm)
-     
+
             if eval_only:
                 break
