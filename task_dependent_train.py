@@ -298,7 +298,8 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
 
             postfix = {}
             for name in ['1p', '3p', '2i', 'inp']:
-                postfix[name + 'mrr'] = sum_metric[name]['mrr']
+                if name in sum_metric:
+                    postfix[name + 'mrr'] = sum_metric[name]['mrr']
             t.set_postfix(postfix)
 
     logging.info(f"[{desc}][final] {sum_metric}")
