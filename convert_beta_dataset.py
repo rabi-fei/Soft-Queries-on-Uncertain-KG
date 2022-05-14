@@ -54,19 +54,28 @@ beta_lstr_list = [
     "r1(s1,e1)&r2(e1,e2)&r3(e2,f)",  # 3p
     "r1(s1,f)&r2(s2,f)",  # 2i
     "r1(s1,f)&r2(s2,f)&r3(s3,f)",  # 3i
-    "r1(s1,e1)&r2(s2,e1)&r3(e1,f)",
-    "r1(s1,e1)&r2(e1,f)&r3(s2,f)",
-    "r1(s1,f)&!r2(s2,f)",
-    "r1(s1,f)&r2(s2,f)&!r3(s3,f)",
-    "r1(s1,e1)&!r2(s2,e1)&r3(e1,f)",
-    "r1(s1,e1)&r2(e1,f)&!r3(s2,f)",
-    "r1(s1,e1)&!r2(e1,f)&r3(s2,f)",
-    "r1(s1,f)|r2(s2,f)",
-    "r1(s1,e1)|r2(s2,e1))&r3(e1,f)",
-    "!(!r1(s1,f)&!r2(s2,f))",
-    "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",
+    "r1(s1,e1)&r2(s2,e1)&r3(e1,f)", ## ip
+    "r1(s1,e1)&r2(e1,f)&r3(s2,f)", # pi
+    "r1(s1,f)&!r2(s2,f)", #2in
+    "r1(s1,f)&r2(s2,f)&!r3(s3,f)", # 3in
+    "r1(s1,e1)&!r2(s2,e1)&r3(e1,f)", # inp
+    "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
+    "r1(s1,e1)&!r2(e1,f)&r3(s2,f)", # pni
+    "r1(s1,f)|r2(s2,f)", # 2u
+    "r1(s1,e1)|r2(s2,e1))&r3(e1,f)", # up
+    "!(!r1(s1,f)&!r2(s2,f))", # 2u-dnf
+    "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",# up-dnf
 ]
 
+beta_names = [
+    '1p', '2p', '3p', '2i', '3i', 'ip', 'pi', '2in', '3in', 'inp', 'pin', 'pni', '2u', 'up', '2u-dnf', 'up-dnf'
+]
+
+beta_lstr2name = {}
+for s, n in zip(beta_lstr_list, beta_names):
+    beta_lstr2name[
+        parse_lstr_to_lformula(s).lstr()
+    ] = n
 
 universal_case = "r1(f_author, u_paper) -> r2(u_paper, s_nips)"
 ucaes = "(!r1(f_author, u_paper))|r2(u_paper, s_nips)"
