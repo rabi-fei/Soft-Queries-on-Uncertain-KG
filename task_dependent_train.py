@@ -19,6 +19,8 @@ from src.utils.data import (QueryAnsweringSeqDataLoader,
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)
 
+lstr2name = {'r1(s1,f)': '1p', '(r1(s1,e1))&(r2(e1,f))': '2p', '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p', '(r1(s1,f))&(r2(s2,f))': '2i', '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i', '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip', '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi', '(r1(s1,f))&(!(r2(s2,f)))': '2in', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni', '(r1(s1,f))|(r2(s2,f))': '2u', '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up', '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dnf', '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dnf'}
+
 parser = argparse.ArgumentParser()
 
 # base environment
@@ -54,7 +56,7 @@ def train_epoch_noisy_v2(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm
             ####################
             optimizer.zero_grad()
             pos_fetched, neg_fetched = grm.reasoning((pos_fof, neg_fof), all_candidates=False, infer_free=False)
-            plogtv = torch.log(pos_fetched['tv'] + 1e-20)
+            plogtv = - torch.log(pos_fetched['tv'] + 1e-20)
 
             # plogtv_list = torch.split(plogtv, pos_answer_sizes)
             ragged_plogtv = RaggedBatch(
@@ -63,7 +65,7 @@ def train_epoch_noisy_v2(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm
             padded_plogtv = ragged_plogtv.to_dense_matrix(padding_value=0)
             pos_losses = torch.sum(padded_plogtv, dim=-1) / torch.tensor(ragged_plogtv.sizes, device=nbp.device)
 
-            nlog1mtv = torch.log(1 - neg_fetched['tv'] + 1e-20)
+            nlog1mtv = - torch.log(1 - neg_fetched['tv'] + 1e-20)
             ragged_nlog1mtv = RaggedBatch(
                 flatten=nlog1mtv,
                 sizes=[len(gdict['f']) for gdict in neg_fof.grounding_dict_list])
@@ -290,9 +292,9 @@ def evaluate(desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoning
                     metric[fof.lstr()]['hit10'].append(hit10.mean())
 
     sum_metric = defaultdict(dict)
-    for k1 in metric:
-        for k2 in metric[k1]:
-            sum_metric[k1][k2] = np.mean(metric[k1][k2])
+    for lstr in metric:
+        for score_name in metric[lstr]:
+            sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
 
     logging.info(f"[{desc}] {sum_metric}")
 
@@ -364,7 +366,7 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=12,
+        batch_size=512,
         shuffle=False,
         num_workers=0
     )
