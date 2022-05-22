@@ -346,7 +346,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         # batch_size, all_candidates
         # ranking score should be the higher the better
         # ranking_score[entity_id] = the score of {entity_id}
-        ranking_score = - torch.norm(batch_embedding_input - self.entity_embedding, p=self.p, dim=-1)
+        ranking_score = - torch.norm(batch_embedding_input - self.entity_embedding, dim=-1)
         # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
         ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
         # entity_rankings[entity_id] = {rankings} of the entity
