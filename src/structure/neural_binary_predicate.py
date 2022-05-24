@@ -52,6 +52,10 @@ class NeuralBinaryPredicate:
     def get_tail_emb(self, entity_id_or_tensor):
         pass
 
+    @abstractmethod
+    def get_random_entity_embed(self, batch_size):
+        pass
+
     @property
     def entity_embedding(self):
         pass
@@ -368,3 +372,6 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
             lhs[0] * rel[0] - lhs[1] * rel[1],
             lhs[0] * rel[1] + lhs[1] * rel[0]
         ], 1)
+
+    def get_random_entity_embed(self, batch_size):
+        return torch.normal(0, 1e-3, (batch_size, self.rank * 2), device=self.device, requires_grad=True)
