@@ -375,3 +375,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
 
     def get_random_entity_embed(self, batch_size):
         return torch.normal(0, 1e-3, (batch_size, self.rank * 2), device=self.device, requires_grad=True)
+
+    def regularization(self, emb):
+        r, i = emb[..., :self.rank], emb[..., self.rank:]
+        return torch.sqrt(r ** 2 + i ** 2)

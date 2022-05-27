@@ -279,12 +279,12 @@ def convert_beta_folder(beta_folder, output_folder):
 
 
 if __name__ == "__main__":
-    beta_folder = "/home/zwanggc/Project/FirstOrderQueryEstimation/data/{}"
+    beta_folder = "/home/zwanggc/Meta-Learning-for-EFO1/data/{}"
     output_folder = "./data/{}"
 
     for dataset in [
-        "FB15k-237-betae",
-        "FB15k-betae", "NELL-betae"]:
+        "FB15k-237-q2b",
+        "FB15k-q2b", "NELL-q2b"]:
         print(dataset)
         convert_beta_folder(beta_folder.format(dataset),
                             output_folder.format(dataset))

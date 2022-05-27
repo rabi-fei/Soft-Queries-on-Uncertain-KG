@@ -28,7 +28,7 @@ parser.add_argument("--device", type=str, default="cpu")
 parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
-parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--task_folder", type=str, default='data/FB15k-237-q2b')
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
@@ -389,14 +389,14 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=32,
+        batch_size=5000,
         shuffle=False,
         num_workers=1
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
-        batch_size=32,
+        batch_size=5000,
         shuffle=False,
         num_workers=1
     )
@@ -426,17 +426,17 @@ if __name__ == "__main__":
         if (e+1) % 10 == 0:
             eval_grm = GradientReasoningMachine(
                 reasoning_rate=args.reasoning_rate,
-                reasoning_steps=100,
+                reasoning_steps=1000,
                 reasoning_optimizer='Adam',
                 nbp=nbp,
-                tnorm=GodelTNorm)
+                tnorm=ProductTNorm)
             evaluate_by_search_emb_then_rank_truth_value(f"validate epoch {e}",
                      valid_dataloader, nbp, eval_grm,
-                    #  target_lstr=['(r1(s1,e1))&(r2(e1,f))']
+                    #  target_lstr=['(r1(s1,f))&(r2(s2,f))']
                      )
             evaluate_by_search_emb_then_rank_truth_value(f"test epoch {e}",
                      test_dataloader, nbp, eval_grm,
-                    #  target_lstr=['(r1(s1,e1))&(r2(e1,f))']
+                    #  target_lstr=['(r1(s1,f))&(r2(s2,f))']
                      )
 
             if eval_only:

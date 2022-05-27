@@ -1,9 +1,8 @@
 """
 A file maintains reasoning machine
 """
-from curses import termname
-from tkinter import W
 from typing import Dict, List
+import math
 
 import torch
 
@@ -66,8 +65,11 @@ class GradientReasoningMachine:
 
         if uvar_local_emb:
             U_opt = optimizer_class(uvar_local_emb, self.reasoning_rate)
-        eflosses = []
+        eflosses = [(-1, -1, -1)]
         ulosses = []
+
+        i=0
+
         for i in range(self.reasoning_steps):
             # maximize the truth value with repect to evars and fvars
             if efvar_local_emb:
@@ -75,8 +77,12 @@ class GradientReasoningMachine:
                 ntv = - formula.evaluate_truth_values(
                     self.tnorm, self.nbp, self.nbp.margin,
                     all_candidates=False).mean()
-                reg = 0.05 * sum([torch.sum(torch.abs(emb) ** 3, -1).mean()
-                                  for emb in efvar_local_emb])
+                reg = 0.05 * sum([
+                    torch.mean(
+                        torch.sum(
+                            torch.abs(self.nbp.regularization(emb)) ** 3, -1)
+                            )
+                    for emb in efvar_local_emb])
                 efloss = ntv + reg
                 eflosses.append((ntv.item(), reg.item(), efloss.item()))
                 efloss.backward()
@@ -96,11 +102,17 @@ class GradientReasoningMachine:
             else:
                 uloss = None
 
+            if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
+                break
+
+        print(f"continuous search for {formula.lstr()} breaks at step {i}")
+
         truth_values = formula.evaluate_truth_values(
             self.tnorm, self.nbp, self.nbp.margin,
             all_candidates=not infer_free)
         fvar_local_emb_dict = {
                 k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
+        assert truth_values is not None
         return {'tv': truth_values,
                 'fvar_local_emb_dict': fvar_local_emb_dict}
 
