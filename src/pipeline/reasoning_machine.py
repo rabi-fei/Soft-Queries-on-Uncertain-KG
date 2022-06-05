@@ -105,7 +105,7 @@ class GradientReasoningMachine:
             if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
                 break
 
-        print(f"continuous search for {formula.lstr()} breaks at step {i}")
+        # print(f"continuous search for {formula.lstr()} breaks at step {i}")
 
         truth_values = formula.evaluate_truth_values(
             self.tnorm, self.nbp, self.nbp.margin,
@@ -125,48 +125,48 @@ class GradientReasoningMachine:
             uvars: list of universal variables
             fvars: list of free variables
         """
-        # def check_all_var_initialized():
-        #     return all(formula.term_initialized(term_name)
-        #                for term_name in formula.term_dict)
+        def check_all_var_initialized():
+            return all(formula.term_initialized(term_name)
+                       for term_name in formula.term_dict)
 
-        # while not check_all_var_initialized():
-        #     for rel_name, pred in formula.predicate_dict.items():
-        #         head_name, tail_name = pred.head.name, pred.tail.name
+        while not check_all_var_initialized():
+            for rel_name, pred in formula.predicate_dict.items():
+                head_name, tail_name = pred.head.name, pred.tail.name
 
-        #         if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
-        #             head_emb = get_head_embed_from_formula(
-        #                 self.nbp, formula, head_name
-        #             )
-        #             rel_emb = self.nbp.get_relation_emb(
-        #                 formula.pred_grounded_relation_id_dict[rel_name]
-        #             )
+                if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
+                    head_emb = formula.get_tail_embed_from_formula(
+                        self.nbp, head_name
+                    )
+                    rel_emb = self.nbp.get_relation_emb(
+                        formula.pred_grounded_relation_id_dict[rel_name]
+                    )
 
-        #             tail_emb = self.nbp.estimate_tail_emb(head_emb, rel_emb)
-        #             # formula.set_var_local_embedding(tail_name, tail_emb)
-        #             formula.init_var_local_embedding(tail_name, tail_emb)
+                    tail_emb = self.nbp.estimate_tail_emb(head_emb, rel_emb)
+                    # formula.set_var_local_embedding(tail_name, tail_emb)
+                    formula.set_var_local_embedding(tail_name, tail_emb)
 
-        #         elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
-        #             tail_emb = get_tail_embed_from_formula(
-        #                 self.nbp, formula, tail_name
-        #             )
-        #             rel_emb = self.nbp.get_relation_emb(
-        #                 formula.pred_grounded_relation_id_dict[rel_name]
-        #             )
+                elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
+                    tail_emb = formula.get_tail_embed_from_formula(
+                        self.nbp, tail_name
+                    )
+                    rel_emb = self.nbp.get_relation_emb(
+                        formula.pred_grounded_relation_id_dict[rel_name]
+                    )
 
-        #             head_emb = self.nbp.estimate_head_emb(tail_emb, rel_emb)
-        #             # formula.set_var_local_embedding(head_name, head_emb)
+                    head_emb = self.nbp.estimate_head_emb(tail_emb, rel_emb)
+                    # formula.set_var_local_embedding(head_name, head_emb)
 
-        #             formula.init_var_local_embedding(head_name, head_emb)
+                    formula.set_var_local_embedding(head_name, head_emb)
 
-        #         else:
-        #             continue
-        # return
+                else:
+                    continue
+        return
 
         # new implementation, random initialize
-        for term_name in formula.term_dict:
-            if not formula.term_initialized(term_name):
-                emb = self.nbp.get_random_entity_embed(formula.num_instances)
-                formula.init_var_local_embedding(term_name, emb)
+        # for term_name in formula.term_dict:
+        #     if not formula.term_initialized(term_name):
+        #         emb = self.nbp.get_random_entity_embed(formula.num_instances)
+        #         formula.init_var_local_embedding(term_name, emb)
 
     def reasoning(self, fof_list: List[FirstOrderFormula], infer_free):
         # then it comes into a batched formula list

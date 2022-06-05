@@ -15,7 +15,7 @@ from src.pipeline.reasoning_machine import GradientReasoningMachine
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import ComplEx, NeuralBinaryPredicate, TransE
-from src.utils.data import (QueryAnsweringSeqDataLoader, TrainNoisyAnswerDataLoader,
+from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLoader,
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)
 
@@ -39,11 +39,15 @@ parser.add_argument("--checkpoint_path")
 
 # optimization
 parser.add_argument("--epoch", type=int, default=100)
-parser.add_argument("--batch_size", type=int, default=64)
-parser.add_argument("--learning_rate", type=float, default=1e-1)
+parser.add_argument("--batch_size", type=int, default=512)
+parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy', 'none'], default='none')
-parser.add_argument("--noisy_sample_size", type=int, default=128)
+parser.add_argument("--noisy_sample_size", type=int, default=32)
+
+parser.add_argument("--metric_margin", type=float, default=50)
+parser.add_argument("--sigma", type=float, default=10)
+parser.add_argument("--v", type=float, default=.9)
 
 def train_epoch_noisy_v2(desc, train_dataloader: TrainRandomSentencePairDataLoader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
@@ -90,7 +94,101 @@ def train_epoch_noisy_v2(desc, train_dataloader: TrainRandomSentencePairDataLoad
             metric[k] = np.mean(trajectory[k])
     return metric
 
+def train_lower_bound_noisy_margin(
+    desc,
+    train_dataloader: QueryAnsweringSeqDataLoader,
+    nbp:NeuralBinaryPredicate,
+    grm: GradientReasoningMachine,
+    args):
+    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
 
+    metric_margin = torch.tensor(args.metric_margin, device=nbp.device)
+    v = torch.tensor(args.v, device=nbp.device)
+
+    with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
+        trajectory = defaultdict(list)
+        for ii, fofs in t:
+            metric_step = defaultdict(list)
+            ####################
+            optimizer.zero_grad()
+            fetched = grm.reasoning(fofs, infer_free=True)
+            loss = 0
+
+            pos_tv_list = []
+            neg_tv_list = []
+            mle_loss_list = []
+            embedding_regularization_list = []
+
+            # for each formula
+            for fof, fetch in zip(fofs, fetched):
+                batch_fvar_local_emb_dict = fetch['fvar_local_emb_dict']
+                batch_tv = fetch['tv']
+
+                for i, pos_answer_dict in enumerate(fof.easy_answer_list):
+                    tv = batch_tv[i]
+                    pos_tv = tv
+                    neg_tv = tv
+                    for f in pos_answer_dict:
+                        fvar_emb = batch_fvar_local_emb_dict[f][i]
+                        pos_answer = pos_answer_dict[f]
+
+                        pos_embs = nbp.get_head_emb(pos_answer)
+                        neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
+
+                        pos_ans_tv = torch.exp(- torch.sum((pos_embs - fvar_emb)**2, dim=-1) / args.sigma ** 2)
+                        pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
+                        pos_tv_list.append(pos_tv.mean().item())
+
+                        neg_ans_tv = torch.exp(- torch.sum((neg_embs - fvar_emb)**2, dim=-1) / args.sigma ** 2)
+                        neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
+                        neg_tv_list.append(neg_tv.mean().item())
+
+                        mle = - torch.log(pos_tv).mean() - torch.log(1-neg_tv).mean()
+                        mle_loss_list.append(mle)
+
+
+                        embedding_reg = 0
+                        for symb in fof.symbol_dict:
+                            symb_emb = nbp.get_head_emb(
+                                fof.get_term_grounded_entity_id_list(symb)[i]
+                            )
+                            embedding_reg += torch.sum(nbp.regularization(symb_emb) ** 3, -1)
+
+                        for pred in fof.predicate_dict:
+                            pred_emb = nbp.get_head_emb(
+                                fof.get_pred_grounded_relation_id_list(pred)[i]
+                            )
+                            embedding_reg += torch.sum(nbp.regularization(pred_emb) ** 3, -1)
+
+                        embedding_regularization_list.append(embedding_reg)
+
+
+            mle_loss = torch.mean(torch.stack(mle_loss_list))
+            embedding_regularization = torch.mean(torch.stack(embedding_regularization_list)) * .5
+
+            loss = mle_loss + embedding_regularization
+            loss.backward()
+            optimizer.step()
+
+            ####################
+            metric_step['loss'].append(loss.item())
+            metric_step['pos_tv'].append(np.mean(pos_tv_list))
+            metric_step['neg_tv'].append(np.mean(neg_tv_list))
+            metric_step['mle_loss'].append(mle_loss.item())
+            metric_step['emb_reg'].append(embedding_regularization.item())
+
+            postfix = {'step': ii+1}
+            for k in metric_step:
+                postfix[k] = np.mean(metric_step[k])
+                trajectory[k].append(postfix[k])
+            logging.info(f"[{desc}] {postfix}")
+            postfix['acc_loss'] = np.mean(trajectory['loss'])
+            t.set_postfix(postfix)
+
+        metric = {'step': ii+1}
+        for k in trajectory:
+            metric[k] = np.mean(trajectory[k])
+    return metric
 
 # def train_epoch_noisy(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
 #     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
@@ -238,6 +336,46 @@ def train_epoch_noisy_v2(desc, train_dataloader: TrainRandomSentencePairDataLoad
 #     return metric
 
 
+def compute_evaluation_scores(fof, batch_entity_rankings, metric):
+    k = 'f'
+    for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
+        ranking = ranking.squeeze()
+        # [1, num_entities]
+        hard_answers = torch.tensor(fof.hard_answer_list[i][k],
+                                    device=nbp.device)
+        hard_answer_rank = ranking[hard_answers]
+        # [1, num_entities]
+
+        # remove better easy answers from its rankings
+        if fof.easy_answer_list[i][k]:
+            easy_answers = torch.tensor(fof.easy_answer_list[i][k],
+                                        device=nbp.device)
+            easy_answer_rank = ranking[easy_answers].view(-1, 1)
+
+            num_skipped_answers = torch.sum(
+                hard_answer_rank > easy_answer_rank, dim=0)
+            pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
+        else:
+            pure_hard_ans_rank = hard_answer_rank.squeeze()
+
+        # remove better hard answers from its ranking
+        _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
+        num_skipped_answers = torch.sum(
+            pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
+        )
+        pure_hard_ans_rank -= num_skipped_answers.reshape(pure_hard_ans_rank.shape)
+
+        rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
+        hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
+        hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
+        hit10 =  (pure_hard_ans_rank < 10).detach().cpu().numpy()
+
+        metric['mrr'].append(rr.mean())
+        metric['hit1'].append(hit1.mean())
+        metric['hit3'].append(hit3.mean())
+        metric['hit10'].append(hit10.mean())
+
+
 def evaluate_by_search_emb_then_rank_truth_value(
     desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine, target_lstr=[]):
     """
@@ -260,7 +398,6 @@ def evaluate_by_search_emb_then_rank_truth_value(
 
             # conduct reasoning
             fetched = grm.reasoning(fofs, infer_free=False)
-            k = 'f'
             for fof, fof_reasoning_kv in zip(fofs, fetched):
                 truth_value_entity_batch = fof_reasoning_kv['tv']  # [num_entities batch_size]
                 ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
@@ -270,42 +407,7 @@ def evaluate_by_search_emb_then_rank_truth_value(
                 # entity_rankings[entity_id] = {rankings} of the entity
                 batch_entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
                 # [batch_size, num_entities]
-                for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
-                    ranking = ranking.squeeze()
-                    # [1, num_entities]
-                    hard_answers = torch.tensor(fof.hard_answer_list[i][k],
-                                                device=nbp.device)
-                    hard_answer_rank = ranking[hard_answers]
-                    # [1, num_entities]
-
-                    # remove better easy answers from its rankings
-                    if fof.easy_answer_list[i][k]:
-                        easy_answers = torch.tensor(fof.easy_answer_list[i][k],
-                                                    device=nbp.device)
-                        easy_answer_rank = ranking[easy_answers].view(-1, 1)
-
-                        num_skipped_answers = torch.sum(
-                            hard_answer_rank > easy_answer_rank, dim=0)
-                        pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
-                    else:
-                        pure_hard_ans_rank = hard_answer_rank.squeeze()
-
-                    # remove better hard answers from its ranking
-                    _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
-                    num_skipped_answers = torch.sum(
-                        pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
-                    )
-                    pure_hard_ans_rank -= num_skipped_answers.reshape(pure_hard_ans_rank.shape)
-
-                    rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
-                    hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
-                    hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
-                    hit10 =  (pure_hard_ans_rank < 10).detach().cpu().numpy()
-
-                    metric[fof.lstr()]['mrr'].append(rr.mean())
-                    metric[fof.lstr()]['hit1'].append(hit1.mean())
-                    metric[fof.lstr()]['hit3'].append(hit3.mean())
-                    metric[fof.lstr()]['hit10'].append(hit10.mean())
+                compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
 
 
             sum_metric = defaultdict(dict)
@@ -321,6 +423,47 @@ def evaluate_by_search_emb_then_rank_truth_value(
 
     logging.info(f"[{desc}][final] {sum_metric}")
 
+def evaluate_by_nearest_search(
+    desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine, target_lstr=[]):
+    """
+    Evaluation used in CQD, two phase computation
+    1. continuous optimiation of embeddings quant. + free
+    2. evaluate all sentences with intermediate optimized
+    """
+    # first level key: lstr
+    # second level key: metric name
+    metric = defaultdict(lambda: defaultdict(list))
+    with tqdm.tqdm(dataloader, desc=desc, total=len(dataloader)) as t:
+        for i, _fofs in enumerate(t):
+            # filter the desired lstr
+            fofs = []
+            for f in _fofs:
+                if (((len(target_lstr) == 0) or
+                     (f.lstr() in target_lstr))
+                    and len(f.free_variable_dict) == 1):
+                    fofs.append(f)
+
+            # conduct reasoning
+            fetched = grm.reasoning(fofs, infer_free=False)
+            for fof, fof_reasoning_kv in zip(fofs, fetched):
+                fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']  # [num_entities batch_size]
+                batch_entity_rankings = nbp.get_all_entity_rankings(fvar_emb_dict['f'])
+                # [batch_size, num_entities]
+                compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
+
+
+            sum_metric = defaultdict(dict)
+            for lstr in metric:
+                for score_name in metric[lstr]:
+                    sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
+
+            postfix = {}
+            for name in ['1p', '2p', '3p', '2i', 'inp']:
+                if name in sum_metric:
+                    postfix[name + '_hit3'] = sum_metric[name]['hit3']
+            t.set_postfix(postfix)
+
+    logging.info(f"[{desc}][final] {sum_metric}")
 
 
 if __name__ == "__main__":
@@ -372,20 +515,20 @@ if __name__ == "__main__":
 
     # this dataloader is for k-vs-all objective. works for noisy v1
     # depreciated
-    # train_dataloader = QueryAnsweringSeqDataLoader(
-    #     osp.join(args.task_folder, 'train-qaa.json'),
-    #     batch_size=args.batch_size,
-    #     shuffle=True,
-    #     num_workers=0)
-
-    # for noisy objective v2
-    train_dataloader = TrainNoisyAnswerDataLoader(
+    train_dataloader = QueryAnsweringMixDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
         batch_size=args.batch_size,
         shuffle=True,
-        answer_size=kgidx.num_entities,
-        noisy_sample_size=args.noisy_sample_size,
-        num_workers=2)
+        num_workers=0)
+
+    # for noisy objective v2
+    # train_dataloader = TrainNoisyAnswerDataLoader(
+    #     osp.join(args.task_folder, 'train-qaa.json'),
+    #     batch_size=args.batch_size,
+    #     shuffle=True,
+    #     answer_size=kgidx.num_entities,
+    #     noisy_sample_size=args.noisy_sample_size,
+    #     num_workers=2)
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
@@ -404,40 +547,41 @@ if __name__ == "__main__":
 
     # train_epoch_K_verses_All(f"initial from cold start",
                             #    train_dataloader, nbp, grm0, args)
+    train_grm = GradientReasoningMachine(
+        reasoning_rate=args.reasoning_rate,
+        reasoning_steps=3,
+        reasoning_optimizer='Adam',
+        nbp=nbp,
+        tnorm=ProductTNorm)
+
+    eval_grm = GradientReasoningMachine(
+        reasoning_rate=args.reasoning_rate,
+        reasoning_steps=1000,
+        reasoning_optimizer='Adam',
+        nbp=nbp,
+        tnorm=ProductTNorm)
+
+    # evaluate_by_nearest_search(f"validate epoch {0}",
+    #                            valid_dataloader, nbp, eval_grm)
+    # evaluate_by_nearest_search(f"test epoch {0}",
+    #                            test_dataloader, nbp, eval_grm)
+
     eval_only = False
     for e in range(args.epoch):
 
-        train_grm = GradientReasoningMachine(
-            reasoning_rate=args.reasoning_rate,
-            reasoning_steps=int(30 * ((e + 1) // args.epoch)),
-            reasoning_optimizer='Adam',
-            nbp=nbp,
-            tnorm=ProductTNorm)
         if args.objective.lower() == 'noisy':
-            train_epoch_noisy_v2(f"training epoch {e}",
-                                 train_dataloader, nbp, train_grm, args)
-        elif args.objective.lower() == 'kvsall':
-            train_epoch_K_verses_All(f"training epoch {e}",
-                                     train_dataloader, nbp, train_grm, args)
+            # # train_epoch_noisy_v2(f"training epoch {e}",
+            #                      train_dataloader, nbp, train_grm, args)
+            train_lower_bound_noisy_margin(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
         else:
             print("no training")
             eval_only = True
 
-        if (e+1) % 10 == 0:
-            eval_grm = GradientReasoningMachine(
-                reasoning_rate=args.reasoning_rate,
-                reasoning_steps=1000,
-                reasoning_optimizer='Adam',
-                nbp=nbp,
-                tnorm=ProductTNorm)
-            evaluate_by_search_emb_then_rank_truth_value(f"validate epoch {e}",
-                     valid_dataloader, nbp, eval_grm,
-                    #  target_lstr=['(r1(s1,f))&(r2(s2,f))']
-                     )
-            evaluate_by_search_emb_then_rank_truth_value(f"test epoch {e}",
-                     test_dataloader, nbp, eval_grm,
-                    #  target_lstr=['(r1(s1,f))&(r2(s2,f))']
-                     )
+        if (e+1) % 1 == 0:
+            evaluate_by_nearest_search(f"validate epoch {e}",
+                     valid_dataloader, nbp, eval_grm)
+            evaluate_by_nearest_search(f"test epoch {e}",
+                     test_dataloader, nbp, eval_grm)
 
             if eval_only:
                 break

@@ -3,6 +3,7 @@ from typing import Tuple
 
 import torch
 from torch import nn
+import tqdm
 
 
 class NeuralBinaryPredicate:
@@ -345,17 +346,26 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
-    def get_all_entity_rankings(self, batch_embedding_input):
-        batch_embedding_input = batch_embedding_input.unsqueeze(-2)
-        # batch_size, all_candidates
-        # ranking score should be the higher the better
-        # ranking_score[entity_id] = the score of {entity_id}
-        ranking_score = - torch.norm(batch_embedding_input - self.entity_embedding, dim=-1)
-        # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
-        ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
-        # entity_rankings[entity_id] = {rankings} of the entity
-        entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
-        return entity_rankings
+    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=16):
+        batch_size = batch_embedding_input.size(0)
+        begin = 0
+        entity_ranking_list = []
+        for begin in tqdm.trange(0, batch_size, eval_batch_size):
+            end = begin + eval_batch_size
+            eval_batch_embedding_input = batch_embedding_input[begin: end]
+            eval_batch_embedding_input = eval_batch_embedding_input.unsqueeze(-2)
+            # batch_size, all_candidates
+            # ranking score should be the higher the better
+            # ranking_score[entity_id] = the score of {entity_id}
+            ranking_score = - torch.norm(eval_batch_embedding_input - self.entity_embedding, dim=-1)
+            # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
+            ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
+            # entity_rankings[entity_id] = {rankings} of the entity
+            entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
+            entity_ranking_list.append(entity_rankings)
+
+        batch_entity_rankings = torch.cat(entity_ranking_list, dim=0)
+        return batch_entity_rankings
 
     def get_rhs(self, chunk_begin: int, chunk_size: int):
         return self.embeddings[0].weight.data[

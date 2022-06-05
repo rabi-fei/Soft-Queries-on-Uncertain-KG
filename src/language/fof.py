@@ -661,8 +661,8 @@ class FirstOrderFormula:
     def get_head_embed_from_formula(self,
                                     nbp: NeuralBinaryPredicate,
                                     term_name,
-                                    begin_index,
-                                    end_index,
+                                    begin_index=None,
+                                    end_index=None,
                                     all_candidates=False
                                     ):
         # if all_candidates:
@@ -688,13 +688,16 @@ class FirstOrderFormula:
                 emb = self.get_var_local_embedding(term_name)
             else:
                 raise KeyError("Embedding does not found")
-            return emb[begin_index: end_index]
+            if begin_index is not None and end_index is not None:
+                return emb[begin_index: end_index]
+            else:
+                return emb
 
     def get_tail_embed_from_formula(self,
                                     nbp: NeuralBinaryPredicate,
                                     term_name,
-                                    begin_index,
-                                    end_index,
+                                    begin_index=None,
+                                    end_index=None,
                                     all_candidates=False):
         # if all_candidates:
         #     if self.term_dict[term_name].state == Term.FREE:
@@ -720,4 +723,7 @@ class FirstOrderFormula:
                 emb = self.get_var_local_embedding(term_name)
             else:
                 raise KeyError("Embedding does not found")
-            return emb[begin_index: end_index]
+            if begin_index is not None and end_index is not None:
+                return emb[begin_index: end_index]
+            else:
+                return emb
