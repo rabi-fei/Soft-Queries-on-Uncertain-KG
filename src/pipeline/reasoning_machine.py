@@ -170,4 +170,7 @@ class GradientReasoningMachine:
 
     def reasoning(self, fof_list: List[FirstOrderFormula], infer_free):
         # then it comes into a batched formula list
-        return [self._reason_single_formula(fof, infer_free) for fof in fof_list]
+        if isinstance(fof_list, list):
+            return [self._reason_single_formula(fof, infer_free) for fof in fof_list]
+        else:
+            return self._reason_single_formula(fof_list, infer_free)

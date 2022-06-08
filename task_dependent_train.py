@@ -3,6 +3,7 @@ from collections import defaultdict
 import logging
 import os
 import os.path as osp
+import json
 
 import torch
 import tqdm
@@ -43,56 +44,59 @@ parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy', 'none'], default='none')
-parser.add_argument("--noisy_sample_size", type=int, default=32)
+parser.add_argument("--noisy_sample_size", type=int, default=128)
 
 parser.add_argument("--metric_margin", type=float, default=50)
 parser.add_argument("--sigma", type=float, default=10)
 parser.add_argument("--v", type=float, default=.9)
 
-def train_epoch_noisy_v2(desc, train_dataloader: TrainRandomSentencePairDataLoader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
-    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+# def train_epoch_noisy_v2(desc, train_dataloader: TrainRandomSentencePairDataLoader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
+#     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+#     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.5, verbose=True)
 
-    with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
-        trajectory = defaultdict(list)
-        for i, (pos_fof, neg_fof) in t:
-            metric_step = defaultdict(list)
-            ####################
-            optimizer.zero_grad()
-            pos_fetched, neg_fetched = grm.reasoning((pos_fof, neg_fof))
-            plogtv = - torch.log(pos_fetched['tv'] + 1e-20)
 
-            # plogtv_list = torch.split(plogtv, pos_answer_sizes)
-            ragged_plogtv = RaggedBatch(
-                flatten=plogtv,
-                sizes=[len(gdict['f']) for gdict in pos_fof.grounding_dict_list])
-            padded_plogtv = ragged_plogtv.to_dense_matrix(padding_value=0)
-            pos_losses = torch.sum(padded_plogtv, dim=-1) / torch.tensor(ragged_plogtv.sizes, device=nbp.device)
+#     with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
+#         trajectory = defaultdict(list)
+#         for i, (pos_fof, neg_fof) in t:
+#             metric_step = defaultdict(list)
+#             ####################
+#             optimizer.zero_grad()
+#             pos_fetched, neg_fetched = grm.reasoning((pos_fof, neg_fof))
+#             plogtv = - torch.log(pos_fetched['tv'] + 1e-20)
 
-            nlog1mtv = - torch.log(1 - neg_fetched['tv'] + 1e-20)
-            ragged_nlog1mtv = RaggedBatch(
-                flatten=nlog1mtv,
-                sizes=[len(gdict['f']) for gdict in neg_fof.grounding_dict_list])
-            padded_nlog1mtv = ragged_nlog1mtv.to_dense_matrix(padding_value=0)
-            neg_losses = torch.sum(padded_nlog1mtv, dim=-1) / torch.tensor(ragged_nlog1mtv.sizes, device=nbp.device)
+#             # plogtv_list = torch.split(plogtv, pos_answer_sizes)
+#             ragged_plogtv = RaggedBatch(
+#                 flatten=plogtv,
+#                 sizes=[len(gdict['f']) for gdict in pos_fof.grounding_dict_list])
+#             padded_plogtv = ragged_plogtv.to_dense_matrix(padding_value=0)
+#             pos_losses = torch.sum(padded_plogtv, dim=-1) / torch.tensor(ragged_plogtv.sizes, device=nbp.device)
 
-            loss = pos_losses.mean() + neg_losses.mean()
-            loss.backward()
-            optimizer.step()
-            ####################
-            metric_step['loss'].append(loss.item())
+#             nlog1mtv = - torch.log(1 - neg_fetched['tv'] + 1e-20)
+#             ragged_nlog1mtv = RaggedBatch(
+#                 flatten=nlog1mtv,
+#                 sizes=[len(gdict['f']) for gdict in neg_fof.grounding_dict_list])
+#             padded_nlog1mtv = ragged_nlog1mtv.to_dense_matrix(padding_value=0)
+#             neg_losses = torch.sum(padded_nlog1mtv, dim=-1) / torch.tensor(ragged_nlog1mtv.sizes, device=nbp.device)
 
-            postfix = {'step': i+1}
-            for k in metric_step:
-                postfix[k] = np.mean(metric_step[k])
-                trajectory[k].append(postfix[k])
-            logging.info(f"[{desc}] {postfix}")
-            postfix['acc_loss'] = np.mean(trajectory['loss'])
-            t.set_postfix(postfix)
+#             loss = pos_losses.mean() + neg_losses.mean()
+#             loss.backward()
+#             optimizer.step()
+#             ####################
+#             metric_step['loss'].append(loss.item())
 
-        metric = {'step': i+1}
-        for k in trajectory:
-            metric[k] = np.mean(trajectory[k])
-    return metric
+#             postfix = {'step': i+1}
+#             for k in metric_step:
+#                 postfix[k] = np.mean(metric_step[k])
+#                 trajectory[k].append(postfix[k])
+#             logging.info(f"[{desc}] {postfix}")
+#             postfix['acc_loss'] = np.mean(trajectory['loss'])
+#             scheduler.step(postfix['acc_loss'])
+#             t.set_postfix(postfix)
+
+#         metric = {'step': i+1}
+#         for k in trajectory:
+#             metric[k] = np.mean(trajectory[k])
+#     return metric
 
 def train_lower_bound_noisy_margin(
     desc,
@@ -100,94 +104,131 @@ def train_lower_bound_noisy_margin(
     nbp:NeuralBinaryPredicate,
     grm: GradientReasoningMachine,
     args):
+
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
 
-    metric_margin = torch.tensor(args.metric_margin, device=nbp.device)
-    v = torch.tensor(args.v, device=nbp.device)
-
-    with tqdm.tqdm(enumerate(train_dataloader), desc=desc, total=len(train_dataloader)) as t:
-        trajectory = defaultdict(list)
-        for ii, fofs in t:
-            metric_step = defaultdict(list)
-            ####################
-            optimizer.zero_grad()
-            fetched = grm.reasoning(fofs, infer_free=True)
-            loss = 0
-
-            pos_tv_list = []
-            neg_tv_list = []
-            mle_loss_list = []
-            embedding_regularization_list = []
-
-            # for each formula
-            for fof, fetch in zip(fofs, fetched):
-                batch_fvar_local_emb_dict = fetch['fvar_local_emb_dict']
-                batch_tv = fetch['tv']
-
-                for i, pos_answer_dict in enumerate(fof.easy_answer_list):
-                    tv = batch_tv[i]
-                    pos_tv = tv
-                    neg_tv = tv
-                    for f in pos_answer_dict:
-                        fvar_emb = batch_fvar_local_emb_dict[f][i]
-                        pos_answer = pos_answer_dict[f]
-
-                        pos_embs = nbp.get_head_emb(pos_answer)
-                        neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
-
-                        pos_ans_tv = torch.exp(- torch.sum((pos_embs - fvar_emb)**2, dim=-1) / args.sigma ** 2)
-                        pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
-                        pos_tv_list.append(pos_tv.mean().item())
-
-                        neg_ans_tv = torch.exp(- torch.sum((neg_embs - fvar_emb)**2, dim=-1) / args.sigma ** 2)
-                        neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
-                        neg_tv_list.append(neg_tv.mean().item())
-
-                        mle = - torch.log(pos_tv).mean() - torch.log(1-neg_tv).mean()
-                        mle_loss_list.append(mle)
+    sigma = args.sigma
+    trajectory = defaultdict(list)
 
 
-                        embedding_reg = 0
-                        for symb in fof.symbol_dict:
-                            symb_emb = nbp.get_head_emb(
-                                fof.get_term_grounded_entity_id_list(symb)[i]
-                            )
-                            embedding_reg += torch.sum(nbp.regularization(symb_emb) ** 3, -1)
+    fof_list = train_dataloader.get_fof_list()
+    t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
 
-                        for pred in fof.predicate_dict:
-                            pred_emb = nbp.get_head_emb(
-                                fof.get_pred_grounded_relation_id_list(pred)[i]
-                            )
-                            embedding_reg += torch.sum(nbp.regularization(pred_emb) ** 3, -1)
+    for ii, fof in t:
+        ####################
+        optimizer.zero_grad()
+        fetch = grm.reasoning(fof, infer_free=True)
+        loss = 0
 
-                        embedding_regularization_list.append(embedding_reg)
+        pos_tv_list = []
+        neg_tv_list = []
+        pos_nll_list = []
+        neg_nll_list = []
+        tv_list = []
+        mle_loss_list = []
+
+        # for each formula
+        # for fof, fetch in zip(fof, fetched):
+        batch_fvar_local_emb_dict = fetch['fvar_local_emb_dict']
+        batch_tv = fetch['tv']
+
+        for i, pos_answer_dict in enumerate(fof.easy_answer_list):
+            tv = batch_tv[i]
+            tv_list.append(tv.item())
+            pos_tv = tv
+            neg_tv = tv
+            for f in pos_answer_dict:
+                fvar_emb = batch_fvar_local_emb_dict[f][i]
+                pos_answer = pos_answer_dict[f]
+
+                pos_embs = nbp.get_head_emb(pos_answer)
+                neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
+
+                pos_ans_dist = torch.sum((pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
+                pos_ans_tv = torch.exp(- pos_ans_dist)
+                pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
+                pos_tv_list.append(pos_tv.mean().item())
+
+                neg_ans_dist = torch.sum((neg_embs - fvar_emb)**2, dim=-1) /(sigma * 3) ** 2
+                neg_ans_tv = torch.exp(- neg_ans_dist)
+                neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
+                # neg_tv = neg_ans_tv
+                neg_tv_list.append(neg_tv.mean().item())
+
+                pos_nll = - torch.log(pos_tv.min() + 1e-10)
+                pos_nll_list.append(pos_nll.item())
+                neg_nll = - torch.log(1 - neg_tv.max() + 1e-10)
+                neg_nll_list.append(neg_nll.item())
+
+                mle = pos_nll + neg_nll
+                mle_loss_list.append(mle)
+
+                    # embedding_reg = 0
+                    # for symb in fof.symbol_dict:
+                    #     symb_emb = nbp.get_head_emb(
+                    #         fof.get_term_grounded_entity_id_list(symb)[i]
+                    #     )
+                    #     embedding_reg += torch.sum(nbp.regularization(symb_emb) ** 3, -1)
+
+                    # for pred in fof.predicate_dict:
+                    #     pred_emb = nbp.get_head_emb(
+                    #         fof.get_pred_grounded_relation_id_list(pred)[i]
+                    #     )
+                    #     embedding_reg += torch.sum(nbp.regularization(pred_emb) ** 3, -1)
+
+                    # embedding_regularization_list.append(embedding_reg)
 
 
-            mle_loss = torch.mean(torch.stack(mle_loss_list))
-            embedding_regularization = torch.mean(torch.stack(embedding_regularization_list)) * .5
+        mle_loss = torch.mean(torch.stack(mle_loss_list))
+        embedding_regularization = 0 # torch.mean(torch.stack(embedding_regularization_list)) * 0.05
 
-            loss = mle_loss + embedding_regularization
-            loss.backward()
-            optimizer.step()
+        loss = mle_loss + embedding_regularization
+        loss.backward()
+        optimizer.step()
 
-            ####################
-            metric_step['loss'].append(loss.item())
-            metric_step['pos_tv'].append(np.mean(pos_tv_list))
-            metric_step['neg_tv'].append(np.mean(neg_tv_list))
-            metric_step['mle_loss'].append(mle_loss.item())
-            metric_step['emb_reg'].append(embedding_regularization.item())
+        pos_tv_mean = np.mean(pos_tv_list)
+        neg_tv_mean = np.mean(neg_tv_list)
 
-            postfix = {'step': ii+1}
-            for k in metric_step:
-                postfix[k] = np.mean(metric_step[k])
-                trajectory[k].append(postfix[k])
-            logging.info(f"[{desc}] {postfix}")
-            postfix['acc_loss'] = np.mean(trajectory['loss'])
-            t.set_postfix(postfix)
+        ####################
+        metric_step = {}
+        metric_step['loss'] = loss.item()
+        metric_step['pos_tv'] = pos_tv_mean
+        metric_step['pos_nll'] = np.mean(pos_nll_list)
+        metric_step['neg_tv'] = neg_tv_mean
+        metric_step['neg_nll'] = np.mean(neg_nll_list)
+        metric_step['tv'] = np.mean(tv_list)
+        metric_step['mle_loss'] = mle_loss.item()
+        metric_step['sigma'] = sigma
+        # metric_step['emb_reg'].append(embedding_regularization.item())
 
-        metric = {'step': ii+1}
-        for k in trajectory:
-            metric[k] = np.mean(trajectory[k])
+        if pos_tv_mean < 0.5 and neg_tv_mean < 0.5:
+            sigma = sigma * (1+ 1e-3)
+
+        if pos_tv_mean > 0.5 and neg_tv_mean > 0.5:
+            sigma = sigma * (1- 1e-3)
+
+        if pos_tv_mean - neg_tv_mean > 0.5:
+            sigma = sigma * (1- 1e-3)
+
+        if neg_tv_mean > 0.25:
+            sigma = sigma * (1 - 1e-3)
+
+        logging.info(f"[{desc}] {json.dumps(metric_step)}")
+
+        postfix = {'step': ii+1}
+        for k in metric_step:
+            postfix[k] = np.mean(metric_step[k])
+            trajectory[k].append(postfix[k])
+        postfix['acc_loss'] = np.mean(trajectory['loss'])
+        # scheduler.step(postfix['acc_loss'])
+        t.set_postfix(postfix)
+
+    t.close()
+
+    metric = {}
+    for k in trajectory:
+        metric[k] = np.mean(trajectory[k])
     return metric
 
 # def train_epoch_noisy(desc, train_dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachine, args):
@@ -340,23 +381,27 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
     k = 'f'
     for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
         ranking = ranking.squeeze()
+        if fof.hard_answer_list[i]:
         # [1, num_entities]
-        hard_answers = torch.tensor(fof.hard_answer_list[i][k],
-                                    device=nbp.device)
-        hard_answer_rank = ranking[hard_answers]
-        # [1, num_entities]
-
-        # remove better easy answers from its rankings
-        if fof.easy_answer_list[i][k]:
-            easy_answers = torch.tensor(fof.easy_answer_list[i][k],
+            hard_answers = torch.tensor(fof.hard_answer_list[i][k],
                                         device=nbp.device)
-            easy_answer_rank = ranking[easy_answers].view(-1, 1)
+            hard_answer_rank = ranking[hard_answers]
 
-            num_skipped_answers = torch.sum(
-                hard_answer_rank > easy_answer_rank, dim=0)
-            pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
+            # remove better easy answers from its rankings
+            if fof.easy_answer_list[i][k]:
+                easy_answers = torch.tensor(fof.easy_answer_list[i][k],
+                                            device=nbp.device)
+                easy_answer_rank = ranking[easy_answers].view(-1, 1)
+
+                num_skipped_answers = torch.sum(
+                    hard_answer_rank > easy_answer_rank, dim=0)
+                pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
+            else:
+                pure_hard_ans_rank = hard_answer_rank.squeeze()
+
         else:
-            pure_hard_ans_rank = hard_answer_rank.squeeze()
+            pure_hard_ans_rank = ranking[
+                torch.tensor(fof.easy_answer_list[i][k], device=nbp.device)]
 
         # remove better hard answers from its ranking
         _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
@@ -386,34 +431,34 @@ def evaluate_by_search_emb_then_rank_truth_value(
     # first level key: lstr
     # second level key: metric name
     metric = defaultdict(lambda: defaultdict(list))
-    with tqdm.tqdm(dataloader, desc=desc, total=len(dataloader)) as t:
-        for i, _fofs in enumerate(t):
-            # filter the desired lstr
-            fofs = []
-            for f in _fofs:
-                if (((len(target_lstr) == 0) or
-                     (f.lstr() in target_lstr))
-                    and len(f.free_variable_dict) == 1):
-                    fofs.append(f)
+    _fofs = dataloader.get_fof_list()
+    # filter the desired lstr
+    fofs = []
+    for f in _fofs:
+        if (((len(target_lstr) == 0) or
+                (f.lstr() in target_lstr))
+            and len(f.free_variable_dict) == 1):
+            fofs.append(f)
 
-            # conduct reasoning
-            fetched = grm.reasoning(fofs, infer_free=False)
-            for fof, fof_reasoning_kv in zip(fofs, fetched):
-                truth_value_entity_batch = fof_reasoning_kv['tv']  # [num_entities batch_size]
-                ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
-                # batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
-                # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
-                ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
-                # entity_rankings[entity_id] = {rankings} of the entity
-                batch_entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
-                # [batch_size, num_entities]
-                compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
+    # conduct reasoning
+    fetched = grm.reasoning(fofs, infer_free=False)
+    with tqdm.tqdm(zip(fofs, fetched)) as t:
+        for fof, fof_reasoning_kv in t:
+            truth_value_entity_batch = fof_reasoning_kv['tv']  # [num_entities batch_size]
+            ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
+            # batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
+            # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
+            ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
+            # entity_rankings[entity_id] = {rankings} of the entity
+            batch_entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
+            # [batch_size, num_entities]
+            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
 
 
             sum_metric = defaultdict(dict)
             for lstr in metric:
                 for score_name in metric[lstr]:
-                    sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
+                    sum_metric[lstr2name[lstr]][score_name] = float(np.mean(metric[lstr][score_name]))
 
             postfix = {}
             for name in ['1p', '2p', '3p', '2i', 'inp']:
@@ -421,49 +466,51 @@ def evaluate_by_search_emb_then_rank_truth_value(
                     postfix[name + '_hit3'] = sum_metric[name]['hit3']
             t.set_postfix(postfix)
 
-    logging.info(f"[{desc}][final] {sum_metric}")
+    logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
+    torch.cuda.empty_cache()
 
 def evaluate_by_nearest_search(
     desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine, target_lstr=[]):
     """
-    Evaluation used in CQD, two phase computation
+    Evaluation used by nearest neighbor
     1. continuous optimiation of embeddings quant. + free
     2. evaluate all sentences with intermediate optimized
     """
     # first level key: lstr
     # second level key: metric name
     metric = defaultdict(lambda: defaultdict(list))
-    with tqdm.tqdm(dataloader, desc=desc, total=len(dataloader)) as t:
-        for i, _fofs in enumerate(t):
-            # filter the desired lstr
-            fofs = []
-            for f in _fofs:
-                if (((len(target_lstr) == 0) or
-                     (f.lstr() in target_lstr))
-                    and len(f.free_variable_dict) == 1):
-                    fofs.append(f)
+    _fofs = dataloader.get_fof_list()
+    # filter the desired lstr
+    fofs = []
+    for f in _fofs:
+        if (((len(target_lstr) == 0) or
+                (f.lstr() in target_lstr))
+            and len(f.free_variable_dict) == 1):
+            fofs.append(f)
 
-            # conduct reasoning
-            fetched = grm.reasoning(fofs, infer_free=False)
-            for fof, fof_reasoning_kv in zip(fofs, fetched):
-                fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']  # [num_entities batch_size]
-                batch_entity_rankings = nbp.get_all_entity_rankings(fvar_emb_dict['f'])
-                # [batch_size, num_entities]
-                compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
+    # conduct reasoning
+    with tqdm.tqdm(fofs, desc=desc) as t:
+        for fof in t:
+            fof_reasoning_kv = grm.reasoning(fof, infer_free=False)
+            fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']  # [num_entities batch_size]
+            batch_entity_rankings = nbp.get_all_entity_rankings(fvar_emb_dict['f'])
+            # [batch_size, num_entities]
+            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
 
+        print("sum metric")
+        sum_metric = defaultdict(dict)
+        for lstr in metric:
+            for score_name in metric[lstr]:
+                sum_metric[lstr2name[lstr]][score_name] = float(np.mean(metric[lstr][score_name]))
 
-            sum_metric = defaultdict(dict)
-            for lstr in metric:
-                for score_name in metric[lstr]:
-                    sum_metric[lstr2name[lstr]][score_name] = np.mean(metric[lstr][score_name])
+        postfix = {}
+        for name in ['1p', '2p', '3p', '2i', 'inp']:
+            if name in sum_metric:
+                postfix[name + '_hit3'] = sum_metric[name]['hit3']
+        t.set_postfix(postfix)
 
-            postfix = {}
-            for name in ['1p', '2p', '3p', '2i', 'inp']:
-                if name in sum_metric:
-                    postfix[name + '_hit3'] = sum_metric[name]['hit3']
-            t.set_postfix(postfix)
-
-    logging.info(f"[{desc}][final] {sum_metric}")
+    logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
+    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
@@ -515,8 +562,9 @@ if __name__ == "__main__":
 
     # this dataloader is for k-vs-all objective. works for noisy v1
     # depreciated
-    train_dataloader = QueryAnsweringMixDataLoader(
+    train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
+        target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=0)
@@ -532,14 +580,16 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=5000,
+        target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
+        batch_size=500,
         shuffle=False,
         num_workers=1
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
-        batch_size=5000,
+        target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
+        batch_size=500,
         shuffle=False,
         num_workers=1
     )
@@ -549,7 +599,7 @@ if __name__ == "__main__":
                             #    train_dataloader, nbp, grm0, args)
     train_grm = GradientReasoningMachine(
         reasoning_rate=args.reasoning_rate,
-        reasoning_steps=3,
+        reasoning_steps=10,
         reasoning_optimizer='Adam',
         nbp=nbp,
         tnorm=ProductTNorm)
@@ -561,10 +611,19 @@ if __name__ == "__main__":
         nbp=nbp,
         tnorm=ProductTNorm)
 
-    # evaluate_by_nearest_search(f"validate epoch {0}",
-    #                            valid_dataloader, nbp, eval_grm)
-    # evaluate_by_nearest_search(f"test epoch {0}",
-    #                            test_dataloader, nbp, eval_grm)
+
+    # evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD validate set {0}",
+    #                                              valid_dataloader, nbp, eval_grm)
+    # evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD test set {0}",
+    #                                              test_dataloader, nbp, eval_grm)
+
+    evaluate_by_nearest_search(f"evalueate NN train set {0}",
+                                train_dataloader, nbp, train_grm)
+
+    # evaluate_by_nearest_search(f"evaluate NN validate set {0}",
+    #                            valid_dataloader, nbp, train_grm)
+    # evaluate_by_nearest_search(f"evaluate NN test set {0}",
+    #                            test_dataloader, nbp, train_grm)
 
     eval_only = False
     for e in range(args.epoch):
@@ -578,10 +637,12 @@ if __name__ == "__main__":
             eval_only = True
 
         if (e+1) % 1 == 0:
-            evaluate_by_nearest_search(f"validate epoch {e}",
-                     valid_dataloader, nbp, eval_grm)
-            evaluate_by_nearest_search(f"test epoch {e}",
-                     test_dataloader, nbp, eval_grm)
+            evaluate_by_nearest_search(f"evalueate NN train epoch {e}",
+                     train_dataloader, nbp, train_grm)
+            # evaluate_by_nearest_search(f"evalueate NN validate epoch {e}",
+            #          valid_dataloader, nbp, train_grm)
+            # evaluate_by_nearest_search(f"evaluate NN test epoch {e}",
+            #          test_dataloader, nbp, train_grm)
 
             if eval_only:
                 break

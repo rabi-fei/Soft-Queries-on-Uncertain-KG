@@ -350,7 +350,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         batch_size = batch_embedding_input.size(0)
         begin = 0
         entity_ranking_list = []
-        for begin in tqdm.trange(0, batch_size, eval_batch_size):
+        for begin in range(0, batch_size, eval_batch_size):
             end = begin + eval_batch_size
             eval_batch_embedding_input = batch_embedding_input[begin: end]
             eval_batch_embedding_input = eval_batch_embedding_input.unsqueeze(-2)
