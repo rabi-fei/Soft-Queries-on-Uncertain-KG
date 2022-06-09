@@ -3,6 +3,7 @@ from typing import Tuple
 
 import torch
 from torch import nn
+import tqdm
 
 
 class NeuralBinaryPredicate:
@@ -50,6 +51,10 @@ class NeuralBinaryPredicate:
 
     @abstractmethod
     def get_tail_emb(self, entity_id_or_tensor):
+        pass
+
+    @abstractmethod
+    def get_random_entity_embed(self, batch_size):
         pass
 
     @property
@@ -341,17 +346,26 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
-    def get_all_entity_rankings(self, batch_embedding_input):
-        batch_embedding_input = batch_embedding_input.unsqueeze(-2)
-        # batch_size, all_candidates
-        # ranking score should be the higher the better
-        # ranking_score[entity_id] = the score of {entity_id}
-        ranking_score = - torch.norm(batch_embedding_input - self.entity_embedding, p=self.p, dim=-1)
-        # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
-        ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
-        # entity_rankings[entity_id] = {rankings} of the entity
-        entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
-        return entity_rankings
+    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=32):
+        batch_size = batch_embedding_input.size(0)
+        begin = 0
+        entity_ranking_list = []
+        for begin in range(0, batch_size, eval_batch_size):
+            end = begin + eval_batch_size
+            eval_batch_embedding_input = batch_embedding_input[begin: end]
+            eval_batch_embedding_input = eval_batch_embedding_input.unsqueeze(-2)
+            # batch_size, all_candidates
+            # ranking score should be the higher the better
+            # ranking_score[entity_id] = the score of {entity_id}
+            ranking_score = - torch.norm(eval_batch_embedding_input - self.entity_embedding, dim=-1)
+            # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
+            ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
+            # entity_rankings[entity_id] = {rankings} of the entity
+            entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
+            entity_ranking_list.append(entity_rankings)
+
+        batch_entity_rankings = torch.cat(entity_ranking_list, dim=0)
+        return batch_entity_rankings
 
     def get_rhs(self, chunk_begin: int, chunk_size: int):
         return self.embeddings[0].weight.data[
@@ -368,3 +382,10 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
             lhs[0] * rel[0] - lhs[1] * rel[1],
             lhs[0] * rel[1] + lhs[1] * rel[0]
         ], 1)
+
+    def get_random_entity_embed(self, batch_size):
+        return torch.normal(0, 1e-3, (batch_size, self.rank * 2), device=self.device, requires_grad=True)
+
+    def regularization(self, emb):
+        r, i = emb[..., :self.rank], emb[..., self.rank:]
+        return torch.sqrt(r ** 2 + i ** 2)

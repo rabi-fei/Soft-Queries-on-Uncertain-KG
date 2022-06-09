@@ -109,6 +109,35 @@ class QAACollatorWithNoisySentencePair:
 
         return positive_fof, negative_fof
 
+
+class QAACollatorWithNoisyAnswers:
+    def __init__(self, lstr, answer_size=-1, noisy_sample_size=-1):
+        self.lstr = lstr
+        self.answer_size = answer_size
+        self.noisy_sample_size = noisy_sample_size
+
+    def __call__(self, batch_input):
+        lformula = parse_lstr_to_lformula(self.lstr)
+        positive_fof = FirstOrderFormula(lformula)
+        lformula = parse_lstr_to_lformula(self.lstr)
+        negative_fof = FirstOrderFormula(lformula)
+
+        for rsdict, easy_ans, _ in batch_input:
+            positive_fof.append_qa_instances(rsdict,
+                                             easy_answers=easy_ans)
+
+            noisy_ans = {}
+            for k in easy_ans:
+                noisy_samples_tensor = torch.randint(
+                    low=0, high=self.answer_size, size=(self.noisy_sample_size,))
+                noisy_samples = noisy_samples_tensor.tolist()
+                noisy_ans[k] = noisy_samples
+
+            negative_fof.append_qa_instances(rsdict,
+                                             easy_answers=noisy_ans)
+
+        return positive_fof, negative_fof
+
 class QAACollator:
     def __init__(self, lstr):
         self.lstr = lstr
@@ -121,43 +150,31 @@ class QAACollator:
         return fof
 
 class QueryAnsweringSeqDataLoader:
-    def __init__(self, qaafile, **dataloader_kwargs) -> None:
+    def __init__(self, qaafile, target_lstr=None, size_limit=-1, **dataloader_kwargs) -> None:
         self.dataloader_kwargs = dataloader_kwargs
 
         with open(qaafile, 'rt') as f:
             self.lstr_qaa = json.load(f)
 
         self.lstr_iterator = {}
-        self.batch_buffer = []
-
-    def __iter__(self):
         for lstr, qaa in self.lstr_qaa.items():
-            if not qaa: continue
-            self.lstr_iterator[lstr] = iter(DataLoader(qaa,
+            if target_lstr:
+                if lstr not in target_lstr:
+                    continue
+            if not qaa:
+                continue
+            self.lstr_iterator[lstr] = DataLoader(qaa[:size_limit],
                 collate_fn=QAACollator(lstr),
-                **self.dataloader_kwargs))
-        return self
+                **self.dataloader_kwargs)
 
-    def __next__(self):
-        if len(self.batch_buffer) == 0:
-            for lstr, iterator in self.lstr_iterator.items():
-                try:
-                    self.batch_buffer.append(
-                        next(iterator)
-                    )
-                except StopIteration:
-                    pass
 
-            if len(self.batch_buffer) == 0:
-                raise StopIteration
-            else:
-                if self.dataloader_kwargs.get('shuffle', False):
-                    shuffle(self.batch_buffer)
-
-        return [self.batch_buffer.pop()]
-
-    def __len__(self):
-        return sum([len(iterator) for iterator in self.lstr_iterator.values()])
+    def get_fof_list(self):
+        batch_buffer = []
+        for _, iterator in self.lstr_iterator.items():
+            for batch in iterator:
+                batch_buffer.append(batch)
+        shuffle(batch_buffer)
+        return batch_buffer
 
 class QueryAnsweringMixDataLoader:
     def __init__(self, qaafile, **dataloader_kwargs) -> None:
@@ -229,6 +246,50 @@ class TrainRandomSentencePairDataLoader:
             if not qaa: continue
             self.lstr_iterator[lstr] = iter(DataLoader(qaa,
                 collate_fn=QAACollatorWithNoisySentencePair(
+                    lstr, self.answer_size, self.noisy_sample_size),
+                **self.dataloader_kwargs))
+        return self
+
+    def __next__(self):
+        if len(self.batch_buffer) == 0:
+            for lstr, iterator in self.lstr_iterator.items():
+                try:
+                    self.batch_buffer.append(next(iterator))
+                except StopIteration:
+                    pass
+
+            if len(self.batch_buffer) == 0:
+                raise StopIteration
+            else:
+                shuffle(self.batch_buffer)
+
+        return self.batch_buffer.pop()
+
+    def __len__(self):
+        return sum([len(iterator) for iterator in self.lstr_iterator.values()])
+
+class TrainNoisyAnswerDataLoader:
+    def __init__(self,
+                 qaafile,
+                 answer_size,
+                 noisy_sample_size,
+                 **dataloader_kwargs) -> None:
+        self.qaafile = qaafile
+        self.answer_size = answer_size
+        self.noisy_sample_size = noisy_sample_size
+        self.dataloader_kwargs = dataloader_kwargs
+
+        with open(qaafile, 'rt') as f:
+            self.lstr_qaa = json.load(f)
+
+        self.lstr_iterator = {}
+        self.batch_buffer = []
+
+    def __iter__(self):
+        for lstr, qaa in self.lstr_qaa.items():
+            if not qaa: continue
+            self.lstr_iterator[lstr] = iter(DataLoader(qaa,
+                collate_fn=QAACollatorWithNoisyAnswers(
                     lstr, self.answer_size, self.noisy_sample_size),
                 **self.dataloader_kwargs))
         return self
