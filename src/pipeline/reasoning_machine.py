@@ -19,19 +19,21 @@ class GradientReasoningMachine:
                  reasoning_steps,
                  reasoning_optimizer,
                  nbp: NeuralBinaryPredicate,
-                 tnorm):
+                 tnorm,
+                 sigma=1):
         self.reasoning_rate = reasoning_rate
         self.reasoning_steps = reasoning_steps
         self.reasoinng_optimizer = reasoning_optimizer
         self.nbp = nbp
         self.tnorm = tnorm
+        self.sigma = sigma
 
-    def _reason_single_formula(self, formula: FirstOrderFormula, infer_free):
+    def _reason_single_formula(self, formula: FirstOrderFormula, infer_free, enable_target=False):
         """
         reasoning the first order formula
         Input args:
             formula: a first order formula with batched instantiation
-            infer_free: whether to output the free embedding
+            infer_free: whether to output the free embedding`
                 if true, output the embeddings of free variables
                 otherwise, output the None
         Output args:
@@ -58,6 +60,14 @@ class GradientReasoningMachine:
             [formula.get_var_local_embedding(k)
              for k in formula.universal_variable_dict]))
 
+        if enable_target:
+            target_emb_dict = {}
+            for f in formula.free_variable_dict:
+                target_emb_dict[f] = torch.cat(
+                    [torch.mean(self.nbp.get_head_emb(easy_answer[f]), dim=0, keepdim=True)
+                     for easy_answer in formula.easy_answer_list]
+                ).detach()
+
         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
 
         if efvar_local_emb:
@@ -68,15 +78,23 @@ class GradientReasoningMachine:
         eflosses = [(-1, -1, -1)]
         ulosses = []
 
-        i=0
-
         for i in range(self.reasoning_steps):
             # maximize the truth value with repect to evars and fvars
             if efvar_local_emb:
                 EF_opt.zero_grad()
-                ntv = - formula.evaluate_truth_values(
+                tv = formula.evaluate_truth_values(
                     self.tnorm, self.nbp, self.nbp.margin,
-                    all_candidates=False).mean()
+                    all_candidates=False)
+
+                if enable_target:
+                    for f in target_emb_dict:
+                        _f_emb = formula.get_var_local_embedding(f)
+                        _t_emb = target_emb_dict[f]
+                        dist = torch.norm(_f_emb - _t_emb, p=2, dim=-1)
+                        equality_tv = torch.exp(-dist / self.sigma ** 2)
+                        tv = self.tnorm.conjunction(tv, equality_tv)
+
+                ntv = - tv.mean()
                 reg = 0.05 * sum([
                     torch.mean(
                         torch.sum(
@@ -91,6 +109,7 @@ class GradientReasoningMachine:
                 efloss = None
 
             if uvar_local_emb:
+                # TODO update the universal part according to the existential part
                 # minimize the truth value with respect to uvars
                 U_opt.zero_grad()
                 uloss = formula.evaluate_truth_values(
@@ -168,9 +187,9 @@ class GradientReasoningMachine:
         #         emb = self.nbp.get_random_entity_embed(formula.num_instances)
         #         formula.init_var_local_embedding(term_name, emb)
 
-    def reasoning(self, fof_list: List[FirstOrderFormula], infer_free):
+    def reasoning(self, fof_list: List[FirstOrderFormula], infer_free, enable_target=False):
         # then it comes into a batched formula list
         if isinstance(fof_list, list):
-            return [self._reason_single_formula(fof, infer_free) for fof in fof_list]
+            return [self._reason_single_formula(fof, infer_free, enable_target) for fof in fof_list]
         else:
-            return self._reason_single_formula(fof_list, infer_free)
+            return self._reason_single_formula(fof_list, infer_free, enable_target)

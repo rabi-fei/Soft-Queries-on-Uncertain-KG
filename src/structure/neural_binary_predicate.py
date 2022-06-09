@@ -346,7 +346,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
-    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=16):
+    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=32):
         batch_size = batch_embedding_input.size(0)
         begin = 0
         entity_ranking_list = []
