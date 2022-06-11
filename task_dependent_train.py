@@ -48,6 +48,7 @@ parser.add_argument("--noisy_sample_size", type=int, default=1024)
 
 parser.add_argument("--metric_margin", type=float, default=50)
 parser.add_argument("--sigma", type=float, default=10)
+parser.add_argument("--neg_sigma_scaling", type=float, default=1)
 parser.add_argument("--v", type=float, default=.9)
 
 
@@ -238,7 +239,7 @@ def train_upper_bound_noisy_likelihood(
                 pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
                 pos_tv_list.append(pos_tv.mean().item())
 
-                neg_ans_dist = torch.sum((neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / 100
+                neg_ans_dist = torch.sum((neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / args.neg_sigma_scaling
                 neg_ans_tv = torch.exp(- neg_ans_dist)
                 neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
                 # neg_tv = neg_ans_tv
