@@ -90,17 +90,22 @@ class GradientReasoningMachine:
                     self.tnorm, self.nbp, self.nbp.margin,
                     all_candidates=False)
 
-                # _tv = tv.cpu().detach().numpy()
-
+                total_case_tv = 0
                 if enable_target:
-                    for f in target_emb_dict:
-                        _f_emb = formula.get_var_local_embedding(f)
-                        _t_emb = target_emb_dict[f]
-                        dist = torch.sum((_f_emb - _t_emb)**2, dim=-1)
-                        equality_tv = torch.exp(-dist / self.sigma ** 2)
-                        tv = self.tnorm.conjunction(tv, equality_tv)
+                    for f in formula.free_variable_dict:
+                        for i, easy_answer in enumerate(formula.easy_answer_list):
+                            answer_id = easy_answer[f]
+                            answer_emb = self.nbp.get_head_emb(answer_id)
+                            free_emb = formula.get_var_local_embedding(f)[i]
+                            dist = torch.sum((answer_emb - free_emb)**2, -1)
+                            dist_tv = torch.exp(-dist / self.sigma ** 2)
+                            _case_tv = self.tnorm.conjunction(tv[i], dist_tv)
+                            case_tv = _case_tv.mean()
+                            total_case_tv += case_tv
 
-                ntv = - tv.mean()
+                tv = total_case_tv / len(formula.easy_answer_list)
+
+                ntv = - tv
                 reg = 0.05 * sum([
                     torch.mean(
                         torch.sum(

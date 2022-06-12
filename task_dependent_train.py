@@ -630,7 +630,7 @@ if __name__ == "__main__":
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
         # target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
-        # target_lstr=["r1(s1,f)&r2(s2,f)"],
+        target_lstr=["r1(s1,f)&r2(s2,f)"],
         # size_limit=1024,
         batch_size=args.batch_size,
         shuffle=True,
@@ -678,17 +678,17 @@ if __name__ == "__main__":
         tnorm=ProductTNorm)
 
 
-    evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD validate set {0}",
-                                                 valid_dataloader, nbp, eval_grm)
-    evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD test set {0}",
-                                                 test_dataloader, nbp, eval_grm)
+    # evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD validate set {0}",
+    #                                              valid_dataloader, nbp, eval_grm)
+    # evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD test set {0}",
+    #                                              test_dataloader, nbp, eval_grm)
 
     # evaluate_by_nearest_search(f"evaluate NN train epoch {0}",
     #                             train_dataloader, nbp, train_grm)
-    evaluate_by_nearest_search(f"evaluate NN validate epoch {0}",
-                               valid_dataloader, nbp, train_grm)
-    evaluate_by_nearest_search(f"evaluate NN test epoch {0}",
-                               test_dataloader, nbp, train_grm)
+    # evaluate_by_nearest_search(f"evaluate NN validate epoch {0}",
+    #                            valid_dataloader, nbp, train_grm)
+    # evaluate_by_nearest_search(f"evaluate NN test epoch {0}",
+    #                            test_dataloader, nbp, train_grm)
 
     eval_only = False
     for e in range(args.epoch):
