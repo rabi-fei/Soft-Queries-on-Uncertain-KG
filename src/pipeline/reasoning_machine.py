@@ -63,10 +63,14 @@ class GradientReasoningMachine:
         if enable_target:
             target_emb_dict = {}
             for f in formula.free_variable_dict:
-                target_emb_dict[f] = torch.cat(
-                    [torch.mean(self.nbp.get_head_emb(easy_answer[f]), dim=0, keepdim=True)
-                     for easy_answer in formula.easy_answer_list]
-                ).detach()
+                target_embs = []
+                for easy_answer in formula.easy_answer_list:
+                    answer_id = easy_answer[f]
+                    answer_embs = self.nbp.get_head_emb(answer_id)
+                    answer_barycenter = torch.mean(answer_embs, 0, keepdim=True)
+                    target_embs.append(answer_barycenter)
+                target_emb_dict[f] = torch.cat(target_embs).detach()
+
 
         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
 
@@ -86,11 +90,13 @@ class GradientReasoningMachine:
                     self.tnorm, self.nbp, self.nbp.margin,
                     all_candidates=False)
 
+                # _tv = tv.cpu().detach().numpy()
+
                 if enable_target:
                     for f in target_emb_dict:
                         _f_emb = formula.get_var_local_embedding(f)
                         _t_emb = target_emb_dict[f]
-                        dist = torch.norm(_f_emb - _t_emb, p=2, dim=-1)
+                        dist = torch.sum((_f_emb - _t_emb)**2, dim=-1)
                         equality_tv = torch.exp(-dist / self.sigma ** 2)
                         tv = self.tnorm.conjunction(tv, equality_tv)
 
@@ -133,7 +139,8 @@ class GradientReasoningMachine:
                 k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
         assert truth_values is not None
         return {'tv': truth_values,
-                'fvar_local_emb_dict': fvar_local_emb_dict}
+                'fvar_local_emb_dict': fvar_local_emb_dict,
+                'eflosses': eflosses}
 
 
     def initialize_variable_embeddings(self, formula: FirstOrderFormula):

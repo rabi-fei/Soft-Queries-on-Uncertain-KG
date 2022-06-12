@@ -29,7 +29,7 @@ parser.add_argument("--device", type=str, default="cpu")
 parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
-parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--task_folder", type=str, default='data/FB15k-237-q2b')
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
@@ -321,140 +321,6 @@ def train_upper_bound_noisy_likelihood(
     return metric
 
 
-def train_truth_value_noisy_likelihood(
-    desc,
-    train_dataloader: QueryAnsweringSeqDataLoader,
-    nbp:NeuralBinaryPredicate,
-    grm: GradientReasoningMachine,
-    args):
-
-    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
-
-    sigma = args.sigma
-    trajectory = defaultdict(list)
-
-
-    fof_list = train_dataloader.get_fof_list()
-    t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
-
-    for ii, fof in t:
-        ####################
-        optimizer.zero_grad()
-        fetch = grm.reasoning(fof, infer_free=False, enable_target=False)
-        loss = 0
-
-        pos_tv_list = []
-        neg_tv_list = []
-        pos_nll_list = []
-        neg_nll_list = []
-        tv_list = []
-        mle_loss_list = []
-
-        # for each formula
-        # for fof, fetch in zip(fof, fetched):
-        batch_fvar_local_emb_dict = fetch['fvar_local_emb_dict']
-        batch_tv = fetch['tv']
-
-        for i, pos_answer_dict in enumerate(fof.easy_answer_list):
-            tv = batch_tv[i]
-            tv_list.append(tv.item())
-            pos_tv = tv
-            neg_tv = tv
-            for f in pos_answer_dict:
-                fvar_emb = batch_fvar_local_emb_dict[f][i]
-                pos_answer = pos_answer_dict[f]
-
-                pos_embs = nbp.get_head_emb(pos_answer)
-                neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
-
-                pos_ans_dist = torch.sum((pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
-                pos_ans_tv = torch.exp(- pos_ans_dist)
-                pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
-                pos_tv_list.append(pos_tv.mean().item())
-
-                neg_ans_dist = torch.sum((neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / args.neg_sigma_scaling
-                neg_ans_tv = torch.exp(- neg_ans_dist)
-                neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
-                # neg_tv = neg_ans_tv
-                neg_tv_list.append(neg_tv.mean().item())
-
-                pos_nll = - torch.log(pos_tv + 1e-10).mean()
-                pos_nll_list.append(pos_nll.item())
-                neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
-                neg_nll_list.append(neg_nll.item())
-
-                mle = pos_nll + neg_nll
-                mle_loss_list.append(mle)
-
-                    # embedding_reg = 0
-                    # for symb in fof.symbol_dict:
-                    #     symb_emb = nbp.get_head_emb(
-                    #         fof.get_term_grounded_entity_id_list(symb)[i]
-                    #     )
-                    #     embedding_reg += torch.sum(nbp.regularization(symb_emb) ** 3, -1)
-
-                    # for pred in fof.predicate_dict:
-                    #     pred_emb = nbp.get_head_emb(
-                    #         fof.get_pred_grounded_relation_id_list(pred)[i]
-                    #     )
-                    #     embedding_reg += torch.sum(nbp.regularization(pred_emb) ** 3, -1)
-
-                    # embedding_regularization_list.append(embedding_reg)
-
-
-        mle_loss = torch.mean(torch.stack(mle_loss_list))
-        embedding_regularization = 0 # torch.mean(torch.stack(embedding_regularization_list)) * 0.05
-
-        loss = mle_loss + embedding_regularization
-        loss.backward()
-        optimizer.step()
-
-        pos_tv_mean = np.mean(pos_tv_list)
-        neg_tv_mean = np.mean(neg_tv_list)
-
-        ####################
-        metric_step = {}
-        metric_step['loss'] = loss.item()
-        metric_step['pos_tv'] = pos_tv_mean
-        metric_step['pos_nll'] = np.mean(pos_nll_list)
-        metric_step['neg_tv'] = neg_tv_mean
-        metric_step['neg_nll'] = np.mean(neg_nll_list)
-        metric_step['tv'] = np.mean(tv_list)
-        metric_step['mle_loss'] = mle_loss.item()
-        metric_step['sigma'] = sigma
-        # metric_step['emb_reg'].append(embedding_regularization.item())
-
-        # if pos_tv_mean < 0.5 and neg_tv_mean < 0.5:
-        #     sigma = sigma * (1+ 1e-3)
-
-        # if pos_tv_mean > 0.5 and neg_tv_mean > 0.5:
-        #     sigma = sigma * (1- 1e-3)
-
-        # if pos_tv_mean - neg_tv_mean > 0.5:
-        #     sigma = sigma * (1- 1e-3)
-
-        # if neg_tv_mean > 0.25:
-        #     sigma = sigma * (1 - 1e-3)
-
-        logging.info(f"[{desc}] {json.dumps(metric_step)}")
-
-        postfix = {'step': ii+1}
-        for k in metric_step:
-            postfix[k] = np.mean(metric_step[k])
-            trajectory[k].append(postfix[k])
-        postfix['acc_loss'] = np.mean(trajectory['loss'])
-        # scheduler.step(postfix['acc_loss'])
-        t.set_postfix(postfix)
-
-    t.close()
-
-    metric = {}
-    for k in trajectory:
-        metric[k] = np.mean(trajectory[k])
-    return metric
-
-
 def compute_evaluation_scores(fof, batch_entity_rankings, metric):
     k = 'f'
     for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
@@ -629,7 +495,7 @@ if __name__ == "__main__":
     # depreciated
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
-        # target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
+        target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
         # target_lstr=["r1(s1,f)&r2(s2,f)"],
         # size_limit=1024,
         batch_size=args.batch_size,
@@ -649,14 +515,14 @@ if __name__ == "__main__":
         osp.join(args.task_folder, 'valid-qaa.json'),
         batch_size=500,
         shuffle=False,
-        num_workers=0
+        num_workers=1
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
         batch_size=500,
         shuffle=False,
-        num_workers=0
+        num_workers=1
     )
 
 
