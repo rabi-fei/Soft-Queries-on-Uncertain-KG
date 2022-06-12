@@ -12,8 +12,7 @@ from src.language.fof import FirstOrderFormula
 def gather_formula(formula_list) -> Dict:
     pass
 
-
-class GradientReasoningMachine:
+class GradientReasoningMachineEFO:
     def __init__(self,
                  reasoning_rate,
                  reasoning_steps,
@@ -41,6 +40,8 @@ class GradientReasoningMachine:
                 a tensor for all optimized truth value [batch_size]
                 if infer_free, [all_candidate, batch_size]
         """
+
+        assert len(formula.universal_variable_dict) == 0
         # first initialize all variables
         self.initialize_variable_embeddings(formula)
         evar_local_emb = list(filter(
@@ -48,89 +49,58 @@ class GradientReasoningMachine:
             [formula.get_var_local_embedding(k)
              for k in formula.existential_variable_dict]))
 
-
         fvar_local_emb = list(filter(
             lambda x: x is not None,
             [formula.get_var_local_embedding(k)
             for k in formula.free_variable_dict]))
+
         efvar_local_emb = evar_local_emb + fvar_local_emb
-
-        uvar_local_emb = list(filter(
-            lambda x: x is not None,
-            [formula.get_var_local_embedding(k)
-             for k in formula.universal_variable_dict]))
-
-        if enable_target:
-            target_emb_dict = {}
-            for f in formula.free_variable_dict:
-                target_embs = []
-                for easy_answer in formula.easy_answer_list:
-                    answer_id = easy_answer[f]
-                    answer_embs = self.nbp.get_head_emb(answer_id)
-                    answer_barycenter = torch.mean(answer_embs, 0, keepdim=True)
-                    target_embs.append(answer_barycenter)
-                target_emb_dict[f] = torch.cat(target_embs).detach()
-
+        assert len(efvar_local_emb) > 0
 
         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
 
-        if efvar_local_emb:
-            EF_opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
+        opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
 
-        if uvar_local_emb:
-            U_opt = optimizer_class(uvar_local_emb, self.reasoning_rate)
         eflosses = [(-1, -1, -1)]
-        ulosses = []
+
+        fvar_target_emb_dict = {}
+        for k in formula.free_variable_dict:
+            answer_barycenters = []
+            for easy_answer in formula.easy_answer_list:
+                ans_bry_emb = torch.mean(self.nbp.get_head_emb(easy_answer[k]),
+                                         dim=0, keepdim=True)
+                answer_barycenters.append(ans_bry_emb)
+            fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0)
 
         for i in range(self.reasoning_steps):
             # maximize the truth value with repect to evars and fvars
             if efvar_local_emb:
-                EF_opt.zero_grad()
                 tv = formula.evaluate_truth_values(
-                    self.tnorm, self.nbp, self.nbp.margin,
+                    self.tnorm, self.nbp,
                     all_candidates=False)
 
-                total_case_tv = 0
-                if enable_target:
-                    for f in formula.free_variable_dict:
-                        for i, easy_answer in enumerate(formula.easy_answer_list):
-                            answer_id = easy_answer[f]
-                            answer_emb = self.nbp.get_head_emb(answer_id)
-                            free_emb = formula.get_var_local_embedding(f)[i]
-                            dist = torch.sum((answer_emb - free_emb)**2, -1)
-                            dist_tv = torch.exp(-dist / self.sigma ** 2)
-                            _case_tv = self.tnorm.conjunction(tv[i], dist_tv)
-                            case_tv = _case_tv.mean()
-                            total_case_tv += case_tv
+                for k in formula.free_variable_dict:
+                    loc_emb = formula.get_var_local_embedding(k)
+                    tar_emb = fvar_target_emb_dict[k]
+                    dist = torch.sum((loc_emb - tar_emb)**2, -1)
+                    eqtv = torch.exp(dist / self.sigma ** 2)
+                    tv = self.tnorm.conjunction(tv, eqtv)
 
-                tv = total_case_tv / len(formula.easy_answer_list)
-
-                ntv = - tv
+                ntv = - tv.mean()
                 reg = 0.05 * sum([
                     torch.mean(
                         torch.sum(
                             torch.abs(self.nbp.regularization(emb)) ** 3, -1)
                             )
                     for emb in efvar_local_emb])
+
                 efloss = ntv + reg
                 eflosses.append((ntv.item(), reg.item(), efloss.item()))
+                opt.zero_grad()
                 efloss.backward()
-                EF_opt.step()
+                opt.step()
             else:
                 efloss = None
-
-            if uvar_local_emb:
-                # TODO update the universal part according to the existential part
-                # minimize the truth value with respect to uvars
-                U_opt.zero_grad()
-                uloss = formula.evaluate_truth_values(
-                    self.tnorm, self.nbp, self.nbp.margin,
-                    all_candidates=False).mean()
-                ulosses.append(ulosses.item())
-                uloss.backward()
-                U_opt.step()
-            else:
-                uloss = None
 
             if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
                 break
@@ -138,7 +108,7 @@ class GradientReasoningMachine:
         # print(f"continuous search for {formula.lstr()} breaks at step {i}")
 
         truth_values = formula.evaluate_truth_values(
-            self.tnorm, self.nbp, self.nbp.margin,
+            self.tnorm, self.nbp,
             all_candidates=not infer_free)
         fvar_local_emb_dict = {
                 k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
@@ -165,7 +135,7 @@ class GradientReasoningMachine:
                 head_name, tail_name = pred.head.name, pred.tail.name
 
                 if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
-                    head_emb = formula.get_tail_embed_from_formula(
+                    head_emb = formula.get_tail_embedding(
                         self.nbp, head_name
                     )
                     rel_emb = self.nbp.get_relation_emb(
@@ -177,7 +147,7 @@ class GradientReasoningMachine:
                     formula.set_var_local_embedding(tail_name, tail_emb)
 
                 elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
-                    tail_emb = formula.get_tail_embed_from_formula(
+                    tail_emb = formula.get_tail_embedding(
                         self.nbp, tail_name
                     )
                     rel_emb = self.nbp.get_relation_emb(

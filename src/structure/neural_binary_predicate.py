@@ -25,7 +25,7 @@ class NeuralBinaryPredicate:
         pass
 
     @abstractmethod
-    def score2truth_value(self, score, margin):
+    def score2truth_value(self, score):
         pass
 
     @abstractmethod
@@ -90,13 +90,14 @@ class NeuralBinaryPredicate:
         pass
 
 class TransE(nn.Module, NeuralBinaryPredicate):
-    def __init__(self, num_entities, num_relations, embedding_dim, p, margin, device, **kwargs):
+    def __init__(self, num_entities, num_relations, embedding_dim, p, margin, scale, device, **kwargs):
         super(TransE, self).__init__()
         self.num_entities = num_entities
         self.num_relations = num_relations
         self.embedding_dim = embedding_dim
         self.device = device
         self.margin = margin
+        self.scale = scale
         self.p = p
         self._entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
         nn.init.xavier_uniform_(self._entity_embedding.weight)
@@ -113,8 +114,8 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         """
         return - torch.norm(head_emb + rel_emb - tail_emb, p=self.p, dim=-1)
 
-    def score2truth_value(self, score, margin, scale=1):
-        return torch.sigmoid(margin + score * scale)
+    def score2truth_value(self, score):
+        return torch.sigmoid(self.margin + score * self.scale)
 
     def estimate_tail_emb(self, head_emb, rel_emb):
         return head_emb + rel_emb
@@ -304,8 +305,8 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
             (lhs[0] * rel[1] + lhs[1] * rel[0]) * rhs[1],
             dim=-1)
 
-    def score2truth_value(self, score, margin):
-        return torch.sigmoid(score)
+    def score2truth_value(self, score):
+        return torch.sigmoid(score / self.margin)
 
     def estimate_tail_emb(self, head_emb, rel_emb):
         lhs = head_emb[:, :self.rank], head_emb[:, self.rank:]

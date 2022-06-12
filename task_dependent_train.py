@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from src.language.tnorm import GodelTNorm, ProductTNorm
-from src.pipeline.reasoning_machine import GradientReasoningMachine
+from src.pipeline.reasoning_machine import GradientReasoningMachineEFO
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import ComplEx, NeuralBinaryPredicate, TransE
@@ -56,7 +56,7 @@ def train_lower_bound_noisy_likelihood(
     desc,
     train_dataloader: QueryAnsweringSeqDataLoader,
     nbp:NeuralBinaryPredicate,
-    grm: GradientReasoningMachine,
+    grm: GradientReasoningMachineEFO,
     args):
 
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
@@ -191,7 +191,7 @@ def train_upper_bound_noisy_likelihood(
     desc,
     train_dataloader: QueryAnsweringSeqDataLoader,
     nbp:NeuralBinaryPredicate,
-    grm: GradientReasoningMachine,
+    grm: GradientReasoningMachineEFO,
     args):
 
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
@@ -206,7 +206,6 @@ def train_upper_bound_noisy_likelihood(
 
     for ii, fof in t:
         ####################
-        optimizer.zero_grad()
         fetch = grm.reasoning(fof, infer_free=True, enable_target=True)
         loss = 0
 
@@ -273,6 +272,7 @@ def train_upper_bound_noisy_likelihood(
         embedding_regularization = 0 # torch.mean(torch.stack(embedding_regularization_list)) * 0.05
 
         loss = mle_loss + embedding_regularization
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -325,7 +325,7 @@ def train_truth_value_noisy_likelihood(
     desc,
     train_dataloader: QueryAnsweringSeqDataLoader,
     nbp:NeuralBinaryPredicate,
-    grm: GradientReasoningMachine,
+    grm: GradientReasoningMachineEFO,
     args):
 
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
@@ -500,7 +500,7 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
 
 
 def evaluate_by_search_emb_then_rank_truth_value(
-    desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine, target_lstr=[]):
+    desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachineEFO, target_lstr=[]):
     """
     Evaluation used in CQD, two phase computation
     1. continuous optimiation of embeddings quant. + free
@@ -548,7 +548,7 @@ def evaluate_by_search_emb_then_rank_truth_value(
     torch.cuda.empty_cache()
 
 def evaluate_by_nearest_search(
-    desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachine, target_lstr=[]):
+    desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachineEFO, target_lstr=[]):
     """
     Evaluation used by nearest neighbor
     1. continuous optimiation of embeddings quant. + free
@@ -662,7 +662,7 @@ if __name__ == "__main__":
 
     # train_epoch_K_verses_All(f"initial from cold start",
                             #    train_dataloader, nbp, grm0, args)
-    train_grm = GradientReasoningMachine(
+    train_grm = GradientReasoningMachineEFO(
         reasoning_rate=args.reasoning_rate,
         reasoning_steps=10,
         reasoning_optimizer='Adam',
@@ -670,7 +670,7 @@ if __name__ == "__main__":
         tnorm=ProductTNorm,
         sigma=args.sigma)
 
-    eval_grm = GradientReasoningMachine(
+    eval_grm = GradientReasoningMachineEFO(
         reasoning_rate=args.reasoning_rate,
         reasoning_steps=1000,
         reasoning_optimizer='Adam',
