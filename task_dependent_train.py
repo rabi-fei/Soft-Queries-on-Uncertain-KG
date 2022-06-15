@@ -20,7 +20,21 @@ from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLo
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)
 
-lstr2name = {'r1(s1,f)': '1p', '(r1(s1,e1))&(r2(e1,f))': '2p', '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p', '(r1(s1,f))&(r2(s2,f))': '2i', '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i', '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip', '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi', '(r1(s1,f))&(!(r2(s2,f)))': '2in', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni', '(r1(s1,f))|(r2(s2,f))': '2u', '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up', '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dnf', '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dnf'}
+lstr2name = {'r1(s1,f)': '1p', '(r1(s1,e1))&(r2(e1,f))': '2p', '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p', '(r1(s1,f))&(r2(s2,f))': '2i', '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i', '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip', '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi',
+             '(r1(s1,f))&(!(r2(s2,f)))': '2in', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
+             '(r1(s1,f))|(r2(s2,f))': '2u', '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up', '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dnf', '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dnf'}
+
+
+negation_query =[
+    # "r1(s1,f)&!r2(s2,f)", #2in
+    # "r1(s1,f)&r2(s2,f)&!r3(s3,f)", # 3in
+    # "r1(s1,e1)&!r2(s2,e1)&r3(e1,f)", # inp
+    "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
+    # "r1(s1,e1)&!r2(e1,f)&r3(s2,f)", # pni
+]
+
+
+query_3p = ['r1(s1,e1)&r2(e1,e2)&r3(e2,f)']
 
 parser = argparse.ArgumentParser()
 
@@ -34,7 +48,7 @@ parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
 parser.add_argument("--embedding_dim", type=int, default=500)
-parser.add_argument("--margin", type=float, default=20)
+parser.add_argument("--margin", type=float, default=1)
 parser.add_argument("--p", type=int, default=1)
 parser.add_argument("--checkpoint_path")
 
@@ -43,148 +57,14 @@ parser.add_argument("--epoch", type=int, default=100)
 parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
+parser.add_argument("--reasoning_steps", type=int, default=1000)
 parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy', 'none'], default='none')
-parser.add_argument("--noisy_sample_size", type=int, default=1024)
+parser.add_argument("--noisy_sample_size", type=int, default=32)
 
 parser.add_argument("--metric_margin", type=float, default=50)
 parser.add_argument("--sigma", type=float, default=10)
 parser.add_argument("--neg_sigma_scaling", type=float, default=1)
 parser.add_argument("--v", type=float, default=.9)
-
-
-def train_lower_bound_noisy_likelihood(
-    desc,
-    train_dataloader: QueryAnsweringSeqDataLoader,
-    nbp:NeuralBinaryPredicate,
-    grm: GradientReasoningMachineEFO,
-    args):
-
-    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
-
-    sigma = args.sigma
-    trajectory = defaultdict(list)
-
-
-    fof_list = train_dataloader.get_fof_list()
-    t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
-
-    for ii, fof in t:
-        ####################
-        optimizer.zero_grad()
-        fetch = grm.reasoning(fof, infer_free=True)
-        loss = 0
-
-        pos_tv_list = []
-        neg_tv_list = []
-        pos_nll_list = []
-        neg_nll_list = []
-        tv_list = []
-        mle_loss_list = []
-
-        # for each formula
-        # for fof, fetch in zip(fof, fetched):
-        batch_fvar_local_emb_dict = fetch['fvar_local_emb_dict']
-        batch_tv = fetch['tv']
-
-        for i, pos_answer_dict in enumerate(fof.easy_answer_list):
-            tv = batch_tv[i]
-            tv_list.append(tv.item())
-            pos_tv = tv
-            neg_tv = tv
-            for f in pos_answer_dict:
-                fvar_emb = batch_fvar_local_emb_dict[f][i]
-                pos_answer = pos_answer_dict[f]
-
-                pos_embs = nbp.get_head_emb(pos_answer)
-                neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
-
-                pos_ans_dist = torch.sum((pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
-                pos_ans_tv = torch.exp(- pos_ans_dist)
-                pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
-                pos_tv_list.append(pos_tv.mean().item())
-
-                neg_ans_dist = torch.sum((neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / 10
-                neg_ans_tv = torch.exp(- neg_ans_dist)
-                neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
-                # neg_tv = neg_ans_tv
-                neg_tv_list.append(neg_tv.mean().item())
-
-                pos_nll = - torch.log(pos_tv.min() + 1e-10)
-                pos_nll_list.append(pos_nll.item())
-                neg_nll = - torch.log(1 - neg_tv.max() + 1e-10)
-                neg_nll_list.append(neg_nll.item())
-
-                mle = pos_nll + neg_nll
-                mle_loss_list.append(mle)
-
-                    # embedding_reg = 0
-                    # for symb in fof.symbol_dict:
-                    #     symb_emb = nbp.get_head_emb(
-                    #         fof.get_term_grounded_entity_id_list(symb)[i]
-                    #     )
-                    #     embedding_reg += torch.sum(nbp.regularization(symb_emb) ** 3, -1)
-
-                    # for pred in fof.predicate_dict:
-                    #     pred_emb = nbp.get_head_emb(
-                    #         fof.get_pred_grounded_relation_id_list(pred)[i]
-                    #     )
-                    #     embedding_reg += torch.sum(nbp.regularization(pred_emb) ** 3, -1)
-
-                    # embedding_regularization_list.append(embedding_reg)
-
-
-        mle_loss = torch.mean(torch.stack(mle_loss_list))
-        embedding_regularization = 0 # torch.mean(torch.stack(embedding_regularization_list)) * 0.05
-
-        loss = mle_loss + embedding_regularization
-        loss.backward()
-        optimizer.step()
-
-        pos_tv_mean = np.mean(pos_tv_list)
-        neg_tv_mean = np.mean(neg_tv_list)
-
-        ####################
-        metric_step = {}
-        metric_step['loss'] = loss.item()
-        metric_step['pos_tv'] = pos_tv_mean
-        metric_step['pos_nll'] = np.mean(pos_nll_list)
-        metric_step['neg_tv'] = neg_tv_mean
-        metric_step['neg_nll'] = np.mean(neg_nll_list)
-        metric_step['tv'] = np.mean(tv_list)
-        metric_step['mle_loss'] = mle_loss.item()
-        metric_step['sigma'] = sigma
-        # metric_step['emb_reg'].append(embedding_regularization.item())
-
-        # if pos_tv_mean < 0.5 and neg_tv_mean < 0.5:
-        #     sigma = sigma * (1+ 1e-3)
-
-        # if pos_tv_mean > 0.5 and neg_tv_mean > 0.5:
-        #     sigma = sigma * (1- 1e-3)
-
-        # if pos_tv_mean - neg_tv_mean > 0.5:
-        #     sigma = sigma * (1- 1e-3)
-
-        # if neg_tv_mean > 0.25:
-        #     sigma = sigma * (1 - 1e-3)
-
-        logging.info(f"[{desc}] {json.dumps(metric_step)}")
-
-        postfix = {'step': ii+1}
-        for k in metric_step:
-            postfix[k] = np.mean(metric_step[k])
-            trajectory[k].append(postfix[k])
-        postfix['acc_loss'] = np.mean(trajectory['loss'])
-        # scheduler.step(postfix['acc_loss'])
-        t.set_postfix(postfix)
-
-    t.close()
-
-    metric = {}
-    for k in trajectory:
-        metric[k] = np.mean(trajectory[k])
-    return metric
-
 
 
 def train_upper_bound_noisy_likelihood(
@@ -289,6 +169,8 @@ def train_upper_bound_noisy_likelihood(
         metric_step['tv'] = np.mean(tv_list)
         metric_step['mle_loss'] = mle_loss.item()
         metric_step['sigma'] = sigma
+        metric_step['num_reason_steps'] = len(fetch['eflosses']) - 1
+
         # metric_step['emb_reg'].append(embedding_regularization.item())
 
         # if pos_tv_mean < 0.5 and neg_tv_mean < 0.5:
@@ -303,8 +185,6 @@ def train_upper_bound_noisy_likelihood(
         # if neg_tv_mean > 0.25:
         #     sigma = sigma * (1 - 1e-3)
 
-        logging.info(f"[{desc}] {json.dumps(metric_step)}")
-
         postfix = {'step': ii+1}
         for k in metric_step:
             postfix[k] = np.mean(metric_step[k])
@@ -312,6 +192,11 @@ def train_upper_bound_noisy_likelihood(
         postfix['acc_loss'] = np.mean(trajectory['loss'])
         # scheduler.step(postfix['acc_loss'])
         t.set_postfix(postfix)
+
+        metric_step['acc_loss'] = postfix['acc_loss']
+        metric_step['lstr'] = fof.lstr
+
+        logging.info(f"[{desc}] {json.dumps(metric_step)}")
 
     t.close()
 
@@ -514,7 +399,7 @@ def evaluate_by_search_emb_then_rank_truth_value(
     fofs = []
     for f in _fofs:
         if (((len(target_lstr) == 0) or
-                (f.lstr() in target_lstr))
+                (f.lstr in target_lstr))
             and len(f.free_variable_dict) == 1):
             fofs.append(f)
 
@@ -530,7 +415,7 @@ def evaluate_by_search_emb_then_rank_truth_value(
             # entity_rankings[entity_id] = {rankings} of the entity
             batch_entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
             # [batch_size, num_entities]
-            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
+            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr])
 
 
             sum_metric = defaultdict(dict)
@@ -562,7 +447,7 @@ def evaluate_by_nearest_search(
     fofs = []
     for f in _fofs:
         if (((len(target_lstr) == 0) or
-                (f.lstr() in target_lstr))
+                (f.lstr in target_lstr))
             and len(f.free_variable_dict) == 1):
             fofs.append(f)
 
@@ -573,8 +458,8 @@ def evaluate_by_nearest_search(
             fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']  # [num_entities batch_size]
             batch_entity_rankings = nbp.get_all_entity_rankings(fvar_emb_dict['f'])
             # [batch_size, num_entities]
-            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr()])
-            t.set_postfix({'lstr': fof.lstr()})
+            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr])
+            t.set_postfix({'lstr': fof.lstr})
 
         print("sum metric")
         sum_metric = defaultdict(dict)
@@ -582,7 +467,7 @@ def evaluate_by_nearest_search(
             for score_name in metric[lstr]:
                 sum_metric[lstr2name[lstr]][score_name] = float(np.mean(metric[lstr][score_name]))
 
-        postfix = {'lstr': fof.lstr()}
+        postfix = {}
         for name in ['1p', '2p', '3p', '2i', 'inp']:
             if name in sum_metric:
                 postfix[name + '_hit3'] = sum_metric[name]['hit3']
@@ -627,10 +512,12 @@ if __name__ == "__main__":
 
     # this dataloader is for k-vs-all objective. works for noisy v1
     # depreciated
+
+    print("loading data")
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
         # target_lstr=["r1(s1,f)", "r1(s1,f)&r2(s2,f)"],
-        target_lstr=["r1(s1,f)&r2(s2,f)"],
+        target_lstr=query_3p,
         # size_limit=1024,
         batch_size=args.batch_size,
         shuffle=True,
@@ -647,6 +534,7 @@ if __name__ == "__main__":
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
+        target_lstr=query_3p,
         batch_size=500,
         shuffle=False,
         num_workers=0
@@ -654,6 +542,7 @@ if __name__ == "__main__":
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
+        target_lstr=query_3p,
         batch_size=500,
         shuffle=False,
         num_workers=0
@@ -664,7 +553,7 @@ if __name__ == "__main__":
                             #    train_dataloader, nbp, grm0, args)
     train_grm = GradientReasoningMachineEFO(
         reasoning_rate=args.reasoning_rate,
-        reasoning_steps=10,
+        reasoning_steps=args.reasoning_steps,
         reasoning_optimizer='Adam',
         nbp=nbp,
         tnorm=ProductTNorm,
@@ -672,7 +561,7 @@ if __name__ == "__main__":
 
     eval_grm = GradientReasoningMachineEFO(
         reasoning_rate=args.reasoning_rate,
-        reasoning_steps=1000,
+        reasoning_steps=args.reasoning_steps,
         reasoning_optimizer='Adam',
         nbp=nbp,
         tnorm=ProductTNorm)
@@ -689,6 +578,8 @@ if __name__ == "__main__":
     #                            valid_dataloader, nbp, train_grm)
     # evaluate_by_nearest_search(f"evaluate NN test epoch {0}",
     #                            test_dataloader, nbp, train_grm)
+
+    print("data prepared")
 
     eval_only = False
     for e in range(args.epoch):

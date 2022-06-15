@@ -27,14 +27,17 @@ class GradientReasoningMachineEFO:
         self.tnorm = tnorm
         self.sigma = sigma
 
-    def _reason_single_formula(self, formula: FirstOrderFormula, infer_free, enable_target=False):
+    def _reason_single_formula(self, formula: FirstOrderFormula, free_var_treatment, fole=False):
         """
         reasoning the first order formula
         Input args:
             formula: a first order formula with batched instantiation
-            infer_free: whether to output the free embedding`
-                if true, output the embeddings of free variables
-                otherwise, output the None
+            free_var_treatment:
+                - existential: treat the free variable as the existential variable
+                - ground1random: ground the free variable into one random answers
+                - ground1noisy: ground the free variable into single ngative variables
+                - groundfull: ground the answers to a full answer set
+            fole: boolean, whether consider free variables as boolean function
         Output args:
             truth_values:
                 a tensor for all optimized truth value [batch_size]
@@ -49,42 +52,48 @@ class GradientReasoningMachineEFO:
             [formula.get_var_local_embedding(k)
              for k in formula.existential_variable_dict]))
 
-        fvar_local_emb = list(filter(
-            lambda x: x is not None,
-            [formula.get_var_local_embedding(k)
-            for k in formula.free_variable_dict]))
+        if free_var_treatment.lower() == 'existential':
+            fvar_local_emb = list(filter(
+                lambda x: x is not None,
+                [formula.get_var_local_embedding(k)
+                for k in formula.free_variable_dict]))
+            efvar_local_emb = evar_local_emb + fvar_local_emb
+        else:
+            efvar_local_emb = evar_local_emb
 
-        efvar_local_emb = evar_local_emb + fvar_local_emb
-        assert len(efvar_local_emb) > 0
+        if len(efvar_local_emb) == 0:
+            # this only applies for the cases where no existential variables
+            return formula.evaluate_truth_values(self.tnorm, self.nbp, free_var_treatment)
+
 
         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
-
         opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
-
         eflosses = [(-1, -1, -1)]
 
-        fvar_target_emb_dict = {}
-        for k in formula.free_variable_dict:
-            answer_barycenters = []
-            for easy_answer in formula.easy_answer_list:
-                ans_bry_emb = torch.mean(self.nbp.get_head_emb(easy_answer[k]),
-                                         dim=0, keepdim=True)
-                answer_barycenters.append(ans_bry_emb)
-            fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0)
+        if enable_target:
+            fvar_target_emb_dict = {}
+            for k in formula.free_variable_dict:
+                answer_barycenters = []
+                for easy_answer in formula.easy_answer_list:
+                    ans_bry_emb = torch.mean(self.nbp.get_head_emb(easy_answer[k]),
+                                            dim=0, keepdim=True)
+                    answer_barycenters.append(ans_bry_emb)
+                fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0).detach().clone()
 
         for i in range(self.reasoning_steps):
             # maximize the truth value with repect to evars and fvars
             if efvar_local_emb:
                 tv = formula.evaluate_truth_values(
                     self.tnorm, self.nbp,
-                    all_candidates=False)
+                    free_var_treatment=False)
 
-                for k in formula.free_variable_dict:
-                    loc_emb = formula.get_var_local_embedding(k)
-                    tar_emb = fvar_target_emb_dict[k]
-                    dist = torch.sum((loc_emb - tar_emb)**2, -1)
-                    eqtv = torch.exp(dist / self.sigma ** 2)
-                    tv = self.tnorm.conjunction(tv, eqtv)
+                if enable_target:
+                    for k in formula.free_variable_dict:
+                        loc_emb = formula.get_var_local_embedding(k)
+                        tar_emb = fvar_target_emb_dict[k]
+                        dist = torch.sum((loc_emb - tar_emb)**2, -1)
+                        eqtv = torch.exp(- dist / self.sigma ** 2)
+                        tv = self.tnorm.conjunction(tv, eqtv)
 
                 ntv = - tv.mean()
                 reg = 0.05 * sum([
@@ -109,7 +118,7 @@ class GradientReasoningMachineEFO:
 
         truth_values = formula.evaluate_truth_values(
             self.tnorm, self.nbp,
-            all_candidates=not infer_free)
+            free_var_treatment=not infer_free)
         fvar_local_emb_dict = {
                 k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
         assert truth_values is not None
@@ -169,9 +178,18 @@ class GradientReasoningMachineEFO:
         #         emb = self.nbp.get_random_entity_embed(formula.num_instances)
         #         formula.init_var_local_embedding(term_name, emb)
 
-    def reasoning(self, fof_list: List[FirstOrderFormula], infer_free, enable_target=False):
+    def reasoning(self, fofs: List[FirstOrderFormula], free_var_treatment, fole=False):
+        """
+        fof_list: list of FirstOrderFormula, also, it can be just a FirstOrderFormula
+        free_var_treatment:
+            - existential: treat the free variable as the existential variable
+            - ground1random: ground the free variable into one random answers
+            - ground1noisy: ground the free variable into single ngative variables
+            - groundfull: ground the answers to a full answer set
+        fole: boolean, whether consider free variables as boolean function
+        """
         # then it comes into a batched formula list
-        if isinstance(fof_list, list):
-            return [self._reason_single_formula(fof, infer_free, enable_target) for fof in fof_list]
+        if isinstance(fofs, list):
+            return [self._reason_single_formula(fof, free_var_treatment, fole) for fof in fofs]
         else:
-            return self._reason_single_formula(fof_list, infer_free, enable_target)
+            return self._reason_single_formula(fofs, free_var_treatment, fole)

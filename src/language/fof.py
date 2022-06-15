@@ -429,7 +429,7 @@ class FirstOrderFormula:
     def evaluate_truth_values(self,
                               tnorm: Tnorm,
                               nbp: NeuralBinaryPredicate,
-                              all_candidates):
+                              free_var_treatment):
         """
         Input args:
             tnorm_type: the type of tnorms
@@ -444,14 +444,15 @@ class FirstOrderFormula:
             while begin_idx < self.num_instances:
                 ret = self.batch_evaluate_truth_values(
                     self.formula, tnorm, nbp,
-                    begin_idx, end_idx, all_candidates)
+                    begin_idx, end_idx, free_var_treatment)
                 collect.append(ret)
 
                 begin_idx = end_idx
                 end_idx = begin_idx + batch_size
             return torch.cat(collect, dim=-1)
 
-        if all_candidates:
+        # TODO: a bug to fix
+        if free_var_treatment:
             batch_size = 32
             while batch_size > 0:
                 oom = False
