@@ -86,7 +86,7 @@ def train_upper_bound_noisy_likelihood(
 
     for ii, fof in t:
         ####################
-        fetch = grm.reasoning(fof, infer_free=True, enable_target=True)
+        fetch = grm.reasoning(fof, free_var_treatment='ground1random',fole=True)
         loss = 0
 
         pos_tv_list = []
@@ -110,8 +110,8 @@ def train_upper_bound_noisy_likelihood(
                 fvar_emb = batch_fvar_local_emb_dict[f][i]
                 pos_answer = pos_answer_dict[f]
 
-                pos_embs = nbp.get_head_emb(pos_answer)
-                neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
+                pos_embs = nbp.get_entity_emb(pos_answer)
+                neg_embs = nbp.get_entity_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
 
                 pos_ans_dist = torch.sum((pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
                 pos_ans_tv = torch.exp(- pos_ans_dist)
@@ -132,26 +132,22 @@ def train_upper_bound_noisy_likelihood(
                 mle = pos_nll + neg_nll
                 mle_loss_list.append(mle)
 
-                    # embedding_reg = 0
-                    # for symb in fof.symbol_dict:
-                    #     symb_emb = nbp.get_head_emb(
-                    #         fof.get_term_grounded_entity_id_list(symb)[i]
-                    #     )
-                    #     embedding_reg += torch.sum(nbp.regularization(symb_emb) ** 3, -1)
-
-                    # for pred in fof.predicate_dict:
-                    #     pred_emb = nbp.get_head_emb(
-                    #         fof.get_pred_grounded_relation_id_list(pred)[i]
-                    #     )
-                    #     embedding_reg += torch.sum(nbp.regularization(pred_emb) ** 3, -1)
-
-                    # embedding_regularization_list.append(embedding_reg)
-
-
         mle_loss = torch.mean(torch.stack(mle_loss_list))
-        embedding_regularization = 0 # torch.mean(torch.stack(embedding_regularization_list)) * 0.05
 
-        loss = mle_loss + embedding_regularization
+        embedding_reg = 0
+        for symb in fof.symbol_dict:
+            symb_emb = nbp.get_entity_emb(
+                fof.get_term_grounded_entity_id_list(symb)
+            )
+            embedding_reg += nbp.regularization(symb_emb).mean()
+
+        for pred in fof.predicate_dict:
+            pred_emb = nbp.get_entity_emb(
+                fof.get_pred_grounded_relation_id_list(pred)
+            )
+            embedding_reg += nbp.regularization(pred_emb).mean()
+
+        loss = mle_loss + embedding_reg * 0.05
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -250,8 +246,8 @@ def train_truth_value_noisy_likelihood(
                 fvar_emb = batch_fvar_local_emb_dict[f][i]
                 pos_answer = pos_answer_dict[f]
 
-                pos_embs = nbp.get_head_emb(pos_answer)
-                neg_embs = nbp.get_head_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
+                pos_embs = nbp.get_entity_emb(pos_answer)
+                neg_embs = nbp.get_entity_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
 
                 pos_ans_dist = torch.sum((pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
                 pos_ans_tv = torch.exp(- pos_ans_dist)

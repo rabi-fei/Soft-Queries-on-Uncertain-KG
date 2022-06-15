@@ -70,12 +70,12 @@ class GradientReasoningMachineEFO:
         opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
         eflosses = [(-1, -1, -1)]
 
-        if enable_target:
+        if fole:
             fvar_target_emb_dict = {}
             for k in formula.free_variable_dict:
                 answer_barycenters = []
                 for easy_answer in formula.easy_answer_list:
-                    ans_bry_emb = torch.mean(self.nbp.get_head_emb(easy_answer[k]),
+                    ans_bry_emb = torch.mean(self.nbp.get_entity_emb(easy_answer[k]),
                                             dim=0, keepdim=True)
                     answer_barycenters.append(ans_bry_emb)
                 fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0).detach().clone()
@@ -85,9 +85,9 @@ class GradientReasoningMachineEFO:
             if efvar_local_emb:
                 tv = formula.evaluate_truth_values(
                     self.tnorm, self.nbp,
-                    free_var_treatment=False)
+                    free_var_treatment=free_var_treatment)
 
-                if enable_target:
+                if fole:
                     for k in formula.free_variable_dict:
                         loc_emb = formula.get_var_local_embedding(k)
                         tar_emb = fvar_target_emb_dict[k]
@@ -96,12 +96,8 @@ class GradientReasoningMachineEFO:
                         tv = self.tnorm.conjunction(tv, eqtv)
 
                 ntv = - tv.mean()
-                reg = 0.05 * sum([
-                    torch.mean(
-                        torch.sum(
-                            torch.abs(self.nbp.regularization(emb)) ** 3, -1)
-                            )
-                    for emb in efvar_local_emb])
+                efvar_local_emb_mat = torch.stack(efvar_local_emb)
+                reg = 0.05 * self.nbp.regularization(efvar_local_emb_mat).mean()
 
                 efloss = ntv + reg
                 eflosses.append((ntv.item(), reg.item(), efloss.item()))
@@ -118,7 +114,7 @@ class GradientReasoningMachineEFO:
 
         truth_values = formula.evaluate_truth_values(
             self.tnorm, self.nbp,
-            free_var_treatment=not infer_free)
+            free_var_treatment=free_var_treatment)
         fvar_local_emb_dict = {
                 k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
         assert truth_values is not None

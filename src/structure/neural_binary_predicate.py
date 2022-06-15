@@ -46,11 +46,7 @@ class NeuralBinaryPredicate:
         return self._relation_embedding(rel_id)
 
     @abstractmethod
-    def get_head_emb(self, entity_id_or_tensor):
-        pass
-
-    @abstractmethod
-    def get_tail_emb(self, entity_id_or_tensor):
+    def get_entity_emb(self, entity_id_or_tensor):
         pass
 
     @abstractmethod
@@ -130,7 +126,7 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         rel_id = torch.tensor(relation_id_or_tensor, device=self.device)
         return self._relation_embedding(rel_id)
 
-    def get_head_emb(self, entity_id_or_tensor):
+    def get_entity_emb(self, entity_id_or_tensor):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
@@ -339,11 +335,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         rel_id = torch.tensor(relation_id_or_tensor, device=self.device)
         return self._relation_embedding(rel_id)
 
-    def get_head_emb(self, entity_id_or_tensor):
-        ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
-        return self._entity_embedding(ent_id)
-
-    def get_tail_emb(self, entity_id_or_tensor):
+    def get_entity_emb(self, entity_id_or_tensor):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
@@ -389,4 +381,6 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
 
     def regularization(self, emb):
         r, i = emb[..., :self.rank], emb[..., self.rank:]
-        return torch.sqrt(r ** 2 + i ** 2)
+        norm_vec =  torch.sqrt(r ** 2 + i ** 2)
+        reg = torch.sum(norm_vec ** 3, -1)
+        return reg

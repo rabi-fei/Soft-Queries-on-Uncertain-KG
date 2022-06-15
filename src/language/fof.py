@@ -106,7 +106,7 @@ class Term(Lobject):
     FREE = 2
     UNIVERSAL = 3
     SYMBOL = 4
-    GROUNDED = 5
+    # GROUNDED = 5
 
     op = "term"
 
@@ -432,7 +432,12 @@ class FirstOrderFormula:
                               free_var_treatment):
         """
         Input args:
-            tnorm_type: the type of tnorms
+            free_var_treatment:
+                - existential: treat the free variable as the existential variable
+                - ground1random: ground the free variable into one random answers
+                - ground1noisy: ground the free variable into single ngative variables
+                - groundfull: ground the answers to a full answer set
+                - all: evaluate across all candidates
         Return args:
         """
 
@@ -451,8 +456,7 @@ class FirstOrderFormula:
                 end_idx = begin_idx + batch_size
             return torch.cat(collect, dim=-1)
 
-        # TODO: a bug to fix
-        if free_var_treatment:
+        if free_var_treatment == 'all':
             batch_size = 32
             while batch_size > 0:
                 oom = False
@@ -470,12 +474,12 @@ class FirstOrderFormula:
             return run_in_batch(batch_size=self.num_instances)
 
     def batch_evaluate_truth_values(self,
-                               formula: Formula,
-                               tnorm: Tnorm,
-                               nbp: NeuralBinaryPredicate,
-                               begin_index,
-                               end_index,
-                               all_candidates):
+                                    formula: Formula,
+                                    tnorm: Tnorm,
+                                    nbp: NeuralBinaryPredicate,
+                                    begin_index,
+                                    end_index,
+                                    free_var_treatment):
         """
         Recursive evaluation of the formula functions
         Input args:
@@ -490,35 +494,32 @@ class FirstOrderFormula:
         if isinstance(formula, Conjunction):
             return tnorm.conjunction(
                 self.batch_evaluate_truth_values(
-                    formula.formulas[0], tnorm, nbp, begin_index, end_index, all_candidates),
+                    formula.formulas[0], tnorm, nbp, begin_index, end_index, free_var_treatment),
                 self.batch_evaluate_truth_values(
-                    formula.formulas[1], tnorm, nbp, begin_index, end_index, all_candidates)
+                    formula.formulas[1], tnorm, nbp, begin_index, end_index, free_var_treatment)
             )
 
         elif isinstance(formula, Disjunction):
             return tnorm.disjunction(
                 self.batch_evaluate_truth_values(
-                    formula.formulas[0], tnorm, nbp, begin_index, end_index, all_candidates),
+                    formula.formulas[0], tnorm, nbp, begin_index, end_index, free_var_treatment),
                 self.batch_evaluate_truth_values(
-                    formula.formulas[1], tnorm, nbp, begin_index, end_index, all_candidates)
+                    formula.formulas[1], tnorm, nbp, begin_index, end_index, free_var_treatment)
             )
 
         elif isinstance(formula, Negation):
             return tnorm.negation(
                 self.batch_evaluate_truth_values(
-                    formula.formula, tnorm, nbp, begin_index, end_index, all_candidates)
+                    formula.formula, tnorm, nbp, begin_index, end_index, free_var_treatment)
             )
 
         elif isinstance(formula, BinaryPredicate):
             head_name = formula.head.name
             tail_name = formula.tail.name
-            head_emb = self.get_head_embedding(nbp,
-                                               head_name, begin_index, end_index, all_candidates)
-            tail_emb = self.get_tail_embedding(nbp,
-                                               tail_name, begin_index, end_index, all_candidates)
+            head_emb = self.get_embedding(nbp, head_name, begin_index, end_index, free_var_treatment)
+            tail_emb = self.get_embedding(nbp, tail_name, begin_index, end_index, free_var_treatment)
 
-            rel_emb = nbp.get_relation_emb(formula.relation_id_list)[
-                begin_index: end_index]
+            rel_emb = nbp.get_relation_emb(formula.relation_id_list)[begin_index: end_index]
             batch_score = nbp.embedding_score(head_emb, rel_emb, tail_emb)
             batch_truth_value = nbp.score2truth_value(batch_score)
             # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
@@ -614,72 +615,37 @@ class FirstOrderFormula:
         return (self.has_var_local_embedding(term_name) or
                 self.has_term_grounded_entity_id_list(term_name))
 
-    def get_head_embedding(self,
-                           nbp: NeuralBinaryPredicate,
-                           term_name,
-                           begin_index=None,
-                           end_index=None,
-                           all_candidates=False
-                           ):
-        # if all_candidates:
-        #     if self.term_dict[term_name].state == Term.FREE:
-        #         emb = nbp.entity_embedding.unsqueeze(-2)  # [num_entities, 1, emb_dim]
-        #         return emb
-        #     else:
-        #         if self.has_term_grounded_entity_id_list(term_name):
-        #             emb = nbp.get_head_emb(
-        #                 self.get_term_grounded_entity_id_list(term_name))
-        #         elif self.has_var_local_embedding(term_name):
-        #             emb = self.get_var_local_embedding(term_name)
-        #         else:
-        #             raise KeyError("Embedding does not found")
-        # emb = emb.unsqueeze(0).repeat([nbp.num_entities, 1, 1])
-        if all_candidates and self.term_dict[term_name].state == Term.FREE:
-            return nbp.entity_embedding.unsqueeze(-2)
+    def get_embedding(self,
+                      nbp: NeuralBinaryPredicate,
+                      term_name,
+                      begin_index,
+                      end_index,
+                      free_var_treatment):
+
+        if self.term_dict[term_name].state == Term.FREE:
+            if free_var_treatment.lower() == 'all':
+                return nbp.entity_embedding.unsqueeze(-2)
+            elif free_var_treatment.lower() == 'existential':
+                _emb = self.get_var_local_embedding(term_name)
+            elif free_var_treatment.lower() == 'ground1random':
+                entity_id_list = [sample(eans[term_name], k=1)
+                                  for eans in self.easy_answer_list]
+                _emb = nbp.get_entity_embedding(entity_id_list)
+            elif free_var_treatment.lower() == 'ground1noisy':
+                entity_id_list = torch.randint(low=0,
+                                               high=nbp.num_entities,
+                                               size=self.num_instances)
+                _emb = nbp.get_entity_emb(entity_id_list)
+            elif free_var_treatment.lower() == 'groundfull':
+                raise NotImplementedError
         else:
             if self.has_term_grounded_entity_id_list(term_name):
-                emb = nbp.get_head_emb(
+                _emb = nbp.get_entity_emb(
                     self.get_term_grounded_entity_id_list(term_name))
             elif self.has_var_local_embedding(term_name):
-                emb = self.get_var_local_embedding(term_name)
+                _emb = self.get_var_local_embedding(term_name)
             else:
                 raise KeyError("Embedding does not found")
-            if begin_index is not None and end_index is not None:
-                return emb[begin_index: end_index]
-            else:
-                return emb
 
-    def get_tail_embedding(self,
-                           nbp: NeuralBinaryPredicate,
-                           term_name,
-                           begin_index=None,
-                           end_index=None,
-                           all_candidates=False):
-        # if all_candidates:
-        #     if self.term_dict[term_name].state == Term.FREE:
-        #         emb = nbp.entity_embedding.unsqueeze(-2)
-        #     else:
-        #         if self.has_term_grounded_entity_id_list(term_name):
-        #             emb = nbp.get_tail_emb(
-        #                 self.get_term_grounded_entity_id_list(term_name)
-        #             )
-        #         elif self.has_var_local_embedding(term_name):
-        #             emb = self.get_var_local_embedding(term_name)
-        #         else:
-        #             raise KeyError("Embedding does not found")
-        # emb = emb.unsqueeze(0).repeat([nbp.num_entities, 1, 1])
-        if all_candidates and self.term_dict[term_name].state == Term.FREE:
-            return nbp.entity_embedding.unsqueeze(-2)
-        else:
-            if self.has_term_grounded_entity_id_list(term_name):
-                emb = nbp.get_tail_emb(
-                    self.get_term_grounded_entity_id_list(term_name)
-                )
-            elif self.has_var_local_embedding(term_name):
-                emb = self.get_var_local_embedding(term_name)
-            else:
-                raise KeyError("Embedding does not found")
-            if begin_index is not None and end_index is not None:
-                return emb[begin_index: end_index]
-            else:
-                return emb
+        if begin_index is not None and end_index is not None:
+            return _emb[begin_index: end_index]
