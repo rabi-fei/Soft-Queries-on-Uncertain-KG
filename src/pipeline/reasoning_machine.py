@@ -5,6 +5,7 @@ from typing import Dict, List
 import math
 
 import torch
+from tqdm import tqdm
 
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.language.fof import FirstOrderFormula
@@ -37,6 +38,7 @@ class GradientReasoningMachineEFO:
                 - ground1random: ground the free variable into one random answers
                 - ground1noisy: ground the free variable into single ngative variables
                 - groundfull: ground the answers to a full answer set
+                - CQD
             fole: boolean, whether consider free variables as boolean function
         Output args:
             truth_values:
@@ -83,9 +85,14 @@ class GradientReasoningMachineEFO:
         for i in range(self.reasoning_steps):
             # maximize the truth value with repect to evars and fvars
             if efvar_local_emb:
-                tv = formula.evaluate_truth_values(
-                    self.tnorm, self.nbp,
-                    free_var_treatment=free_var_treatment)
+                if free_var_treatment == 'CQD':
+                    tv = formula.evaluate_truth_values(
+                        self.tnorm, self.nbp,
+                        free_var_treatment='existential')
+                else:
+                    tv = formula.evaluate_truth_values(
+                        self.tnorm, self.nbp,
+                        free_var_treatment=free_var_treatment)
 
                 if fole:
                     for k in formula.free_variable_dict:
@@ -112,9 +119,15 @@ class GradientReasoningMachineEFO:
 
         # print(f"continuous search for {formula.lstr()} breaks at step {i}")
 
-        truth_values = formula.evaluate_truth_values(
-            self.tnorm, self.nbp,
-            free_var_treatment=free_var_treatment)
+        if free_var_treatment == 'CQD':
+            truth_values = formula.evaluate_truth_values(
+                self.tnorm, self.nbp,
+                free_var_treatment='all')
+        else:
+            truth_values = formula.evaluate_truth_values(
+                self.tnorm, self.nbp,
+                free_var_treatment=free_var_treatment)
+
         fvar_local_emb_dict = {
                 k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
         assert truth_values is not None
@@ -186,6 +199,11 @@ class GradientReasoningMachineEFO:
         """
         # then it comes into a batched formula list
         if isinstance(fofs, list):
-            return [self._reason_single_formula(fof, free_var_treatment, fole) for fof in fofs]
+            res = []
+            for fof in tqdm(fofs):
+                res.append(
+                    self._reason_single_formula(fof, free_var_treatment, fole)
+                )
+            return res
         else:
             return self._reason_single_formula(fofs, free_var_treatment, fole)
