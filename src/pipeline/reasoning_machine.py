@@ -140,8 +140,8 @@ class GradientReasoningMachineEFO:
                 head_name, tail_name = pred.head.name, pred.tail.name
 
                 if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
-                    head_emb = formula.get_tail_embedding(
-                        self.nbp, head_name
+                    head_emb = formula.get_embedding(
+                        self.nbp, head_name, free_var_treatment='existential'
                     )
                     rel_emb = self.nbp.get_relation_emb(
                         formula.pred_grounded_relation_id_dict[rel_name]
@@ -152,8 +152,8 @@ class GradientReasoningMachineEFO:
                     formula.set_var_local_embedding(tail_name, tail_emb)
 
                 elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
-                    tail_emb = formula.get_tail_embedding(
-                        self.nbp, tail_name
+                    tail_emb = formula.get_embedding(
+                        self.nbp, head_name, free_var_treatment='existential'
                     )
                     rel_emb = self.nbp.get_relation_emb(
                         formula.pred_grounded_relation_id_dict[rel_name]

@@ -529,7 +529,7 @@ class FirstOrderFormula:
     def free_variable_dict(self):
         return {k: v
                 for k, v in self.term_dict.items()
-                if v.state == Term.FREE or v.state == Term.GROUNDED}
+                if v.state == Term.FREE}
 
     @property
     def universal_variable_dict(self):
@@ -618,9 +618,9 @@ class FirstOrderFormula:
     def get_embedding(self,
                       nbp: NeuralBinaryPredicate,
                       term_name,
-                      begin_index,
-                      end_index,
-                      free_var_treatment):
+                      begin_index=None,
+                      end_index=None,
+                      free_var_treatment='existential'):
 
         if self.term_dict[term_name].state == Term.FREE:
             if free_var_treatment.lower() == 'all':
@@ -628,9 +628,9 @@ class FirstOrderFormula:
             elif free_var_treatment.lower() == 'existential':
                 _emb = self.get_var_local_embedding(term_name)
             elif free_var_treatment.lower() == 'ground1random':
-                entity_id_list = [sample(eans[term_name], k=1)
+                entity_id_list = [sample(eans[term_name], k=1)[0]
                                   for eans in self.easy_answer_list]
-                _emb = nbp.get_entity_embedding(entity_id_list)
+                _emb = nbp.get_entity_emb(entity_id_list)
             elif free_var_treatment.lower() == 'ground1noisy':
                 entity_id_list = torch.randint(low=0,
                                                high=nbp.num_entities,
@@ -648,4 +648,5 @@ class FirstOrderFormula:
                 raise KeyError("Embedding does not found")
 
         if begin_index is not None and end_index is not None:
-            return _emb[begin_index: end_index]
+            _emb = _emb[begin_index: end_index]
+        return _emb

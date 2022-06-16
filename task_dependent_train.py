@@ -86,7 +86,7 @@ def train_upper_bound_noisy_likelihood(
 
     for ii, fof in t:
         ####################
-        fetch = grm.reasoning(fof, free_var_treatment='ground1random',fole=True)
+        fetch = grm.reasoning(fof, free_var_treatment='existential',fole=True)
         loss = 0
 
         pos_tv_list = []
@@ -450,7 +450,7 @@ def evaluate_by_nearest_search(
     # conduct reasoning
     with tqdm.tqdm(fofs, desc=desc) as t:
         for fof in t:
-            fof_reasoning_kv = grm.reasoning(fof, infer_free=False)
+            fof_reasoning_kv = grm.reasoning(fof, free_var_treatment='existential')
             fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']  # [num_entities batch_size]
             batch_entity_rankings = nbp.get_all_entity_rankings(fvar_emb_dict['f'])
             # [batch_size, num_entities]
@@ -568,12 +568,12 @@ if __name__ == "__main__":
     # evaluate_by_search_emb_then_rank_truth_value(f"evaluate CQD test set {0}",
     #                                              test_dataloader, nbp, eval_grm)
 
-    # evaluate_by_nearest_search(f"evaluate NN train epoch {0}",
-    #                             train_dataloader, nbp, train_grm)
-    # evaluate_by_nearest_search(f"evaluate NN validate epoch {0}",
-    #                            valid_dataloader, nbp, train_grm)
-    # evaluate_by_nearest_search(f"evaluate NN test epoch {0}",
-    #                            test_dataloader, nbp, train_grm)
+    evaluate_by_nearest_search(f"evaluate NN train epoch {0}",
+                                train_dataloader, nbp, train_grm)
+    evaluate_by_nearest_search(f"evaluate NN validate epoch {0}",
+                               valid_dataloader, nbp, train_grm)
+    evaluate_by_nearest_search(f"evaluate NN test epoch {0}",
+                               test_dataloader, nbp, train_grm)
 
     print("data prepared")
 
