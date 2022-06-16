@@ -63,61 +63,60 @@ class GradientReasoningMachineEFO:
         else:
             efvar_local_emb = evar_local_emb
 
-        if len(efvar_local_emb) == 0:
-            # this only applies for the cases where no existential variables
-            return formula.evaluate_truth_values(self.tnorm, self.nbp, free_var_treatment)
-
-
-        optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
-        opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
         eflosses = [(-1, -1, -1)]
+        if efvar_local_emb:
+            optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
+            opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
 
-        if fole:
-            fvar_target_emb_dict = {}
-            for k in formula.free_variable_dict:
-                answer_barycenters = []
-                for easy_answer in formula.easy_answer_list:
-                    ans_bry_emb = torch.mean(self.nbp.get_entity_emb(easy_answer[k]),
-                                            dim=0, keepdim=True)
-                    answer_barycenters.append(ans_bry_emb)
-                fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0).detach().clone()
+            if fole:
+                fvar_target_emb_dict = {}
+                for k in formula.free_variable_dict:
+                    answer_barycenters = []
+                    for easy_answer in formula.easy_answer_list:
+                        ans_bry_emb = torch.mean(self.nbp.get_entity_emb(easy_answer[k]),
+                                                dim=0, keepdim=True)
+                        answer_barycenters.append(ans_bry_emb)
+                    fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0).detach().clone()
 
-        for i in range(self.reasoning_steps):
-            # maximize the truth value with repect to evars and fvars
-            if efvar_local_emb:
-                if free_var_treatment == 'CQD':
-                    tv = formula.evaluate_truth_values(
-                        self.tnorm, self.nbp,
-                        free_var_treatment='existential')
+            for i in range(self.reasoning_steps):
+                # maximize the truth value with repect to evars and fvars
+                if efvar_local_emb:
+                    if free_var_treatment == 'CQD':
+                        tv = formula.evaluate_truth_values(
+                            self.tnorm, self.nbp,
+                            free_var_treatment='existential')
+                    else:
+                        tv = formula.evaluate_truth_values(
+                            self.tnorm, self.nbp,
+                            free_var_treatment=free_var_treatment)
+
+                    if fole:
+                        for k in formula.free_variable_dict:
+                            loc_emb = formula.get_var_local_embedding(k)
+                            tar_emb = fvar_target_emb_dict[k]
+                            dist = torch.sum((loc_emb - tar_emb)**2, -1)
+                            eqtv = torch.exp(- dist / self.sigma ** 2)
+                            tv = self.tnorm.conjunction(tv, eqtv)
+
+                    ntv = - tv.mean()
+                    efvar_local_emb_mat = torch.stack(efvar_local_emb)
+                    reg = 0.05 * self.nbp.regularization(efvar_local_emb_mat).mean()
+
+                    efloss = ntv + reg
+                    eflosses.append((ntv.item(), reg.item(), efloss.item()))
+                    opt.zero_grad()
+                    efloss.backward()
+                    opt.step()
                 else:
-                    tv = formula.evaluate_truth_values(
-                        self.tnorm, self.nbp,
-                        free_var_treatment=free_var_treatment)
+                    efloss = None
 
-                if fole:
-                    for k in formula.free_variable_dict:
-                        loc_emb = formula.get_var_local_embedding(k)
-                        tar_emb = fvar_target_emb_dict[k]
-                        dist = torch.sum((loc_emb - tar_emb)**2, -1)
-                        eqtv = torch.exp(- dist / self.sigma ** 2)
-                        tv = self.tnorm.conjunction(tv, eqtv)
+                if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
+                    break
 
-                ntv = - tv.mean()
-                efvar_local_emb_mat = torch.stack(efvar_local_emb)
-                reg = 0.05 * self.nbp.regularization(efvar_local_emb_mat).mean()
-
-                efloss = ntv + reg
-                eflosses.append((ntv.item(), reg.item(), efloss.item()))
-                opt.zero_grad()
-                efloss.backward()
-                opt.step()
-            else:
-                efloss = None
-
-            if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
-                break
-
-        # print(f"continuous search for {formula.lstr()} breaks at step {i}")
+            fvar_local_emb_dict = {
+                    k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
+        else:
+            fvar_local_emb_dict = None
 
         if free_var_treatment == 'CQD':
             truth_values = formula.evaluate_truth_values(
@@ -128,8 +127,6 @@ class GradientReasoningMachineEFO:
                 self.tnorm, self.nbp,
                 free_var_treatment=free_var_treatment)
 
-        fvar_local_emb_dict = {
-                k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
         assert truth_values is not None
         return {'tv': truth_values,
                 'fvar_local_emb_dict': fvar_local_emb_dict,

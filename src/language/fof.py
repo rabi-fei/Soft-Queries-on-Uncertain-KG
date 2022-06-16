@@ -634,7 +634,7 @@ class FirstOrderFormula:
             elif free_var_treatment.lower() == 'ground1noisy':
                 entity_id_list = torch.randint(low=0,
                                                high=nbp.num_entities,
-                                               size=self.num_instances)
+                                               size=(self.num_instances,))
                 _emb = nbp.get_entity_emb(entity_id_list)
             elif free_var_treatment.lower() == 'groundfull':
                 raise NotImplementedError
