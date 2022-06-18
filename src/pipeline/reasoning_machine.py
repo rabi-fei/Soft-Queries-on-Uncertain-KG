@@ -1,139 +1,68 @@
 """
 A file maintains reasoning machine
 """
-from typing import Dict, List
 import math
+from typing import Dict, List
+from random import sample
 
 import torch
+from src.language.fof import (BinaryPredicate, Conjunction, Disjunction,
+                              FirstOrderFormula, Negation, Term)
+from src.language.tnorm import Tnorm
+from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from tqdm import tqdm
 
-from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.language.fof import FirstOrderFormula
-
-def gather_formula(formula_list) -> Dict:
-    pass
 
 class GradientReasoningMachineEFO:
     def __init__(self,
+                 formula: FirstOrderFormula,
+                 nbp: NeuralBinaryPredicate,
+                 tnorm: Tnorm,
                  reasoning_rate,
                  reasoning_steps,
                  reasoning_optimizer,
-                 nbp: NeuralBinaryPredicate,
-                 tnorm,
-                 sigma=1):
+                 sigma):
+        self.formula: FirstOrderFormula = formula
         self.reasoning_rate = reasoning_rate
         self.reasoning_steps = reasoning_steps
         self.reasoinng_optimizer = reasoning_optimizer
         self.nbp = nbp
-        self.tnorm = tnorm
+        self.tnorm: Tnorm = tnorm
         self.sigma = sigma
 
-    def _reason_single_formula(self, formula: FirstOrderFormula, free_var_treatment, fole=False):
-        """
-        reasoning the first order formula
-        Input args:
-            formula: a first order formula with batched instantiation
-            free_var_treatment:
-                - existential: treat the free variable as the existential variable
-                - ground1random: ground the free variable into one random answers
-                - ground1noisy: ground the free variable into single ngative variables
-                - groundfull: ground the answers to a full answer set
-                - CQD
-            fole: boolean, whether consider free variables as boolean function
-        Output args:
-            truth_values:
-                a tensor for all optimized truth value [batch_size]
-                if infer_free, [all_candidate, batch_size]
-        """
+        self.term_local_emb_dict = {
+            term_name: None
+            for term_name in self.formula.term_dict
+        }
 
-        assert len(formula.universal_variable_dict) == 0
-        # first initialize all variables
-        self.initialize_variable_embeddings(formula)
-        evar_local_emb = list(filter(
-            lambda x: x is not None,
-            [formula.get_var_local_embedding(k)
-             for k in formula.existential_variable_dict]))
+        self._last_ground_free_var_emb = {}
 
-        if free_var_treatment.lower() == 'existential':
-            fvar_local_emb = list(filter(
-                lambda x: x is not None,
-                [formula.get_var_local_embedding(k)
-                for k in formula.free_variable_dict]))
-            efvar_local_emb = evar_local_emb + fvar_local_emb
-        else:
-            efvar_local_emb = evar_local_emb
+    @classmethod
+    def create(cls,
+               formula: FirstOrderFormula,
+               nbp: NeuralBinaryPredicate,
+               tnorm: Tnorm,
+               reasoning_rate,
+               reasoning_steps,
+               reasoning_optimizer,
+               sigma=1):
+        rm = cls(formula,
+                 nbp,
+                 tnorm,
+                 reasoning_rate,
+                 reasoning_steps,
+                 reasoning_optimizer,
+                 sigma)
+        return rm
 
-        eflosses = [(-1, -1, -1)]
-        if efvar_local_emb:
-            optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
-            opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
+    def set_local_embedding(self, key, tensor):
+        self.term_local_emb_dict[key] = tensor.detach().clone()
 
-            if fole:
-                fvar_target_emb_dict = {}
-                for k in formula.free_variable_dict:
-                    answer_barycenters = []
-                    for easy_answer in formula.easy_answer_list:
-                        ans_bry_emb = torch.mean(self.nbp.get_entity_emb(easy_answer[k]),
-                                                dim=0, keepdim=True)
-                        answer_barycenters.append(ans_bry_emb)
-                    fvar_target_emb_dict[k] = torch.cat(answer_barycenters, dim=0).detach().clone()
+    def term_initialized(self, term_name):
+        return self.formula.has_term_grounded_entity_id_list(term_name) \
+                    or self.term_local_emb_dict[term_name] is not None
 
-            for i in range(self.reasoning_steps):
-                # maximize the truth value with repect to evars and fvars
-                if efvar_local_emb:
-                    if free_var_treatment == 'CQD':
-                        tv = formula.evaluate_truth_values(
-                            self.tnorm, self.nbp,
-                            free_var_treatment='existential')
-                    else:
-                        tv = formula.evaluate_truth_values(
-                            self.tnorm, self.nbp,
-                            free_var_treatment=free_var_treatment)
-
-                    if fole:
-                        for k in formula.free_variable_dict:
-                            loc_emb = formula.get_var_local_embedding(k)
-                            tar_emb = fvar_target_emb_dict[k]
-                            dist = torch.sum((loc_emb - tar_emb)**2, -1)
-                            eqtv = torch.exp(- dist / self.sigma ** 2)
-                            tv = self.tnorm.conjunction(tv, eqtv)
-
-                    ntv = - tv.mean()
-                    efvar_local_emb_mat = torch.stack(efvar_local_emb)
-                    reg = 0.05 * self.nbp.regularization(efvar_local_emb_mat).mean()
-
-                    efloss = ntv + reg
-                    eflosses.append((ntv.item(), reg.item(), efloss.item()))
-                    opt.zero_grad()
-                    efloss.backward()
-                    opt.step()
-                else:
-                    efloss = None
-
-                if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
-                    break
-
-            fvar_local_emb_dict = {
-                    k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
-        else:
-            fvar_local_emb_dict = None
-
-        if free_var_treatment == 'CQD':
-            truth_values = formula.evaluate_truth_values(
-                self.tnorm, self.nbp,
-                free_var_treatment='all')
-        else:
-            truth_values = formula.evaluate_truth_values(
-                self.tnorm, self.nbp,
-                free_var_treatment=free_var_treatment)
-
-        assert truth_values is not None
-        return {'tv': truth_values,
-                'fvar_local_emb_dict': fvar_local_emb_dict,
-                'eflosses': eflosses}
-
-
-    def initialize_variable_embeddings(self, formula: FirstOrderFormula):
+    def initialize_variable_embeddings(self):
         """
         Input args:
         Return args:
@@ -141,66 +70,389 @@ class GradientReasoningMachineEFO:
             uvars: list of universal variables
             fvars: list of free variables
         """
+
         def check_all_var_initialized():
-            return all(formula.term_initialized(term_name)
-                       for term_name in formula.term_dict)
+            return all(self.term_initialized(term_name)
+                       for term_name in self.formula.term_dict)
 
         while not check_all_var_initialized():
-            for rel_name, pred in formula.predicate_dict.items():
+            for rel_name, pred in self.formula.predicate_dict.items():
                 head_name, tail_name = pred.head.name, pred.tail.name
 
-                if formula.term_initialized(head_name) and not formula.term_initialized(tail_name):
-                    head_emb = formula.get_embedding(
+                if self.term_initialized(head_name) and not self.term_initialized(tail_name):
+                    head_emb = self.get_embedding(
                         self.nbp, head_name, free_var_treatment='existential'
                     )
                     rel_emb = self.nbp.get_relation_emb(
-                        formula.pred_grounded_relation_id_dict[rel_name]
+                        self.formula.pred_grounded_relation_id_dict[rel_name]
                     )
 
                     tail_emb = self.nbp.estimate_tail_emb(head_emb, rel_emb)
-                    # formula.set_var_local_embedding(tail_name, tail_emb)
-                    formula.set_var_local_embedding(tail_name, tail_emb)
+                    self.set_local_embedding(tail_name, tail_emb)
 
-                elif not formula.term_initialized(head_name) and formula.term_initialized(tail_name):
-                    tail_emb = formula.get_embedding(
+                elif not self.term_initialized(head_name) and self.term_initialized(tail_name):
+                    tail_emb = self.get_embedding(
                         self.nbp, head_name, free_var_treatment='existential'
                     )
                     rel_emb = self.nbp.get_relation_emb(
-                        formula.pred_grounded_relation_id_dict[rel_name]
+                        self.formula.pred_grounded_relation_id_dict[rel_name]
                     )
 
                     head_emb = self.nbp.estimate_head_emb(tail_emb, rel_emb)
                     # formula.set_var_local_embedding(head_name, head_emb)
-
-                    formula.set_var_local_embedding(head_name, head_emb)
+                    self.set_local_embedding(head_name, head_emb)
 
                 else:
                     continue
         return
 
-        # new implementation, random initialize
-        # for term_name in formula.term_dict:
-        #     if not formula.term_initialized(term_name):
-        #         emb = self.nbp.get_random_entity_embed(formula.num_instances)
-        #         formula.init_var_local_embedding(term_name, emb)
-
-    def reasoning(self, fofs: List[FirstOrderFormula], free_var_treatment, fole=False):
+    def get_embedding(self,
+                      term_name,
+                      begin_index=None,
+                      end_index=None,
+                      free_var_treatment='lift'):
         """
-        fof_list: list of FirstOrderFormula, also, it can be just a FirstOrderFormula
-        free_var_treatment:
-            - existential: treat the free variable as the existential variable
-            - ground1random: ground the free variable into one random answers
-            - ground1noisy: ground the free variable into single ngative variables
-            - groundfull: ground the answers to a full answer set
-        fole: boolean, whether consider free variables as boolean function
+            free_var_treatment:
+                (implemented)
+                - all: evaluate across all candidates
+                - lift: lift the free variable as the existential variable
+                - groundans:{k}: ground the free variable into k random answers
+                - groundnoisy:{k}: ground the free variable into k noisy variables
+                (to implement)
+                - groundansfull: ground the answers to a full answer set
+                - groundbarycenterfull: ground the barycenter of the answer set
+                - groundbarycenter: ground the barycenter of the answer set
+                - groundbarycenter: ground the barycenter of the answer set
         """
-        # then it comes into a batched formula list
-        if isinstance(fofs, list):
-            res = []
-            for fof in tqdm(fofs):
-                res.append(
-                    self._reason_single_formula(fof, free_var_treatment, fole)
-                )
-            return res
+        if self.formula.term_dict[term_name].state == Term.FREE:
+            # when it comes to the treatment of free variables, we dont consider batch
+            if free_var_treatment.lower() == 'all':
+                return self.nbp.entity_embedding.unsqueeze(-2)
+            elif free_var_treatment.lower() == 'lift':
+                return self.term_local_emb_dict[term_name]
+            elif 'groundans' in free_var_treatment.lower():
+                k = int(free_var_treatment.split(':')[-1])
+                entity_id_list = [sample(eans[term_name], k=k)[0]
+                                  for eans in self.formula.easy_answer_list]
+                entity_id_tensor = torch.tensor(entity_id_list).T
+                emb = self.nbp.get_entity_emb(entity_id_tensor)
+                self._last_ground_free_var_emb[term_name] = emb
+                return emb
+            elif 'groundnoisy' in free_var_treatment.lower():
+                k = int(free_var_treatment.split(':')[-1])
+                entity_id_list = torch.randint(low=0,
+                                               high=self.nbp.num_entities,
+                                               size=(k, self.num_instances))
+                emb = self.nbp.get_entity_emb(entity_id_list)
+                self._last_ground_free_var_emb[term_name] = emb
+                return emb
+            else:
+                raise NotImplementedError
         else:
-            return self._reason_single_formula(fofs, free_var_treatment, fole)
+            if self.has_term_grounded_entity_id_list(term_name):
+                emb = self.nbp.get_entity_emb(
+                    self.get_term_grounded_entity_id_list(term_name))
+            elif self.has_var_local_embedding(term_name):
+                emb = self.get_var_local_embedding(term_name)
+            else:
+                raise KeyError("Embedding does not found")
+            # when it is not free variable, we consider the batch
+            if begin_index is not None and end_index is not None:
+                emb = emb[begin_index: end_index]
+            return emb
+
+    def evaluate_truth_values(self, free_var_treatment, evaluate_batch_size=32):
+        """
+        Input args:
+
+        Return args:
+        """
+        def run_in_batch(batch_size):
+            # print("evaluating truth value with batch size =", batch_size)
+            begin_idx = 0
+            end_idx = begin_idx + batch_size
+            collect = []
+            while begin_idx < self.num_instances:
+                ret = self.batch_evaluate_truth_values(
+                    self.formula,
+                    begin_idx, end_idx, free_var_treatment)
+                collect.append(ret)
+
+                begin_idx = end_idx
+                end_idx = begin_idx + batch_size
+            return torch.cat(collect, dim=-1)
+
+        if free_var_treatment == 'all':
+            # batch_size = evaluate_batch_size
+            # while batch_size > 0:
+            #     oom = False
+            #     try:
+            #         with torch.no_grad():
+            #             ret = run_in_batch(batch_size)
+            #         return ret
+            #     except RuntimeError as e:
+            #         print("batch size {} failed,\nerror = {}".format(batch_size, e))
+            #         oom = True
+            #         torch.cuda.empty_cache()
+            #     if oom:
+            #         batch_size = batch_size // 2
+            run_in_batch(batch_size=evaluate_batch_size)
+        else:
+            return run_in_batch(batch_size=self.num_instances)
+
+    def batch_evaluate_truth_values(self,
+                                    formula,
+                                    begin_index,
+                                    end_index,
+                                    free_var_treatment):
+        """
+        Recursive evaluation of the formula functions
+        Input args:
+            formula: the formula at this time
+        Return args:
+            - truth values in shape either:
+                 [num candidate answers, batch size]
+                 or
+                 [batch size]
+
+        """
+        if isinstance(formula, Conjunction):
+            return self.tnorm.conjunction(
+                self.batch_evaluate_truth_values(
+                    formula.formulas[0], begin_index, end_index, free_var_treatment),
+                self.batch_evaluate_truth_values(
+                    formula.formulas[1], begin_index, end_index, free_var_treatment)
+            )
+
+        elif isinstance(formula, Disjunction):
+            return self.tnorm.disjunction(
+                self.batch_evaluate_truth_values(
+                    formula.formulas[0], begin_index, end_index, free_var_treatment),
+                self.batch_evaluate_truth_values(
+                    formula.formulas[1], begin_index, end_index, free_var_treatment)
+            )
+
+        elif isinstance(formula, Negation):
+            return self.tnorm.negation(
+                self.batch_evaluate_truth_values(
+                    formula.formula, begin_index, end_index, free_var_treatment)
+            )
+
+        elif isinstance(formula, BinaryPredicate):
+            head_name = formula.head.name
+            tail_name = formula.tail.name
+            head_emb = self.get_embedding(
+                head_name, begin_index, end_index, free_var_treatment)
+            tail_emb = self.get_embedding(
+                tail_name, begin_index, end_index, free_var_treatment)
+
+            rel_emb = self.nbp.get_relation_emb(
+                formula.relation_id_list[begin_index: end_index])
+            batch_score = self.nbp.embedding_score(head_emb, rel_emb, tail_emb)
+            batch_truth_value = self.nbp.score2truth_value(batch_score)
+            # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
+            return batch_truth_value
+
+    def optimize_term_local_embedding(self, free_var_treatment, equality):
+        if equality: assert 'ground' in free_var_treatment
+
+        self.initialize_variable_embeddings()
+        evar_local_emb = [
+            self.get_embedding(term_name)
+            for term_name in self.formula.existential_variable_dict
+            if self.term_local_emb_dict[term_name] is not None]
+
+        if free_var_treatment.lower() == "lift" or equality:
+            for term_name in self.formula.free_variable_dict:
+                assert self.term_local_emb_dict[term_name] is not None
+                emb = self.get_embedding(term_name, free_var_treatment='lift')
+                evar_local_emb.append(emb)
+
+        if len(evar_local_emb) == 0:
+            return
+
+        OptimizerClass = getattr(torch.optim, self.reasoinng_optimizer)
+        optim: torch.optim.Optimizer = OptimizerClass(
+            evar_local_emb, self.reasoning_rate)
+
+        traj = [(-1, -1, -1)]
+
+        for i in range(self.reasoning_steps):
+            if equality:
+                tv = self.evaluate_truth_values(free_var_treatment='lift')
+                # conjunction when equality
+                for term_name in self.formula.free_variable_dict:
+                    free_var_local_emb = self.get_embedding(
+                        term_name, free_var_treatment='lift')
+                    free_var_ground_emb = self.get_embedding(
+                        term_name, free_var_treatment=free_var_treatment)
+                    free_var_dist = torch.sum(
+                        (free_var_local_emb - free_var_ground_emb) ** 2, dim=-1)
+                    dist_tv = torch.exp(
+                         free_var_dist / self.sigma ** 2
+                    )
+                    tv = self.tnorm.conjunction(tv, dist_tv)
+            else:
+                tv = self.evaluate_truth_values(free_var_local_emb=free_var_local_emb)
+
+            ntv = -tv.mean()
+            efvar_local_emb_mat = torch.stack(evar_local_emb)
+            reg = self.nbp.regularization(efvar_local_emb_mat).mean()
+
+            loss = ntv + reg * 0.05
+            traj.append((ntv.item(), reg.item(), loss.item()))
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+
+            if math.fabs(traj[-1][-1] - traj[-2][-1]) < 1e-9:
+                break
+
+        return traj
+
+
+    # def _reason_single_formula(self, formula: FirstOrderFormula, free_var_treatment, fole=False, no_grad=False):
+    #     """
+    #     reasoning the first order formula
+    #     Input args:
+    #         formula: a first order formula with batched instantiation
+    #         free_var_treatment:
+    #             - existential: treat the free variable as the existential variable
+    #             - ground1random: ground the free variable into one random answers
+    #             - groundnoisy:k: ground the free variable into single ngative variables
+    #             - groundfull: ground the answers to a full answer set
+    #             - CQD
+    #         fole: boolean, whether consider free variables as boolean function
+    #     Output args:
+    #         truth_values:
+    #             a tensor for all optimized truth value [batch_size]
+    #             if infer_free, [all_candidate, batch_size]
+    #     """
+
+    #     assert len(formula.universal_variable_dict) == 0
+    #     # first initialize all variables
+    #     self.initialize_variable_embeddings(formula)
+    #     evar_local_emb = list(filter(
+    #         lambda x: x is not None,
+    #         [formula.get_var_local_embedding(k)
+    #          for k in formula.existential_variable_dict]))
+
+    #     if free_var_treatment.lower() == 'existential':
+    #         fvar_local_emb = list(filter(
+    #             lambda x: x is not None,
+    #             [formula.get_var_local_embedding(k)
+    #              for k in formula.free_variable_dict]))
+    #         efvar_local_emb = evar_local_emb + fvar_local_emb
+    #     else:
+    #         efvar_local_emb = evar_local_emb
+
+    #     eflosses = [(-1, -1, -1)]
+    #     if efvar_local_emb:
+    #         optimizer_class = getattr(torch.optim, self.reasoinng_optimizer)
+    #         opt = optimizer_class(efvar_local_emb, self.reasoning_rate)
+
+    #         if fole:
+    #             fvar_target_emb_dict = {}
+    #             for k in formula.free_variable_dict:
+    #                 answer_barycenters = []
+    #                 for easy_answer in formula.easy_answer_list:
+    #                     ans_bry_emb = torch.mean(self.nbp.get_entity_emb(easy_answer[k]),
+    #                                              dim=0, keepdim=True)
+    #                     answer_barycenters.append(ans_bry_emb)
+    #                 fvar_target_emb_dict[k] = torch.cat(
+    #                     answer_barycenters, dim=0).detach().clone()
+
+    #         for i in range(self.reasoning_steps):
+    #             # maximize the truth value with repect to evars and fvars
+    #             if efvar_local_emb:
+    #                 if free_var_treatment == 'CQD':
+    #                     tv = formula.evaluate_truth_values(
+    #                         self.tnorm, self.nbp,
+    #                         free_var_treatment='existential')
+    #                 else:
+    #                     tv = formula.evaluate_truth_values(
+    #                         self.tnorm, self.nbp,
+    #                         free_var_treatment=free_var_treatment)
+
+    #                 if fole:
+    #                     for k in formula.free_variable_dict:
+    #                         loc_emb = formula.get_var_local_embedding(k)
+    #                         tar_emb = fvar_target_emb_dict[k]
+    #                         dist = torch.sum((loc_emb - tar_emb)**2, -1)
+    #                         eqtv = torch.exp(- dist / self.sigma ** 2)
+    #                         tv = self.tnorm.conjunction(tv, eqtv)
+
+    #                 ntv = - tv.mean()
+    #                 efvar_local_emb_mat = torch.stack(efvar_local_emb)
+    #                 reg = 0.05 * \
+    #                     self.nbp.regularization(efvar_local_emb_mat).mean()
+
+    #                 efloss = ntv + reg
+    #                 eflosses.append((ntv.item(), reg.item(), efloss.item()))
+    #                 opt.zero_grad()
+    #                 efloss.backward()
+    #                 opt.step()
+    #             else:
+    #                 efloss = None
+
+    #             if math.fabs(eflosses[-1][-1] - eflosses[-2][-1]) < 1e-9:
+    #                 break
+
+    #         fvar_local_emb_dict = {
+    #             k: formula.get_var_local_embedding(k) for k in formula.free_variable_dict}
+    #     else:
+    #         fvar_local_emb_dict = None
+
+    #     if no_grad:
+    #         for k in formula.existential_variable_dict:
+    #             formula.term_local_embedding_dict[k].detach_()
+    #         for k in formula.free_variable_dict:
+    #             formula.term_local_embedding_dict[k].detach_()
+
+    #     if free_var_treatment == 'CQD':
+    #         if no_grad:
+    #             with torch.no_grad():
+    #                 truth_values = formula.evaluate_truth_values(
+    #                     self.tnorm, self.nbp,
+    #                     free_var_treatment='all')
+    #         else:
+    #             truth_values = formula.evaluate_truth_values(
+    #                 self.tnorm, self.nbp,
+    #                 free_var_treatment='all')
+    #     else:
+    #         if no_grad:
+    #             with torch.no_grad():
+    #                 truth_values = formula.evaluate_truth_values(
+    #                     self.tnorm, self.nbp,
+    #                     free_var_treatment=free_var_treatment)
+    #         else:
+    #             truth_values = formula.evaluate_truth_values(
+    #                 self.tnorm, self.nbp,
+    #                 free_var_treatment=free_var_treatment)
+
+    #     assert truth_values is not None
+    #     return {'tv': truth_values,
+    #             'fvar_local_emb_dict': fvar_local_emb_dict,
+    #             'eflosses': eflosses}
+
+    # def reasoning(self, fofs: List[FirstOrderFormula], free_var_treatment, fole=False, no_grad=False):
+    #     """
+    #     fof_list: list of FirstOrderFormula, also, it can be just a FirstOrderFormula
+    #     free_var_treatment:
+    #         - existential: treat the free variable as the existential variable
+    #         - ground1random: ground the free variable into one random answers
+    #         - ground1noisy: ground the free variable into single ngative variables
+    #         - groundfull: ground the answers to a full answer set
+    #     fole: boolean, whether consider free variables as boolean function
+    #     """
+    #     # then it comes into a batched formula list
+    #     if isinstance(fofs, list):
+    #         res = []
+    #         for fof in tqdm(fofs, desc='reasoning'):
+    #             res.append(
+    #                 self._reason_single_formula(
+    #                     fof, free_var_treatment, fole, no_grad)
+    #             )
+    #         return res
+    #     else:
+    #         return self._reason_single_formula(fofs, free_var_treatment, fole, no_grad)

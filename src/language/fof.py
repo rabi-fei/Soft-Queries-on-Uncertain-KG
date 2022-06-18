@@ -363,7 +363,7 @@ class FirstOrderFormula:
         self.pred_grounded_relation_id_dict: Dict[str, List] = {}
 
         self.term_dict: Dict[str, Term] = {}
-        self.term_local_embedding_dict: Dict[str, torch.Tensor] = {}
+        # self.term_local_embedding_dict: Dict[str, torch.Tensor] = {}
         self.term_grounded_entity_id_dict: Dict[str, List] = {}
         # run initialization
         self._init_query()
@@ -380,8 +380,8 @@ class FirstOrderFormula:
             for t in pred.get_terms():
                 self.term_dict[t.name] = t
 
-        self.term_local_embedding_dict = {name: None
-                                          for name in self.term_dict}
+        # self.term_local_embedding_dict = {name: None
+                #   for name in self.term_dict}
         self.term_grounded_entity_id_dict = {name: term.entity_id_list
                                              for name, term in self.term_dict.items()}
 
@@ -401,129 +401,18 @@ class FirstOrderFormula:
         self.easy_answer_list.append(easy_answers)
         self.hard_answer_list.append(hard_answers)
         self.noisy_answer_list.append(noisy_answer)
-        self.num_instances
 
-    def append_qa_instances_as_sentence(self, append_dict, answers):
-        self.grounding_dict_list.append(answers)
+    def has_term_grounded_entity_id_list(self, key):
+        return len(self.term_grounded_entity_id_dict[key]) > 0
 
-        for k in answers:
-            num_of_answers = len(answers[k])
-            break
+    def get_term_grounded_entity_id_list(self, key):
+        return self.term_grounded_entity_id_dict[key]
 
-        # setting the free variable as symbol
-        for k in answers:
-            if k in self.free_variable_dict:
-                self.term_dict[k].state = Term.GROUNDED
-                self.clear_var_local_embedding(k)
-            else:
-                assert k in self.free_variable_dict, "answer for free variables"
+    def has_pred_grounded_relation_id_list(self, key):
+        return len(self.pred_grounded_relation_id_dict[key]) > 0
 
-        # random ground an answer into the instance
-        for i in range(num_of_answers):
-            for k in answers:
-                answer_sample = answers[k][i]
-                append_dict[k] = answer_sample
-            self.append_relation_and_symbols(append_dict)
-            self.easy_answer_list.append({k: answers[k][i] for k in answers})
-
-    def evaluate_truth_values(self,
-                              tnorm: Tnorm,
-                              nbp: NeuralBinaryPredicate,
-                              free_var_treatment):
-        """
-        Input args:
-            free_var_treatment:
-                - existential: treat the free variable as the existential variable
-                - ground1random: ground the free variable into one random answers
-                - ground1noisy: ground the free variable into single ngative variables
-                - groundfull: ground the answers to a full answer set
-                - all: evaluate across all candidates
-        Return args:
-        """
-
-        def run_in_batch(batch_size):
-            # print("evaluating truth value with batch size =", batch_size)
-            begin_idx = 0
-            end_idx = begin_idx + batch_size
-            collect = []
-            while begin_idx < self.num_instances:
-                ret = self.batch_evaluate_truth_values(
-                    self.formula, tnorm, nbp,
-                    begin_idx, end_idx, free_var_treatment)
-                collect.append(ret)
-
-                begin_idx = end_idx
-                end_idx = begin_idx + batch_size
-            return torch.cat(collect, dim=-1)
-
-        if free_var_treatment == 'all':
-            batch_size = 32
-            while batch_size > 0:
-                oom = False
-                try:
-                    with torch.no_grad():
-                        ret = run_in_batch(batch_size)
-                    return ret
-                except RuntimeError as e:
-                    print("batch size {} failed,\nerror = {}".format(batch_size, e))
-                    oom = True
-                    torch.cuda.empty_cache()
-                if oom:
-                    batch_size = batch_size // 2
-        else:
-            return run_in_batch(batch_size=self.num_instances)
-
-    def batch_evaluate_truth_values(self,
-                                    formula: Formula,
-                                    tnorm: Tnorm,
-                                    nbp: NeuralBinaryPredicate,
-                                    begin_index,
-                                    end_index,
-                                    free_var_treatment):
-        """
-        Recursive evaluation of the formula functions
-        Input args:
-            formula: the formula at this time
-        Return args:
-            - truth values in shape either:
-                 [num candidate answers, batch size]
-                 or
-                 [batch size]
-
-        """
-        if isinstance(formula, Conjunction):
-            return tnorm.conjunction(
-                self.batch_evaluate_truth_values(
-                    formula.formulas[0], tnorm, nbp, begin_index, end_index, free_var_treatment),
-                self.batch_evaluate_truth_values(
-                    formula.formulas[1], tnorm, nbp, begin_index, end_index, free_var_treatment)
-            )
-
-        elif isinstance(formula, Disjunction):
-            return tnorm.disjunction(
-                self.batch_evaluate_truth_values(
-                    formula.formulas[0], tnorm, nbp, begin_index, end_index, free_var_treatment),
-                self.batch_evaluate_truth_values(
-                    formula.formulas[1], tnorm, nbp, begin_index, end_index, free_var_treatment)
-            )
-
-        elif isinstance(formula, Negation):
-            return tnorm.negation(
-                self.batch_evaluate_truth_values(
-                    formula.formula, tnorm, nbp, begin_index, end_index, free_var_treatment)
-            )
-
-        elif isinstance(formula, BinaryPredicate):
-            head_name = formula.head.name
-            tail_name = formula.tail.name
-            head_emb = self.get_embedding(nbp, head_name, begin_index, end_index, free_var_treatment)
-            tail_emb = self.get_embedding(nbp, tail_name, begin_index, end_index, free_var_treatment)
-
-            rel_emb = nbp.get_relation_emb(formula.relation_id_list)[begin_index: end_index]
-            batch_score = nbp.embedding_score(head_emb, rel_emb, tail_emb)
-            batch_truth_value = nbp.score2truth_value(batch_score)
-            # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
-            return batch_truth_value
+    def get_pred_grounded_relation_id_list(self, key):
+        return self.pred_grounded_relation_id_dict[key]
 
     @property
     def free_variable_dict(self):
@@ -559,6 +448,10 @@ class FirstOrderFormula:
                     if v.state == Term.FREE}) == 0
 
     @property
+    def lstr(self):
+        return self.formula.lstr()
+
+    @property
     def num_instances(self):
         num_instances = len(self.easy_answer_list)
         assert num_instances == len(self.hard_answer_list)
@@ -572,81 +465,189 @@ class FirstOrderFormula:
 
         return len(self.easy_answer_list)
 
-    def has_var_local_embedding(self, key):
-        return self.term_local_embedding_dict[key] is not None
+    # def append_qa_instances_as_sentence(self, append_dict, answers):
+    #     self.grounding_dict_list.append(answers)
 
-    def get_var_local_embedding(self, key):
-        return self.term_local_embedding_dict[key]
+    #     for k in answers:
+    #         num_of_answers = len(answers[k])
+    #         break
 
-    def set_var_local_embedding(self, key, value):
-        self.term_local_embedding_dict[key] = value.detach_()
-        self.term_local_embedding_dict[key].requires_grad = True
+    #     # setting the free variable as symbol
+    #     for k in answers:
+    #         if k in self.free_variable_dict:
+    #             self.term_dict[k].state = Term.GROUNDED
+    #             self.clear_var_local_embedding(k)
+    #         else:
+    #             assert k in self.free_variable_dict, "answer for free variables"
 
-    def init_var_local_embedding(self, key, value):
-        # self.term_local_embedding_dict[key] = torch.randn(value.shape, device=value.device)
-        # self.term_local_embedding_dict[key].requires_grad = True
+    #     # random ground an answer into the instance
+    #     for i in range(num_of_answers):
+    #         for k in answers:
+    #             answer_sample = answers[k][i]
+    #             append_dict[k] = answer_sample
+    #         self.append_relation_and_symbols(append_dict)
+    #         self.easy_answer_list.append({k: answers[k][i] for k in answers})
 
-        assert value.requires_grad
-        self.term_local_embedding_dict[key] = value
+    # def evaluate_truth_values(self,
+    #                           tnorm: Tnorm,
+    #                           nbp: NeuralBinaryPredicate,
+    #                           free_var_treatment):
+    #     """
+    #     Input args:
+    #         free_var_treatment:
+    #             - existential: treat the free variable as the existential variable
+    #             - ground1random: ground the free variable into one random answers
+    #             - ground1noisy: ground the free variable into single ngative variables
+    #             - groundfull: ground the answers to a full answer set
+    #             - all: evaluate across all candidates
+    #     Return args:
+    #     """
 
-    def clear_var_local_embedding(self, key):
-        self.term_local_embedding_dict[key] = None
+    #     def run_in_batch(batch_size):
+    #         # print("evaluating truth value with batch size =", batch_size)
+    #         begin_idx = 0
+    #         end_idx = begin_idx + batch_size
+    #         collect = []
+    #         while begin_idx < self.num_instances:
+    #             ret = self.batch_evaluate_truth_values(
+    #                 self.formula, tnorm, nbp,
+    #                 begin_idx, end_idx, free_var_treatment)
+    #             collect.append(ret)
 
-    def has_term_grounded_entity_id_list(self, key):
-        return len(self.term_grounded_entity_id_dict[key]) > 0
+    #             begin_idx = end_idx
+    #             end_idx = begin_idx + batch_size
+    #         return torch.cat(collect, dim=-1)
 
-    def get_term_grounded_entity_id_list(self, key):
-        return self.term_grounded_entity_id_dict[key]
+    #     if free_var_treatment == 'all':
+    #         batch_size = 32
+    #         while batch_size > 0:
+    #             oom = False
+    #             try:
+    #                 with torch.no_grad():
+    #                     ret = run_in_batch(batch_size)
+    #                 return ret
+    #             except RuntimeError as e:
+    #                 print("batch size {} failed,\nerror = {}".format(batch_size, e))
+    #                 oom = True
+    #                 torch.cuda.empty_cache()
+    #             if oom:
+    #                 batch_size = batch_size // 2
+    #     else:
+    #         return run_in_batch(batch_size=self.num_instances)
 
-    def set_term_grounded_entity_id_list(self, key, value):
-        self.term_grounded_entity_id_dict[key] = value
+    # def batch_evaluate_truth_values(self,
+    #                                 formula: Formula,
+    #                                 tnorm: Tnorm,
+    #                                 nbp: NeuralBinaryPredicate,
+    #                                 begin_index,
+    #                                 end_index,
+    #                                 free_var_treatment):
+    #     """
+    #     Recursive evaluation of the formula functions
+    #     Input args:
+    #         formula: the formula at this time
+    #     Return args:
+    #         - truth values in shape either:
+    #              [num candidate answers, batch size]
+    #              or
+    #              [batch size]
 
-    def append_term_grounded_entity_id_list(self, key, value):
-        self.term_grounded_entity_id_dict[key].append(value)
+    #     """
+    #     if isinstance(formula, Conjunction):
+    #         return tnorm.conjunction(
+    #             self.batch_evaluate_truth_values(
+    #                 formula.formulas[0], tnorm, nbp, begin_index, end_index, free_var_treatment),
+    #             self.batch_evaluate_truth_values(
+    #                 formula.formulas[1], tnorm, nbp, begin_index, end_index, free_var_treatment)
+    #         )
 
-    def get_pred_grounded_relation_id_list(self, key):
-        return self.pred_grounded_relation_id_dict[key]
+    #     elif isinstance(formula, Disjunction):
+    #         return tnorm.disjunction(
+    #             self.batch_evaluate_truth_values(
+    #                 formula.formulas[0], tnorm, nbp, begin_index, end_index, free_var_treatment),
+    #             self.batch_evaluate_truth_values(
+    #                 formula.formulas[1], tnorm, nbp, begin_index, end_index, free_var_treatment)
+    #         )
 
-    @property
-    def lstr(self):
-        return self.formula.lstr()
+    #     elif isinstance(formula, Negation):
+    #         return tnorm.negation(
+    #             self.batch_evaluate_truth_values(
+    #                 formula.formula, tnorm, nbp, begin_index, end_index, free_var_treatment)
+    #         )
 
-    def term_initialized(self, term_name):
-        return (self.has_var_local_embedding(term_name) or
-                self.has_term_grounded_entity_id_list(term_name))
+    #     elif isinstance(formula, BinaryPredicate):
+    #         head_name = formula.head.name
+    #         tail_name = formula.tail.name
+    #         head_emb = self.get_embedding(
+    #             nbp, head_name, begin_index, end_index, free_var_treatment)
+    #         tail_emb = self.get_embedding(
+    #             nbp, tail_name, begin_index, end_index, free_var_treatment)
 
-    def get_embedding(self,
-                      nbp: NeuralBinaryPredicate,
-                      term_name,
-                      begin_index=None,
-                      end_index=None,
-                      free_var_treatment='existential'):
+    #         rel_emb = nbp.get_relation_emb(
+    #             formula.relation_id_list[begin_index: end_index])
+    #         batch_score = nbp.embedding_score(head_emb, rel_emb, tail_emb)
+    #         batch_truth_value = nbp.score2truth_value(batch_score)
+    #         # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
+    #         return batch_truth_value
 
-        if self.term_dict[term_name].state == Term.FREE:
-            if free_var_treatment.lower() == 'all':
-                return nbp.entity_embedding.unsqueeze(-2)
-            elif free_var_treatment.lower() == 'existential':
-                _emb = self.get_var_local_embedding(term_name)
-            elif free_var_treatment.lower() == 'ground1random':
-                entity_id_list = [sample(eans[term_name], k=1)[0]
-                                  for eans in self.easy_answer_list]
-                _emb = nbp.get_entity_emb(entity_id_list)
-            elif free_var_treatment.lower() == 'ground1noisy':
-                entity_id_list = torch.randint(low=0,
-                                               high=nbp.num_entities,
-                                               size=(self.num_instances,))
-                _emb = nbp.get_entity_emb(entity_id_list)
-            elif free_var_treatment.lower() == 'groundfull':
-                raise NotImplementedError
-        else:
-            if self.has_term_grounded_entity_id_list(term_name):
-                _emb = nbp.get_entity_emb(
-                    self.get_term_grounded_entity_id_list(term_name))
-            elif self.has_var_local_embedding(term_name):
-                _emb = self.get_var_local_embedding(term_name)
-            else:
-                raise KeyError("Embedding does not found")
+    # def has_var_local_embedding(self, key):
+    #     return self.term_local_embedding_dict[key] is not None
 
-        if begin_index is not None and end_index is not None:
-            _emb = _emb[begin_index: end_index]
-        return _emb
+    # def get_var_local_embedding(self, key):
+    #     return self.term_local_embedding_dict[key]
+
+    # def set_var_local_embedding(self, key, value):
+    #     self.term_local_embedding_dict[key] = value.detach_()
+    #     self.term_local_embedding_dict[key].requires_grad = True
+
+    # def init_var_local_embedding(self, key, value):
+    #     # self.term_local_embedding_dict[key] = torch.randn(value.shape, device=value.device)
+    #     # self.term_local_embedding_dict[key].requires_grad = True
+
+    #     assert value.requires_grad
+    #     self.term_local_embedding_dict[key] = value
+
+    # def clear_var_local_embedding(self, key):
+    #     self.term_local_embedding_dict[key] = None
+
+
+    # def term_initialized(self, term_name):
+    #     return (self.has_var_local_embedding(term_name) or
+    #             self.has_term_grounded_entity_id_list(term_name))
+
+    # def get_embedding(self,
+    #                   nbp: NeuralBinaryPredicate,
+    #                   term_name,
+    #                   begin_index=None,
+    #                   end_index=None,
+    #                   free_var_treatment='existential'):
+
+    #     if self.term_dict[term_name].state == Term.FREE:
+    #         if free_var_treatment.lower() == 'all':
+    #             return nbp.entity_embedding.unsqueeze(-2)
+    #         elif free_var_treatment.lower() == 'existential':
+    #             return self.get_var_local_embedding(term_name)
+    #         elif free_var_treatment.lower() == 'ground1random':
+    #             entity_id_list = [sample(eans[term_name], k=1)[0]
+    #                               for eans in self.easy_answer_list]
+    #             return nbp.get_entity_emb(entity_id_list)
+    #         elif 'groundnoisy' in free_var_treatment.lower():
+    #             k = int(free_var_treatment.split(':')[-1])
+    #             entity_id_list = torch.randint(low=0,
+    #                                            high=nbp.num_entities,
+    #                                            size=(k, self.num_instances))
+    #             return nbp.get_entity_emb(entity_id_list)
+    #         elif free_var_treatment.lower() == 'groundfull':
+    #             raise NotImplementedError
+    #     else:
+    #         if self.has_term_grounded_entity_id_list(term_name):
+    #             _emb = nbp.get_entity_emb(
+    #                 self.get_term_grounded_entity_id_list(term_name))
+    #         elif self.has_var_local_embedding(term_name):
+    #             _emb = self.get_var_local_embedding(term_name)
+    #         else:
+    #             raise KeyError("Embedding does not found")
+
+    #         if begin_index is not None and end_index is not None:
+    #             _emb = _emb[begin_index: end_index]
+    #         return _emb
