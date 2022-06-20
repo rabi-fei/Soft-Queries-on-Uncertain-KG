@@ -63,3 +63,6 @@ python3 tast_dependent_train.py --learning_rate=1e-4 --output_dir log/learning_r
 
 
 python3 task_dependent_train.py --device cuda:0 --reasoning_rate 0.1 --embedding_dim 1000 --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt
+
+
+task_dependent_train.py --embedding_dim 100 --device cuda:1 --checkpoint_path pretrain/complex/FB15k-237-model-rank-100-epoch-100-1602503352.pt --sigma 1 --learning_rate 1e-3 --batch_size 1024 --reasoning_steps 10 --objective noisy --output_dir log/q2b

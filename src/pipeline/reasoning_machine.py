@@ -81,7 +81,7 @@ class GradientReasoningMachineEFO:
 
                 if self.term_initialized(head_name) and not self.term_initialized(tail_name):
                     head_emb = self.get_embedding(
-                        self.nbp, head_name, free_var_treatment='existential'
+                        head_name, free_var_treatment='existential'
                     )
                     rel_emb = self.nbp.get_relation_emb(
                         self.formula.pred_grounded_relation_id_dict[rel_name]
@@ -92,7 +92,7 @@ class GradientReasoningMachineEFO:
 
                 elif not self.term_initialized(head_name) and self.term_initialized(tail_name):
                     tail_emb = self.get_embedding(
-                        self.nbp, head_name, free_var_treatment='existential'
+                        head_name, free_var_treatment='existential'
                     )
                     rel_emb = self.nbp.get_relation_emb(
                         self.formula.pred_grounded_relation_id_dict[rel_name]
@@ -142,18 +142,18 @@ class GradientReasoningMachineEFO:
                 k = int(free_var_treatment.split(':')[-1])
                 entity_id_list = torch.randint(low=0,
                                                high=self.nbp.num_entities,
-                                               size=(k, self.num_instances))
+                                               size=(k, self.formula.num_instances))
                 emb = self.nbp.get_entity_emb(entity_id_list)
                 self._last_ground_free_var_emb[term_name] = emb
                 return emb
             else:
                 raise NotImplementedError
         else:
-            if self.has_term_grounded_entity_id_list(term_name):
+            if self.formula.has_term_grounded_entity_id_list(term_name):
                 emb = self.nbp.get_entity_emb(
-                    self.get_term_grounded_entity_id_list(term_name))
-            elif self.has_var_local_embedding(term_name):
-                emb = self.get_var_local_embedding(term_name)
+                    self.formula.get_term_grounded_entity_id_list(term_name))
+            elif self.term_local_emb_dict[term_name] is not None:
+                emb = self.term_local_emb_dict[term_name]
             else:
                 raise KeyError("Embedding does not found")
             # when it is not free variable, we consider the batch
@@ -172,9 +172,9 @@ class GradientReasoningMachineEFO:
             begin_idx = 0
             end_idx = begin_idx + batch_size
             collect = []
-            while begin_idx < self.num_instances:
+            while begin_idx < self.formula.num_instances:
                 ret = self.batch_evaluate_truth_values(
-                    self.formula,
+                    self.formula.formula,
                     begin_idx, end_idx, free_var_treatment)
                 collect.append(ret)
 
@@ -196,9 +196,9 @@ class GradientReasoningMachineEFO:
             #         torch.cuda.empty_cache()
             #     if oom:
             #         batch_size = batch_size // 2
-            run_in_batch(batch_size=evaluate_batch_size)
+            return run_in_batch(batch_size=evaluate_batch_size)
         else:
-            return run_in_batch(batch_size=self.num_instances)
+            return run_in_batch(batch_size=self.formula.num_instances)
 
     def batch_evaluate_truth_values(self,
                                     formula,
@@ -269,7 +269,7 @@ class GradientReasoningMachineEFO:
                 evar_local_emb.append(emb)
 
         if len(evar_local_emb) == 0:
-            return
+            return []
 
         OptimizerClass = getattr(torch.optim, self.reasoinng_optimizer)
         optim: torch.optim.Optimizer = OptimizerClass(
@@ -293,7 +293,7 @@ class GradientReasoningMachineEFO:
                     )
                     tv = self.tnorm.conjunction(tv, dist_tv)
             else:
-                tv = self.evaluate_truth_values(free_var_local_emb=free_var_local_emb)
+                tv = self.evaluate_truth_values(free_var_treatment=free_var_treatment)
 
             ntv = -tv.mean()
             efvar_local_emb_mat = torch.stack(evar_local_emb)
