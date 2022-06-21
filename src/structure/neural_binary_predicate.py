@@ -384,3 +384,65 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         norm_vec =  torch.sqrt(r ** 2 + i ** 2)
         reg = torch.sum(norm_vec ** 3, -1)
         return reg
+
+class ComplExPlus(ComplEx):
+    def __init__(self,
+                 num_entities: int,
+                 num_relations: int,
+                 embedding_dim: int,
+                 latent_dim: int = 128,
+                 margin: float = 0,
+                 init_size: float = 1e-3,
+                 device = 'cpu',
+                 **kwargs):
+        super(ComplExPlus, self).__init__(
+            num_entities,
+            num_relations,
+            embedding_dim,
+            margin,
+            init_size,
+            device
+        )
+
+        self.mlp = nn.Sequential(
+            nn.Linear(6 * embedding_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, latent_dim),
+            nn.ReLU(),
+            nn.Linear(latent_dim, 1)
+        )
+
+    def embedding_score(self, head_emb, rel_emb, tail_emb):
+        head_size = head_emb.shape
+        rel_size = rel_emb.shape
+        tail_size = tail_emb.shape
+
+        a, b, c = 0, 0, 0
+        reorg = False
+
+        if head_size == rel_size and rel_size == tail_size:
+            assert len(head_size) == 2
+
+        elif len(head_size) == 3 and len(tail_size) == 2:
+            a, _, c = head_size
+            b, c = tail_size
+            head_emb = head_emb.expand(a, b, c).reshape(-1, c)
+            tail_emb = tail_emb.view(1, b, c).expand(a, b, c).reshape(-1, c)
+            reorg = True
+
+        elif len(head_size) == 2 and len(tail_size) == 3:
+            b, c = head_size
+            a, _, c = tail_size
+            head_emb = head_emb.view(1, b, c).expand(a, b, c).reshape(-1, c)
+            tail_emb = tail_emb.expand(a, b, c).reshape(-1, c)
+            reorg = True
+
+        if reorg:
+            rel_emb = rel_emb.view(1, b, c).expand(a, b, c).reshape(-1, c)
+
+        input_features = torch.cat([head_emb, rel_emb, tail_emb], dim=-1)
+        score = self.mlp(input_features)
+
+        if reorg:
+            score = score.view(a, b, 1)
+        return score.squeeze()

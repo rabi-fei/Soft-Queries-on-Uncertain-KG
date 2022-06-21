@@ -16,32 +16,46 @@ from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.pipeline.reasoning_machine import GradientReasoningMachineEFO
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
-from src.structure.neural_binary_predicate import ComplEx, NeuralBinaryPredicate, TransE
+from src.structure.neural_binary_predicate import ComplEx, ComplExPlus, NeuralBinaryPredicate, TransE
 from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLoader,
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)
 
 torch.autograd.set_detect_anomaly(True)
 
-lstr2name = {'r1(s1,f)': '1p', '(r1(s1,e1))&(r2(e1,f))': '2p', '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p', '(r1(s1,f))&(r2(s2,f))': '2i', '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i', '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip', '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi',
-             '(r1(s1,f))&(!(r2(s2,f)))': '2in', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
-             '(r1(s1,f))|(r2(s2,f))': '2u', '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up', '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dnf', '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dnf'}
+lstr2name = {'r1(s1,f)': '1p',
+             '(r1(s1,e1))&(r2(e1,f))': '2p',
+             '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p',
+             '(r1(s1,f))&(r2(s2,f))': '2i',
+             '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i',
+             '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip',
+             '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi',
+             '(r1(s1,f))&(!(r2(s2,f)))': '2in',
+             '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in',
+             '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp',
+             '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin',
+             '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
+             '(r1(s1,f))|(r2(s2,f))': '2u',
+             '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up',
+             '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dnf',
+             '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dnf'}
 
 
-negation_query =[
+negation_query = [
     # "r1(s1,f)&!r2(s2,f)", #2in
     # "r1(s1,f)&r2(s2,f)&!r3(s3,f)", # 3in
     # "r1(s1,e1)&!r2(s2,e1)&r3(e1,f)", # inp
-    "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
+    "r1(s1,e1)&r2(e1,f)&!r3(s2,f)",  # pin
     # "r1(s1,e1)&!r2(e1,f)&r3(s2,f)", # pni
 ]
 
 
 train_queries = ['r1(s1,f)',
-                'r1(s1,e1)&r2(e1,f)',
-                "r1(s1,f)&r2(s2,f)",
-                "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
-            ]
+
+                 'r1(s1,e1)&r2(e1,f)',
+                 # "r1(s1,f)&r2(s2,f)",
+                 # "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
+                 ]
 
 parser = argparse.ArgumentParser()
 
@@ -65,7 +79,8 @@ parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_steps", type=int, default=1000)
-parser.add_argument("--objective", type=str, choices=['kvsall', 'noisy', 'none'], default='none')
+parser.add_argument("--objective", type=str,
+                    choices=['kvsall', 'noisy', 'none'], default='none')
 parser.add_argument("--noisy_sample_size", type=int, default=32)
 
 parser.add_argument("--metric_margin", type=float, default=50)
@@ -75,11 +90,11 @@ parser.add_argument("--v", type=float, default=.9)
 
 
 def train_upper_bound_noisy_likelihood(
-    desc,
-    train_dataloader: QueryAnsweringSeqDataLoader,
-    nbp:NeuralBinaryPredicate,
-    grm: GradientReasoningMachineEFO,
-    args):
+        desc,
+        train_dataloader: QueryAnsweringSeqDataLoader,
+        nbp: NeuralBinaryPredicate,
+        grm: GradientReasoningMachineEFO,
+        args):
 
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
@@ -87,13 +102,12 @@ def train_upper_bound_noisy_likelihood(
     sigma = args.sigma
     trajectory = defaultdict(list)
 
-
     fof_list = train_dataloader.get_fof_list()
     t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
 
     for ii, fof in t:
         ####################
-        fetch = grm.reasoning(fof, free_var_treatment='existential',fole=True)
+        fetch = grm.reasoning(fof, free_var_treatment='existential', fole=True)
         loss = 0
 
         pos_tv_list = []
@@ -118,14 +132,17 @@ def train_upper_bound_noisy_likelihood(
                 pos_answer = pos_answer_dict[f]
 
                 pos_embs = nbp.get_entity_emb(pos_answer)
-                neg_embs = nbp.get_entity_emb(torch.randint(0, nbp.num_entities, (args.noisy_sample_size,)))
+                neg_embs = nbp.get_entity_emb(torch.randint(
+                    0, nbp.num_entities, (args.noisy_sample_size,)))
 
-                pos_ans_dist = torch.sum((pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
+                pos_ans_dist = torch.sum(
+                    (pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
                 pos_ans_tv = torch.exp(- pos_ans_dist)
                 pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
                 pos_tv_list.append(pos_tv.mean().item())
 
-                neg_ans_dist = torch.sum((neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / args.neg_sigma_scaling
+                neg_ans_dist = torch.sum(
+                    (neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / args.neg_sigma_scaling
                 neg_ans_tv = torch.exp(- neg_ans_dist)
                 neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
                 # neg_tv = neg_ans_tv
@@ -210,18 +227,17 @@ def train_upper_bound_noisy_likelihood(
 
 
 def train_truth_value_noisy_likelihood(
-    desc,
-    train_dataloader: QueryAnsweringSeqDataLoader,
-    nbp:NeuralBinaryPredicate,
-    tnorm: Tnorm,
-    args):
+        desc,
+        train_dataloader: QueryAnsweringSeqDataLoader,
+        nbp: NeuralBinaryPredicate,
+        tnorm: Tnorm,
+        args):
 
     optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
+    # scheduler = torch.optim.lr_schedulern.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
 
     sigma = args.sigma
     trajectory = defaultdict(list)
-
 
     fof_list = train_dataloader.get_fof_list()
     t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
@@ -240,46 +256,49 @@ def train_truth_value_noisy_likelihood(
                                                      'Adam',
                                                      args.sigma)
 
-        pos_traj = pos_grm.optimize_term_local_embedding(free_var_treatment='groundans:1', equality=False)
-        neg_traj = neg_grm.optimize_term_local_embedding(free_var_treatment='groundnoisy:1024', equality=False)
+        pos_traj = pos_grm.optimize_term_local_embedding(
+            free_var_treatment='groundans:1', equality=False)
+        neg_traj = neg_grm.optimize_term_local_embedding(
+            free_var_treatment='groundnoisy:1024', equality=False)
 
-        pos_tv = pos_grm.evaluate_truth_values(free_var_treatment='groundans:1')
-        neg_tv = neg_grm.evaluate_truth_values(free_var_treatment='groundnoisy:1024')
+        pos_tv = pos_grm.evaluate_truth_values(
+            free_var_treatment='groundans:1')
+        neg_tv = neg_grm.evaluate_truth_values(
+            free_var_treatment='groundnoisy:1024')
 
-        pos_nll = - torch.log(pos_tv + 1e-10)
-        neg_nll = - torch.log(1 - neg_tv + 1e-10)
+        pos_nll = - torch.log(pos_tv + 1e-10) / fof.num_predicates
+        neg_nll = - torch.log(1 - neg_tv + 1e-10) / fof.num_predicates
 
         batch_mle_loss = pos_nll + neg_nll
         mle_loss = torch.mean(batch_mle_loss)
 
         embedding_reg = 0
-        for symb in fof.symbol_dict:
-            symb_emb = nbp.get_entity_emb(
-                fof.get_term_grounded_entity_id_list(symb)
-            )
-            embedding_reg += nbp.regularization(symb_emb).mean()
+        # for symb in fof.symbol_dict:
+        #     symb_emb = nbp.get_entity_emb(
+        #         fof.get_term_grounded_entity_id_list(symb)
+        #     )
+        #     embedding_reg += nbp.regularization(symb_emb).mean()
 
-        for pred in fof.predicate_dict:
-            pred_emb = nbp.get_entity_emb(
-                fof.get_pred_grounded_relation_id_list(pred)
-            )
-            embedding_reg += nbp.regularization(pred_emb).mean()
+        # for pred in fof.predicate_dict:
+        #     pred_emb = nbp.get_entity_emb(
+        #         fof.get_pred_grounded_relation_id_list(pred)
+        #     )
+        #     embedding_reg += nbp.regularization(pred_emb).mean()
 
-        for term_name in pos_grm._last_ground_free_var_emb:
-            embedding_reg += nbp.regularization(
-                pos_grm._last_ground_free_var_emb[term_name]
-            ).mean()
+        # for term_name in pos_grm._last_ground_free_var_emb:
+        #     embedding_reg += nbp.regularization(
+        #         pos_grm._last_ground_free_var_emb[term_name]
+        #     ).mean()
 
-        for term_name in neg_grm._last_ground_free_var_emb:
-            embedding_reg += nbp.regularization(
-                neg_grm._last_ground_free_var_emb[term_name]
-            ).mean()
+        # for term_name in neg_grm._last_ground_free_var_emb:
+        #     embedding_reg += nbp.regularization(
+        #         neg_grm._last_ground_free_var_emb[term_name]
+        #     ).mean()
 
-        loss = mle_loss + embedding_reg * 0.001
+        loss = mle_loss + embedding_reg * 0.005
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
 
         ####################
         metric_step = {}
@@ -290,8 +309,8 @@ def train_truth_value_noisy_likelihood(
         metric_step['neg_nll'] = neg_nll.mean().item()
         metric_step['mle_loss'] = mle_loss.item()
         metric_step['sigma'] = sigma
-        metric_step['num_reason_steps'] = .5*(len(pos_traj) + len(neg_traj) - 2)
-
+        metric_step['num_reason_steps'] = .5 * \
+            (len(pos_traj) + len(neg_traj) - 2)
 
         logging.info(f"[{desc}] {json.dumps(metric_step)}")
 
@@ -315,7 +334,7 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
     for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
         ranking = ranking.squeeze()
         if fof.hard_answer_list[i]:
-        # [1, num_entities]
+            # [1, num_entities]
             hard_answers = torch.tensor(fof.hard_answer_list[i][k],
                                         device=nbp.device)
             hard_answer_rank = ranking[hard_answers]
@@ -341,12 +360,13 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
         num_skipped_answers = torch.sum(
             pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
         )
-        pure_hard_ans_rank -= num_skipped_answers.reshape(pure_hard_ans_rank.shape)
+        pure_hard_ans_rank -= num_skipped_answers.reshape(
+            pure_hard_ans_rank.shape)
 
         rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
         hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
-        hit3 =  (pure_hard_ans_rank < 3).detach().cpu().numpy()
-        hit10 =  (pure_hard_ans_rank < 10).detach().cpu().numpy()
+        hit3 = (pure_hard_ans_rank < 3).detach().cpu().numpy()
+        hit10 = (pure_hard_ans_rank < 10).detach().cpu().numpy()
 
         metric['mrr'].append(rr.mean())
         metric['hit1'].append(hit1.mean())
@@ -355,7 +375,7 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
 
 
 def evaluate_by_search_emb_then_rank_truth_value(
-    desc, dataloader, nbp:NeuralBinaryPredicate, tnorm, target_lstr=[]):
+        desc, dataloader, nbp: NeuralBinaryPredicate, tnorm, target_lstr=[]):
     """
     Evaluation used in CQD, two phase computation
     1. continuous optimiation of embeddings quant. + free
@@ -370,28 +390,35 @@ def evaluate_by_search_emb_then_rank_truth_value(
     for f in _fofs:
         if (((len(target_lstr) == 0) or
                 (f.lstr in target_lstr))
-            and len(f.free_variable_dict) == 1):
+                and len(f.free_variable_dict) == 1):
             fofs.append(f)
 
     # conduct reasoning
     with tqdm.tqdm(fofs, desc=desc) as t:
         for fof in t:
-            grm = GradientReasoningMachineEFO.create(fof, nbp, tnorm, args.reasoning_rate, args.reasoning_steps, "Adam", args.sigma)
-            grm.optimize_term_local_embedding(free_var_treatment='lift', equality=False)
-            truth_value_entity_batch = grm.evaluate_truth_values(free_var_treatment='all')  # [num_entities batch_size]
+            grm = GradientReasoningMachineEFO.create(
+                fof, nbp, tnorm, args.reasoning_rate, args.reasoning_steps, "Adam", args.sigma)
+            grm.optimize_term_local_embedding(
+                free_var_treatment='lift', equality=False)
+            truth_value_entity_batch = grm.evaluate_truth_values(
+                free_var_treatment='all')  # [num_entities batch_size]
             ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
             # batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
             # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
-            ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
+            ranked_entity_ids = torch.argsort(
+                ranking_score, dim=-1, descending=True)
             # entity_rankings[entity_id] = {rankings} of the entity
-            batch_entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
+            batch_entity_rankings = torch.argsort(
+                ranked_entity_ids, dim=-1, descending=False)
             # [batch_size, num_entities]
-            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr])
+            compute_evaluation_scores(
+                fof, batch_entity_rankings, metric[fof.lstr])
 
             sum_metric = defaultdict(dict)
             for lstr in metric:
                 for score_name in metric[lstr]:
-                    sum_metric[lstr2name[lstr]][score_name] = float(np.mean(metric[lstr][score_name]))
+                    sum_metric[lstr2name[lstr]][score_name] = float(
+                        np.mean(metric[lstr][score_name]))
 
             postfix = {}
             for name in ['1p', '2p', '3p', '2i', 'inp']:
@@ -402,8 +429,9 @@ def evaluate_by_search_emb_then_rank_truth_value(
     logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
     torch.cuda.empty_cache()
 
+
 def evaluate_by_nearest_search(
-    desc, dataloader, nbp:NeuralBinaryPredicate, grm: GradientReasoningMachineEFO, target_lstr=[]):
+        desc, dataloader, nbp: NeuralBinaryPredicate, grm: GradientReasoningMachineEFO, target_lstr=[]):
     """
     Evaluation used by nearest neighbor
     1. continuous optimiation of embeddings quant. + free
@@ -418,24 +446,29 @@ def evaluate_by_nearest_search(
     for f in _fofs:
         if (((len(target_lstr) == 0) or
                 (f.lstr in target_lstr))
-            and len(f.free_variable_dict) == 1):
+                and len(f.free_variable_dict) == 1):
             fofs.append(f)
 
     # conduct reasoning
     with tqdm.tqdm(fofs, desc=desc) as t:
         for fof in t:
-            fof_reasoning_kv = grm.reasoning(fof, free_var_treatment='existential')
-            fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']  # [num_entities batch_size]
-            batch_entity_rankings = nbp.get_all_entity_rankings(fvar_emb_dict['f'])
+            fof_reasoning_kv = grm.reasoning(
+                fof, free_var_treatment='existential')
+            # [num_entities batch_size]
+            fvar_emb_dict = fof_reasoning_kv['fvar_local_emb_dict']
+            batch_entity_rankings = nbp.get_all_entity_rankings(
+                fvar_emb_dict['f'])
             # [batch_size, num_entities]
-            compute_evaluation_scores(fof, batch_entity_rankings, metric[fof.lstr])
+            compute_evaluation_scores(
+                fof, batch_entity_rankings, metric[fof.lstr])
             t.set_postfix({'lstr': fof.lstr})
 
         print("sum metric")
         sum_metric = defaultdict(dict)
         for lstr in metric:
             for score_name in metric[lstr]:
-                sum_metric[lstr2name[lstr]][score_name] = float(np.mean(metric[lstr][score_name]))
+                sum_metric[lstr2name[lstr]][score_name] = float(
+                    np.mean(metric[lstr][score_name]))
 
         postfix = {}
         for name in ['1p', '2p', '3p', '2i', 'inp']:
@@ -463,6 +496,8 @@ if __name__ == "__main__":
         nbp_class = TransE
     elif args.model_name.lower() == 'complex':
         nbp_class = ComplEx
+    elif args.model_name.lower() == 'complexplus':
+        nbp_class = ComplExPlus
     else:
         raise NotImplementedError
 
@@ -475,7 +510,7 @@ if __name__ == "__main__":
         device=args.device)
 
     if args.checkpoint_path:
-        nbp.load_state_dict(torch.load(args.checkpoint_path))
+        nbp.load_state_dict(torch.load(args.checkpoint_path), strict=False)
         print(f"model loaded from {args.checkpoint_path}")
 
     nbp.to(args.device)
@@ -515,13 +550,12 @@ if __name__ == "__main__":
         num_workers=0
     )
 
-
     # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate train epoch {0}",
     #                                              train_dataloader, nbp, ProductTNorm)
-    evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate valid epoch {0}",
-                                                 valid_dataloader, nbp, ProductTNorm)
-    evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {0}",
-                                                 test_dataloader, nbp, ProductTNorm)
+    # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate valid epoch {0}",
+    #                                              valid_dataloader, nbp, ProductTNorm)
+    # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {0}",
+    #                                              test_dataloader, nbp, ProductTNorm)
 
     # evaluate_by_nearest_search(f"NN evaluate train epoch {0}",
     #                             train_dataloader, nbp, train_grm)
@@ -540,7 +574,8 @@ if __name__ == "__main__":
             #                      train_dataloader, nbp, train_grm, args)
             # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
             # train_upper_bound_noisy_likelihood(f"train upper bound noisy", train_dataloader, nbp, train_grm, args)
-            train_truth_value_noisy_likelihood(f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
+            train_truth_value_noisy_likelihood(
+                f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
         else:
             print("no training")
             eval_only = True
@@ -554,11 +589,11 @@ if __name__ == "__main__":
             #          test_dataloader, nbp, train_grm)
 
             # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate train epoch {e+1}",
-            #                                             train_dataloader, nbp, ProductTNorm)
+            # train_dataloader, nbp, ProductTNorm)
             evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
-                                                        valid_dataloader, nbp, ProductTNorm)
+                                                         valid_dataloader, nbp, ProductTNorm)
             evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
-                                                        test_dataloader, nbp, ProductTNorm)
+                                                         test_dataloader, nbp, ProductTNorm)
 
             if eval_only:
                 break
