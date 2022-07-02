@@ -23,22 +23,43 @@ from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLo
 
 torch.autograd.set_detect_anomaly(True)
 
-lstr2name = {'r1(s1,f)': '1p',
-             '(r1(s1,e1))&(r2(e1,f))': '2p',
-             '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p',
-             '(r1(s1,f))&(r2(s2,f))': '2i',
-             '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i',
-             '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip',
-             '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi',
-             '(r1(s1,f))&(!(r2(s2,f)))': '2in',
-             '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in',
-             '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp',
-             '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin',
-             '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
-             '(r1(s1,f))|(r2(s2,f))': '2u',
-             '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up',
-             '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dnf',
-             '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dnf'}
+lstr2name = {
+    'r1(s1,f)': '1p',
+    '(r1(s1,e1))&(r2(e1,f))': '2p',
+    '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p',
+    '(r1(s1,f))&(r2(s2,f))': '2i',
+    '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i',
+    '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip',
+    '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi',
+    '(r1(s1,f))&(!(r2(s2,f)))': '2in',
+    '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in',
+    '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp',
+    '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin',
+    '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
+    '(r1(s1,f))|(r2(s2,f))': '2u',
+    '((r1(s1,e1))|(r2(s2,e1))))&(r3(e1,f))': 'up',
+    '!((!(r1(s1,f)))&(!(r2(s2,f))))': '2u-dm',
+    '!(((!(r1(s1,e1)))|(r2(s2,e1)))&(r3(e1,f)))': 'up-dm'
+}
+
+name2lstr = {
+    "1p": "r1(s1,f)",
+    "2p": "r1(s1,e1)&r2(e1,f)",  # 2p
+    "3p": "r1(s1,e1)&r2(e1,e2)&r3(e2,f)",  # 3p
+    "2i": "r1(s1,f)&r2(s2,f)",  # 2i
+    "3i": "r1(s1,f)&r2(s2,f)&r3(s3,f)",  # 3i
+    "ip": "r1(s1,e1)&r2(s2,e1)&r3(e1,f)", # ip
+    "pi": "r1(s1,e1)&r2(e1,f)&r3(s2,f)", # pi
+    "2in": "r1(s1,f)&!r2(s2,f)", #2in
+    "3in": "r1(s1,f)&r2(s2,f)&!r3(s3,f)", # 3in
+    "inp": "r1(s1,e1)&!r2(s2,e1)&r3(e1,f)", # inp
+    "pin": "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
+    "pni": "r1(s1,e1)&!r2(e1,f)&r3(s2,f)", # pni
+    "2u": "r1(s1,f)|r2(s2,f)", # 2u
+    "up": "r1(s1,e1)|r2(s2,e1))&r3(e1,f)", # up
+    "2u-dm": "!(!r1(s1,f)&!r2(s2,f))", # 2u-dm
+    "up-dm": "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",# up-dm
+}
 
 
 negation_query = [
@@ -50,12 +71,7 @@ negation_query = [
 ]
 
 
-train_queries = ['r1(s1,f)',
-
-                 'r1(s1,e1)&r2(e1,f)',
-                 # "r1(s1,f)&r2(s2,f)",
-                 # "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
-                 ]
+warmup_queries = ['r1(s1,f)']
 
 parser = argparse.ArgumentParser()
 
@@ -65,20 +81,25 @@ parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
 parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--train_queries", action='append')
+parser.add_argument("--eval_queries", action='append')
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
 parser.add_argument("--embedding_dim", type=int, default=500)
-parser.add_argument("--margin", type=float, default=1)
+parser.add_argument("--margin", type=float, default=100)
 parser.add_argument("--p", type=int, default=1)
 parser.add_argument("--checkpoint_path")
 
 # optimization
 parser.add_argument("--epoch", type=int, default=100)
-parser.add_argument("--batch_size", type=int, default=512)
-parser.add_argument("--learning_rate", type=float, default=1e-3)
+parser.add_argument("--epoch_warmup", type=int, default=5)
+parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--batch_size_eval", type=int, default=32)
+parser.add_argument("--learning_rate", type=float, default=1e-4)
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_steps", type=int, default=1000)
+parser.add_argument("--reasoning_steps_eval", type=int, default=1000)
 parser.add_argument("--objective", type=str,
                     choices=['kvsall', 'noisy', 'none'], default='none')
 parser.add_argument("--noisy_sample_size", type=int, default=32)
@@ -250,21 +271,25 @@ def train_truth_value_noisy_likelihood(
                                                      'Adam',
                                                      args.sigma)
 
-        neg_grm = GradientReasoningMachineEFO.create(fof, nbp, tnorm,
-                                                     args.reasoning_rate,
-                                                     args.reasoning_steps,
-                                                     'Adam',
-                                                     args.sigma)
+        # neg_grm = GradientReasoningMachineEFO.create(fof, nbp, tnorm,
+        #                                              args.reasoning_rate,
+        #                                              args.reasoning_steps,
+        #                                              'Adam',
+        #                                              args.sigma)
 
         pos_traj = pos_grm.optimize_term_local_embedding(
             free_var_treatment='groundans:1', equality=False)
-        neg_traj = neg_grm.optimize_term_local_embedding(
-            free_var_treatment='groundnoisy:1024', equality=False)
+        # neg_traj = neg_grm.optimize_term_local_embedding(
+        #     free_var_treatment='groundnoisy:128', equality=False)
 
         pos_tv = pos_grm.evaluate_truth_values(
-            free_var_treatment='groundans:1')
-        neg_tv = neg_grm.evaluate_truth_values(
-            free_var_treatment='groundnoisy:1024')
+            free_var_treatment='groundans:1',
+            batch_size_eval=args.batch_size_eval
+            )
+        neg_tv = pos_grm.evaluate_truth_values(
+            free_var_treatment='groundnoisy:1024',
+            batch_size_eval=args.batch_size_eval
+            )
 
         pos_nll = - torch.log(pos_tv + 1e-10) / fof.num_predicates
         neg_nll = - torch.log(1 - neg_tv + 1e-10) / fof.num_predicates
@@ -273,29 +298,24 @@ def train_truth_value_noisy_likelihood(
         mle_loss = torch.mean(batch_mle_loss)
 
         embedding_reg = 0
-        # for symb in fof.symbol_dict:
-        #     symb_emb = nbp.get_entity_emb(
-        #         fof.get_term_grounded_entity_id_list(symb)
-        #     )
-        #     embedding_reg += nbp.regularization(symb_emb).mean()
+        for symb in fof.symbol_dict:
+            symb_emb = nbp.get_entity_emb(
+                fof.get_term_grounded_entity_id_list(symb)
+            )
+            embedding_reg += nbp.regularization(symb_emb).mean()
 
-        # for pred in fof.predicate_dict:
-        #     pred_emb = nbp.get_entity_emb(
-        #         fof.get_pred_grounded_relation_id_list(pred)
-        #     )
-        #     embedding_reg += nbp.regularization(pred_emb).mean()
+        for pred in fof.predicate_dict:
+            pred_emb = nbp.get_entity_emb(
+                fof.get_pred_grounded_relation_id_list(pred)
+            )
+            embedding_reg += nbp.regularization(pred_emb).mean()
 
-        # for term_name in pos_grm._last_ground_free_var_emb:
-        #     embedding_reg += nbp.regularization(
-        #         pos_grm._last_ground_free_var_emb[term_name]
-        #     ).mean()
+        for term_name in pos_grm._last_ground_free_var_emb:
+            embedding_reg += nbp.regularization(
+                pos_grm._last_ground_free_var_emb[term_name]
+            ).mean()
 
-        # for term_name in neg_grm._last_ground_free_var_emb:
-        #     embedding_reg += nbp.regularization(
-        #         neg_grm._last_ground_free_var_emb[term_name]
-        #     ).mean()
-
-        loss = mle_loss + embedding_reg * 0.005
+        loss = mle_loss # + embedding_reg * .005
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -309,8 +329,7 @@ def train_truth_value_noisy_likelihood(
         metric_step['neg_nll'] = neg_nll.mean().item()
         metric_step['mle_loss'] = mle_loss.item()
         metric_step['sigma'] = sigma
-        metric_step['num_reason_steps'] = .5 * \
-            (len(pos_traj) + len(neg_traj) - 2)
+        metric_step['num_reason_steps'] = len(pos_traj) - 1
 
         logging.info(f"[{desc}] {json.dumps(metric_step)}")
 
@@ -397,11 +416,13 @@ def evaluate_by_search_emb_then_rank_truth_value(
     with tqdm.tqdm(fofs, desc=desc) as t:
         for fof in t:
             grm = GradientReasoningMachineEFO.create(
-                fof, nbp, tnorm, args.reasoning_rate, args.reasoning_steps, "Adam", args.sigma)
-            grm.optimize_term_local_embedding(
+                fof, nbp, tnorm, args.reasoning_rate, args.reasoning_steps_eval, "Adam", args.sigma)
+            traj = grm.optimize_term_local_embedding(
                 free_var_treatment='lift', equality=False)
-            truth_value_entity_batch = grm.evaluate_truth_values(
-                free_var_treatment='all')  # [num_entities batch_size]
+            with torch.no_grad():
+                truth_value_entity_batch = grm.evaluate_truth_values(
+                    free_var_treatment='all',
+                    batch_size_eval=args.batch_size_eval)  # [num_entities batch_size]
             ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
             # batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
             # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
@@ -421,6 +442,8 @@ def evaluate_by_search_emb_then_rank_truth_value(
                         np.mean(metric[lstr][score_name]))
 
             postfix = {}
+            postfix['reasoning_steps'] = len(traj)
+            postfix['lstr'] = fof.lstr
             for name in ['1p', '2p', '3p', '2i', 'inp']:
                 if name in sum_metric:
                     postfix[name + '_hit3'] = sum_metric[name]['hit3']
@@ -515,56 +538,89 @@ if __name__ == "__main__":
 
     nbp.to(args.device)
 
-    # this dataloader is for k-vs-all objective. works for noisy v1
-    # depreciated
-
     print("loading data")
+    if args.train_queries: train_queries = [name2lstr[tq] for tq in args.train_queries]
+    else: train_queries = list(name2lstr.values())
+
+    if args.eval_queries: eval_queries = [name2lstr[tq] for tq in args.eval_queries]
+    else: eval_queries = list(name2lstr.values())
+
+    print("train queries", train_queries)
+    print("eval queries", eval_queries)
+
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
         # target_lstr=query_3p,
+        # size_limit=5000,
         target_lstr=train_queries,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=0)
 
-    # for noisy objective v2
-    # train_dataloader = TrainNoisyAnswerDataLoader(
-    #     osp.join(args.task_folder, 'train-qaa.json'),
-    #     batch_size=args.batch_size,
-    #     shuffle=True,
-    #     answer_size=kgidx.num_entities,
-    #     noisy_sample_size=args.noisy_sample_size,
-    #     num_workers=2)
+    warmup_dataloader = QueryAnsweringSeqDataLoader(
+        osp.join(args.task_folder, 'train-qaa.json'),
+        # target_lstr=query_3p,
+        target_lstr=warmup_queries,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0)
+
+    train_eval_dataloader = QueryAnsweringSeqDataLoader(
+        osp.join(args.task_folder, 'train-qaa.json'),
+        target_lstr=eval_queries,
+        size_limit=1000,
+        batch_size=5000,
+        shuffle=False,
+        num_workers=0
+    )
 
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
-        batch_size=args.batch_size,
+        target_lstr=eval_queries,
+        batch_size=5000,
         shuffle=False,
         num_workers=0
     )
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
-        batch_size=args.batch_size,
+        target_lstr=eval_queries,
+        batch_size=5000,
         shuffle=False,
         num_workers=0
     )
 
     # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate train epoch {0}",
-    #                                              train_dataloader, nbp, ProductTNorm)
+    #                                              train_eval_dataloader, nbp, ProductTNorm)
     # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate valid epoch {0}",
     #                                              valid_dataloader, nbp, ProductTNorm)
     # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {0}",
     #                                              test_dataloader, nbp, ProductTNorm)
 
-    # evaluate_by_nearest_search(f"NN evaluate train epoch {0}",
-    #                             train_dataloader, nbp, train_grm)
-    # evaluate_by_nearest_search(f"NN evaluate validate epoch {0}",
-    #                            valid_dataloader, nbp, train_grm)
-    # evaluate_by_nearest_search(f"NN evaluate test epoch {0}",
-    #                            test_dataloader, nbp, train_grm)
-
     print("data prepared")
+
+    eval_only = False
+    for e in range(args.epoch_warmup):
+        if args.objective.lower() == 'noisy':
+            # # train_epoch_noisy_v2(f"training epoch {e}",
+            #                      train_dataloader, nbp, train_grm, args)
+            # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
+            # train_upper_bound_noisy_likelihood(f"train upper bound noisy", train_dataloader, nbp, train_grm, args)
+            train_truth_value_noisy_likelihood(
+                f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
+        else:
+            print("no training")
+            eval_only = True
+
+        if (e+1) % 1 == 0:
+            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
+                                                         valid_dataloader, nbp, ProductTNorm)
+            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
+                                                         test_dataloader, nbp, ProductTNorm)
+
+            if eval_only:
+                break
+
 
     eval_only = False
     for e in range(args.epoch):
@@ -573,7 +629,8 @@ if __name__ == "__main__":
             # # train_epoch_noisy_v2(f"training epoch {e}",
             #                      train_dataloader, nbp, train_grm, args)
             # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
-            # train_upper_bound_noisy_likelihood(f"train upper bound noisy", train_dataloader, nbp, train_grm, args)
+            # train_upper_bound_noisy_likelihood(
+                # f"train upper bound noisy", train_dataloader, nbp, ProductTNorm, args)
             train_truth_value_noisy_likelihood(
                 f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
         else:
@@ -581,15 +638,8 @@ if __name__ == "__main__":
             eval_only = True
 
         if (e+1) % 1 == 0:
-            # evaluate_by_nearest_search(f"evaluate NN train epoch {e+1}",
-            #          train_dataloader, nbp, train_grm)
-            # evaluate_by_nearest_search(f"evaluate NN validate epoch {e+1}",
-            #          valid_dataloader, nbp, train_grm)
-            # evaluate_by_nearest_search(f"evaluate NN test epoch {e+1}",
-            #          test_dataloader, nbp, train_grm)
-
             # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate train epoch {e+1}",
-            # train_dataloader, nbp, ProductTNorm)
+            #                                             train_dataloader, nbp, ProductTNorm)
             evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
                                                          valid_dataloader, nbp, ProductTNorm)
             evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",

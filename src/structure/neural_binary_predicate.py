@@ -269,7 +269,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
                  num_entities: int,
                  num_relations: int,
                  embedding_dim: int,
-                 margin: float = 0,
+                 margin: float = 100,
                  init_size: float = 1e-3,
                  device = 'cpu', **kwargs):
         super(ComplEx, self).__init__()

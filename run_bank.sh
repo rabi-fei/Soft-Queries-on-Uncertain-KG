@@ -72,3 +72,6 @@ task_dependent_train.py --embedding_dim 100 --device cuda:2 --checkpoint_path pr
 
 
 python3 task_dependent_train.py --embedding_dim 100 --device cuda:0 --checkpoint_path pretrain/complex/FB15k-237-model-rank-100-epoch-100-1602503352.pt --sigma 1 --learning_rate 1e-2 --batch_size 32 --reasoning_steps 10 --objective noisy --output_dir log/test_plus --model_name complexplus
+
+
+python3 task_dependent_train.py --embedding_dim 1000 --device cuda:0 --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt --learning_rate 1e-4 --batch_size 32 --reasoning_steps 10 --objective noisy --output_dir log/train_query_train_1p_eval1kRsteps
