@@ -187,6 +187,7 @@ class GradientReasoningMachineEFO:
         def run_in_batch(batch_size):
             begin_idx = 0
             end_idx = begin_idx + batch_size
+            end_idx = min(self.formula.num_instances, end_idx)
             collect = []
             while begin_idx < self.formula.num_instances:
                 ret = self.batch_evaluate_truth_values(

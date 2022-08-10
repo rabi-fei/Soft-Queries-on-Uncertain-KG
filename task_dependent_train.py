@@ -93,7 +93,7 @@ parser.add_argument("--checkpoint_path")
 
 # optimization
 parser.add_argument("--epoch", type=int, default=100)
-parser.add_argument("--epoch_warmup", type=int, default=5)
+parser.add_argument("--epoch_warmup", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--batch_size_eval", type=int, default=32)
 parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -101,7 +101,7 @@ parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_steps", type=int, default=1000)
 parser.add_argument("--reasoning_steps_eval", type=int, default=1000)
 parser.add_argument("--objective", type=str,
-                    choices=['kvsall', 'noisy', 'none'], default='none')
+                     default='none')
 parser.add_argument("--noisy_sample_size", type=int, default=32)
 
 parser.add_argument("--metric_margin", type=float, default=50)
@@ -247,14 +247,15 @@ def train_upper_bound_noisy_likelihood(
     return metric
 
 
-def train_truth_value_noisy_likelihood(
+def train_truth_value_noisy_margin(
         desc,
         train_dataloader: QueryAnsweringSeqDataLoader,
         nbp: NeuralBinaryPredicate,
         tnorm: Tnorm,
         args):
 
-    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+    # optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+    optimizer = torch.optim.Adam(nbp.mlp.parameters(), args.learning_rate)
     # scheduler = torch.optim.lr_schedulern.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
 
     sigma = args.sigma
@@ -291,29 +292,106 @@ def train_truth_value_noisy_likelihood(
             batch_size_eval=args.batch_size_eval
             )
 
-        pos_nll = - torch.log(pos_tv + 1e-10) / fof.num_predicates
-        neg_nll = - torch.log(1 - neg_tv + 1e-10) / fof.num_predicates
+        margin = neg_tv.mean(0) - pos_tv
+
+        loss = margin.mean() # + embedding_reg * .005
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        ####################
+        metric_step = {}
+        metric_step['loss'] = loss.item()
+        metric_step['pos_tv'] = pos_tv.mean().item()
+        metric_step['neg_tv'] = neg_tv.mean().item()
+        metric_step['sigma'] = sigma
+        metric_step['num_reason_steps'] = len(pos_traj) - 1
+
+        logging.info(f"[{desc}] {json.dumps(metric_step)}")
+
+        postfix = {'step': ii+1}
+        for k in metric_step:
+            postfix[k] = np.mean(metric_step[k])
+            trajectory[k].append(postfix[k])
+        postfix['acc_loss'] = np.mean(trajectory['loss'])
+        t.set_postfix(postfix)
+
+    t.close()
+
+    metric = {}
+    for k in trajectory:
+        metric[k] = np.mean(trajectory[k])
+    return metric
+
+
+def train_truth_value_noisy_likelihood(
+        desc,
+        train_dataloader: QueryAnsweringSeqDataLoader,
+        nbp: NeuralBinaryPredicate,
+        tnorm: Tnorm,
+        args):
+
+    # optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+    optimizer = torch.optim.Adam(nbp.get_parameters(), args.learning_rate, weight_decay=1e-3)
+    # scheduler = torch.optim.lr_schedulern.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
+
+    sigma = args.sigma
+    trajectory = defaultdict(list)
+
+    fof_list = train_dataloader.get_fof_list()
+    t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
+
+    for ii, fof in t:
+        ####################
+        pos_grm = GradientReasoningMachineEFO.create(fof, nbp, tnorm,
+                                                     args.reasoning_rate,
+                                                     args.reasoning_steps,
+                                                     'Adam',
+                                                     args.sigma)
+
+        # neg_grm = GradientReasoningMachineEFO.create(fof, nbp, tnorm,
+        #                                              args.reasoning_rate,
+        #                                              args.reasoning_steps,
+        #                                              'Adam',
+        #                                              args.sigma)
+
+        pos_traj = pos_grm.optimize_term_local_embedding(
+            free_var_treatment='groundans:1', equality=False)
+        # neg_traj = neg_grm.optimize_term_local_embedding(
+        #     free_var_treatment='groundnoisy:128', equality=False)
+
+        pos_tv = pos_grm.evaluate_truth_values(
+            free_var_treatment='groundans:1',
+            batch_size_eval=args.batch_size_eval
+            )
+        neg_tv = pos_grm.evaluate_truth_values(
+            free_var_treatment='groundnoisy:1024',
+            batch_size_eval=args.batch_size_eval
+            )
+
+        pos_nll = - torch.log(pos_tv + 1e-10)
+        neg_nll = - torch.log(1 - neg_tv + 1e-10)
 
         batch_mle_loss = pos_nll + neg_nll
         mle_loss = torch.mean(batch_mle_loss)
 
-        embedding_reg = 0
-        for symb in fof.symbol_dict:
-            symb_emb = nbp.get_entity_emb(
-                fof.get_term_grounded_entity_id_list(symb)
-            )
-            embedding_reg += nbp.regularization(symb_emb).mean()
+        # embedding_reg = 0
+        # for symb in fof.symbol_dict:
+        #     symb_emb = nbp.get_entity_emb(
+        #         fof.get_term_grounded_entity_id_list(symb)
+        #     )
+        #     embedding_reg += nbp.regularization(symb_emb).mean()
 
-        for pred in fof.predicate_dict:
-            pred_emb = nbp.get_entity_emb(
-                fof.get_pred_grounded_relation_id_list(pred)
-            )
-            embedding_reg += nbp.regularization(pred_emb).mean()
+        # for pred in fof.predicate_dict:
+        #     pred_emb = nbp.get_entity_emb(
+        #         fof.get_pred_grounded_relation_id_list(pred)
+        #     )
+        #     embedding_reg += nbp.regularization(pred_emb).mean()
 
-        for term_name in pos_grm._last_ground_free_var_emb:
-            embedding_reg += nbp.regularization(
-                pos_grm._last_ground_free_var_emb[term_name]
-            ).mean()
+        # for term_name in pos_grm._last_ground_free_var_emb:
+        #     embedding_reg += nbp.regularization(
+        #         pos_grm._last_ground_free_var_emb[term_name]
+        #     ).mean()
 
         loss = mle_loss # + embedding_reg * .005
         optimizer.zero_grad()
@@ -346,6 +424,7 @@ def train_truth_value_noisy_likelihood(
     for k in trajectory:
         metric[k] = np.mean(trajectory[k])
     return metric
+
 
 
 def compute_evaluation_scores(fof, batch_entity_rankings, metric):
@@ -550,8 +629,7 @@ if __name__ == "__main__":
 
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
-        # target_lstr=query_3p,
-        # size_limit=5000,
+        size_limit=args.batch_size * 10,
         target_lstr=train_queries,
         batch_size=args.batch_size,
         shuffle=True,
@@ -559,7 +637,6 @@ if __name__ == "__main__":
 
     warmup_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
-        # target_lstr=query_3p,
         target_lstr=warmup_queries,
         batch_size=args.batch_size,
         shuffle=True,
@@ -601,13 +678,16 @@ if __name__ == "__main__":
 
     eval_only = False
     for e in range(args.epoch_warmup):
-        if args.objective.lower() == 'noisy':
+        if args.objective.lower() == 'noisylikelihood':
             # # train_epoch_noisy_v2(f"training epoch {e}",
             #                      train_dataloader, nbp, train_grm, args)
             # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
             # train_upper_bound_noisy_likelihood(f"train upper bound noisy", train_dataloader, nbp, train_grm, args)
             train_truth_value_noisy_likelihood(
                 f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
+        elif args.objective.lower() == 'noisymargin':
+            train_truth_value_noisy_margin(
+                f"learn truth value noisy warm up", train_dataloader, nbp, ProductTNorm, args)
         else:
             print("no training")
             eval_only = True
@@ -625,13 +705,18 @@ if __name__ == "__main__":
     eval_only = False
     for e in range(args.epoch):
 
-        if args.objective.lower() == 'noisy':
+        if args.objective.lower() == 'noisylikelihood':
             # # train_epoch_noisy_v2(f"training epoch {e}",
             #                      train_dataloader, nbp, train_grm, args)
             # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
             # train_upper_bound_noisy_likelihood(
                 # f"train upper bound noisy", train_dataloader, nbp, ProductTNorm, args)
             train_truth_value_noisy_likelihood(
+                f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
+            train_truth_value_noisy_likelihood(
+                f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
+        elif args.objective.lower() == 'noisymargin':
+            train_truth_value_noisy_margin(
                 f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
         else:
             print("no training")
