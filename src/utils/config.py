@@ -30,6 +30,7 @@ class Config:
 class KnowledgeGraphConfig(Config):
     default_kv = {'filelist':
                   ['datasets-knowledge-embedding/COUNTRIES-S1/edges_as_id_train.tsv'],
+                  'kgindex': "",
                   'tensorize': True}
 
     def __init__(self, config_dict={}) -> None:
@@ -61,17 +62,18 @@ class TrainerConfig(Config):
 class EvaluationConfig(Config):
     default_kv = {'eval_every_step': 200,
                   'eval_every_epoch': 5,
+                  'observed_triple_filelist': [],
+                  'kgindex_file': "",
                   'task_dict': {
-                      'dev': {"name": "LinkPrediction",
-                              "params": {"filelist": []}},
-                      'test': {"name": "LinkPrediction",
-                               "params": {"filelist": []}},
                   }}
 
     def __init__(self, config_dict={}) -> None:
         self.eval_every_step = 9999999
         self.eval_every_epoch = 9999999
+        self.observed_triple_filelist = []
+        self.kgindex_file = ""
         self.task_dict = {}
+
         super().__init__(config_dict)
 
 

@@ -3,7 +3,7 @@ import os
 
 import torch
 
-from .evaluator import Evaluator
+from .evaluation import Evaluator
 from .structure import KnowledgeGraph, NeuralBinaryPredicate
 from .learner import Learner, LearnerForwardOutput
 from .utils.recorder import TrainRecorder
@@ -93,8 +93,8 @@ class Trainer:
         logging.info(f"optimizer created")
 
         # create the evaluator
-        dev_evaluator = Evaluator.create(ecc.dev_evaluation_config, ecc.logdir, kg)
-        test_evaluator = Evaluator.create(ecc.test_evaluation_config, ecc.logdir, kg)
+        dev_evaluator = Evaluator.create(ecc.dev_evaluation_config, ecc.logdir)
+        test_evaluator = Evaluator.create(ecc.test_evaluation_config, ecc.logdir)
 
         # create the train recorder
         recorder = TrainRecorder(ecc.logdir)

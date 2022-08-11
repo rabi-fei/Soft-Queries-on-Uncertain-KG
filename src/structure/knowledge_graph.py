@@ -107,7 +107,9 @@ class KnowledgeGraph:
 
     @classmethod
     def from_config(cls, config: KnowledgeGraphConfig):
-        return cls.create(triple_files=config.filelist, device=config.device)
+        return cls.create(triple_files=config.filelist,
+                          kgindex=KGIndex.load(config.kgindex_file),
+                          device=config.device)
 
     def get_triple_dataloader(self, **kwargs):
         dataloader = DataLoader(self.triples, **kwargs)

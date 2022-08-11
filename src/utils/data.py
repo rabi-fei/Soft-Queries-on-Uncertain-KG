@@ -11,20 +11,22 @@ from src.language.fof import FirstOrderFormula
 from src.language.grammar import parse_lstr_to_lformula
 
 
-def _iter_triple_from_tsv(triple_file):
+def _iter_triple_from_tsv(triple_file, to_int, check_size):
     with open(triple_file, 'rt') as f:
         for line in f.readlines():
-            tp = line.strip().split()
-            assert len(tp) == 3
-            triple = [int(t) for t in tp]
+            triple = line.strip().split()
+            if check_size:
+                assert len(triple) == check_size
+            if to_int:
+                triple = [int(t) for t in triple]
             yield triple
 
 
-def iter_triple_from_tsv(triple_files):
+def iter_triple_from_tsv(triple_files, to_int: bool=True, check_size: int=3):
     if isinstance(triple_files, list):
         return chain(*[iter_triple_from_tsv(tfile) for tfile in triple_files])
     elif isinstance(triple_files, str):
-        return _iter_triple_from_tsv(triple_files)
+        return _iter_triple_from_tsv(triple_files, to_int, check_size)
     else:
         raise NotImplementedError("invalid input of triple files")
 

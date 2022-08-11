@@ -11,13 +11,17 @@ from ..structure import KnowledgeGraph, NeuralBinaryPredicate
 
 class LinkPrediction(AbstractTask):
     def __init__(self, kg: KnowledgeGraph, observed_kg: KnowledgeGraph):
+        """
+        kg: the triples to be evaluate
+        observed_kg: the kgs observed to filter the results
+        """
         self.kg = kg
         self.observed_kg = observed_kg
         self.device = self.observed_kg.device
 
     @classmethod
-    def create(cls, filelist, observed_kg, device):
-        kg = KnowledgeGraph.create(filelist, tensorize=False, device=device)
+    def create(cls, filelist, kgindex, observed_kg, device):
+        kg = KnowledgeGraph.create(filelist, kgindex, tensorize=False, device=device)
         return cls(kg, observed_kg)
 
     def evaluate_nbp(self, nbp: NeuralBinaryPredicate, init_batch_size=10000, prefix=""):

@@ -16,7 +16,7 @@ from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.pipeline.reasoning_machine import GradientReasoningMachineEFO
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
-from src.structure.neural_binary_predicate import ComplEx, ComplExPlus, NeuralBinaryPredicate, TransE
+from src.structure import ComplEx, ComplExPlus, NeuralBinaryPredicate, TransE
 from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLoader,
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)

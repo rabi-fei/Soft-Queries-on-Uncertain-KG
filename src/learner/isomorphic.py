@@ -44,9 +44,9 @@ class IsomorphicLearner(Learner):
 
         output = LearnerForwardOutput(
             pos_score=pos_scores,
-            pos_prob=self.nbp.score2prob(pos_scores, margin),
+            pos_prob=self.nbp.score2truth_value(pos_scores),
             neg_score=neg_scores,
-            neg_prob=self.nbp.score2prob(neg_scores, margin),
+            neg_prob=self.nbp.score2truth_value(neg_scores),
         )
 
         return output

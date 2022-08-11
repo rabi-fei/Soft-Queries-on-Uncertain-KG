@@ -2,12 +2,15 @@ cuda: 0
 
 knowledge_graph:
   filelist:
-    - datasets-knowledge-embedding/FB15K/edges_as_id_train.tsv
+    - data/FB15K/train_kg.tsv
+  kgindex_file: data/FB15K/kgindex.json
 
 neural_binary_predicate:
   name: transe
   params:
     embedding_dim: 30
+    margin: 1
+    scale: 1
     p: 1
 
 trainer:
@@ -37,20 +40,28 @@ learner:
 dev_evaluation:
   eval_every_step: -1
   eval_every_epoch: 5
+  observed_triple_filelist:
+    - data/FB15K/train_kg.tsv
+  kgindex_file: data/FB15K/kgindex.json
   task_dict:
     dev:
       name: LinkPrediction
       params:
         filelist:
-          - datasets-knowledge-embedding/FB15K/edges_as_id_valid.tsv
+          - data/FB15K/valid_kg.tsv
   dev_key: filter/agg/mrr
 
 test_evaluation:
+  eval_every_step: -1
+  eval_every_epoch: 5
+  observed_triple_filelist:
+    - data/FB15K/train_kg.tsv
+  kgindex_file: data/FB15K/kgindex.json
   task_dict:
     test:
       name: LinkPrediction
       params:
         filelist:
-          - datasets-knowledge-embedding/FB15K/edges_as_id_test.tsv
+          - data/FB15K/test_kg.tsv
 
 logdir: log/FB15K/transe
