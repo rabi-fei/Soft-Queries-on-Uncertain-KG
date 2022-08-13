@@ -6,9 +6,10 @@ knowledge_graph:
   kgindex_file: data/FB15K/kgindex.json
 
 neural_binary_predicate:
-  name: transe
+  name: swtranse
   params:
     embedding_dim: 30
+    num_particles: 10
     margin: 1
     scale: 1
     p: 1
@@ -24,7 +25,7 @@ trainer:
   num_epochs: 1000
 
 optimizer:
-  name: SGD
+  name: Adam
   params:
     lr: 0.01
 
@@ -64,4 +65,4 @@ test_evaluation:
         filelist:
           - data/FB15K/test_kg.tsv
 
-logdir: log/FB15K/transe_30
+logdir: log/FB15K/swtranse_30_10n

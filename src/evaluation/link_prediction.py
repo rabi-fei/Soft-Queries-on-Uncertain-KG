@@ -65,10 +65,12 @@ class LinkPrediction(AbstractTask):
                 ot_list = self.observed_kg.hr2t[(h, r)]
                 ot_coo_index[0] += [i] * len(ot_list)
                 ot_coo_index[1] += ot_list
+                assert len(oh_coo_index[0]) == len(oh_coo_index[1])
 
                 oh_list = self.observed_kg.tr2h[(t, r)]
                 oh_coo_index[0] += [i] * len(oh_list)
                 oh_coo_index[1] += oh_list
+                assert len(oh_coo_index[0]) == len(oh_coo_index[1])
 
             return [torch.tensor(l, device=nbp.device).view((-1, 1))
                     for l in [hl, rl, tl]] + [ot_coo_index, oh_coo_index]

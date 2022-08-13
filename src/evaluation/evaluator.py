@@ -67,10 +67,13 @@ class Evaluator:
 
     def evaluate_nbp(self, nbp: NeuralBinaryPredicate, global_step, global_epoch, get_key_metric):
         for k in self.task:
-            metric = self.task[k].evaluate_nbp(nbp, prefix=k)
+            _metric = self.task[k].evaluate_nbp(nbp, prefix=k)
+            metric = {
+                f"{k}:{_k}" : _v for _k, _v in _metric.items()
+            }
             metric['global_step'] = global_step
             metric['global_epoch'] = global_epoch
             self.task_recorder[k].write(metric)
 
             if get_key_metric:
-                return metric[self.dev_key]
+                return metric["dev:filter/agg/mrr"]

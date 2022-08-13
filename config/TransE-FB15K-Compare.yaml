@@ -8,7 +8,7 @@ knowledge_graph:
 neural_binary_predicate:
   name: transe
   params:
-    embedding_dim: 30
+    embedding_dim: 300
     margin: 1
     scale: 1
     p: 1
@@ -64,4 +64,4 @@ test_evaluation:
         filelist:
           - data/FB15K/test_kg.tsv
 
-logdir: log/FB15K/transe_30
+logdir: log/FB15K/transe_300
