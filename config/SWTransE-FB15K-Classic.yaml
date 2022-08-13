@@ -8,8 +8,8 @@ knowledge_graph:
 neural_binary_predicate:
   name: swtranse
   params:
-    embedding_dim: 30
-    num_particles: 10
+    embedding_dim: 150
+    num_particles: 2
     margin: 1
     scale: 1
     p: 1
@@ -25,9 +25,9 @@ trainer:
   num_epochs: 1000
 
 optimizer:
-  name: Adam
+  name: SGD
   params:
-    lr: 0.01
+    lr: 0.1
 
 learner:
   name: I

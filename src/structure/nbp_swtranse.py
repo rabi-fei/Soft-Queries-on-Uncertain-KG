@@ -17,7 +17,7 @@ class SWTransE(nn.Module, NeuralBinaryPredicate):
         self.scale = scale
         self.p = p
         self._entity_embedding = nn.Embedding(
-            num_entities, embedding_dim * num_particles, max_norm=1)
+            num_entities, embedding_dim * num_particles)
         nn.init.xavier_uniform_(self._entity_embedding.weight)
         self._relation_embedding = nn.Embedding(
             num_relations, embedding_dim)
@@ -46,7 +46,8 @@ class SWTransE(nn.Module, NeuralBinaryPredicate):
         sort_tail_particles, _ = torch.sort(tail_particles, dim=-1)
 
         dist = torch.sum(
-            torch.mean((sort_est_particles - sort_tail_particles) ** 2, -1), -1)
+            torch.norm(sort_est_particles-sort_tail_particles, p=self.p, dim=-1),
+            -1)
         return - dist
 
     def score2truth_value(self, score):
