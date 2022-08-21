@@ -94,7 +94,7 @@ class NeuralBinaryPredicateConfig(ConfigWithChoice):
 
     def instantiate(self, knowledge_graph):
         from src import structure
-        return structure.get(self.name).create(
+        return structure.get_nbp_class(self.name).create(
             num_entities=knowledge_graph.num_entities,
             num_relations=knowledge_graph.num_relations,
             device=self.device,

@@ -16,7 +16,8 @@ from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.pipeline.reasoning_machine import GradientReasoningMachineEFO
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
-from src.structure import ComplEx, ComplExPlus, NeuralBinaryPredicate, TransE
+from src.structure.neural_binary_predicate import NeuralBinaryPredicate
+from src.structure import get_nbp_class
 from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLoader,
                             TrainRandomSentencePairDataLoader,
                             RaggedBatch)
@@ -331,8 +332,8 @@ def train_truth_value_noisy_likelihood(
         tnorm: Tnorm,
         args):
 
-    # optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
-    optimizer = torch.optim.Adam(nbp.get_parameters(), args.learning_rate, weight_decay=1e-3)
+    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+    # optimizer = torch.optim.Adam(nbp.get_parameters(), args.learning_rate, weight_decay=1e-3)
     # scheduler = torch.optim.lr_schedulern.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
 
     sigma = args.sigma
@@ -365,7 +366,7 @@ def train_truth_value_noisy_likelihood(
             batch_size_eval=args.batch_size_eval
             )
         neg_tv = pos_grm.evaluate_truth_values(
-            free_var_treatment='groundnoisy:1024',
+            free_var_treatment='groundnoisy:1',
             batch_size_eval=args.batch_size_eval
             )
 
@@ -375,25 +376,25 @@ def train_truth_value_noisy_likelihood(
         batch_mle_loss = pos_nll + neg_nll
         mle_loss = torch.mean(batch_mle_loss)
 
-        # embedding_reg = 0
-        # for symb in fof.symbol_dict:
-        #     symb_emb = nbp.get_entity_emb(
-        #         fof.get_term_grounded_entity_id_list(symb)
-        #     )
-        #     embedding_reg += nbp.regularization(symb_emb).mean()
+        embedding_reg = 0
+        for symb in fof.symbol_dict:
+            symb_emb = nbp.get_entity_emb(
+                fof.get_term_grounded_entity_id_list(symb)
+            )
+            embedding_reg += nbp.regularization(symb_emb).mean()
 
-        # for pred in fof.predicate_dict:
-        #     pred_emb = nbp.get_entity_emb(
-        #         fof.get_pred_grounded_relation_id_list(pred)
-        #     )
-        #     embedding_reg += nbp.regularization(pred_emb).mean()
+        for pred in fof.predicate_dict:
+            pred_emb = nbp.get_entity_emb(
+                fof.get_pred_grounded_relation_id_list(pred)
+            )
+            embedding_reg += nbp.regularization(pred_emb).mean()
 
-        # for term_name in pos_grm._last_ground_free_var_emb:
-        #     embedding_reg += nbp.regularization(
-        #         pos_grm._last_ground_free_var_emb[term_name]
-        #     ).mean()
+        for term_name in pos_grm._last_ground_free_var_emb:
+            embedding_reg += nbp.regularization(
+                pos_grm._last_ground_free_var_emb[term_name]
+            ).mean()
 
-        loss = mle_loss # + embedding_reg * .005
+        loss = mle_loss + embedding_reg * .5
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -594,14 +595,7 @@ if __name__ == "__main__":
     kgidx = KGIndex.load(
         osp.join(args.task_folder, "kgindex.json"))
 
-    if args.model_name.lower() == 'transe':
-        nbp_class = TransE
-    elif args.model_name.lower() == 'complex':
-        nbp_class = ComplEx
-    elif args.model_name.lower() == 'complexplus':
-        nbp_class = ComplExPlus
-    else:
-        raise NotImplementedError
+    nbp_class = get_nbp_class(args.model_name)
 
     nbp = nbp_class(
         num_entities=kgidx.num_entities,
@@ -629,7 +623,7 @@ if __name__ == "__main__":
 
     train_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'train-qaa.json'),
-        size_limit=args.batch_size * 10,
+        size_limit=args.batch_size * 1,
         target_lstr=train_queries,
         batch_size=args.batch_size,
         shuffle=True,
@@ -676,30 +670,30 @@ if __name__ == "__main__":
 
     print("data prepared")
 
-    eval_only = False
-    for e in range(args.epoch_warmup):
-        if args.objective.lower() == 'noisylikelihood':
-            # # train_epoch_noisy_v2(f"training epoch {e}",
-            #                      train_dataloader, nbp, train_grm, args)
-            # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
-            # train_upper_bound_noisy_likelihood(f"train upper bound noisy", train_dataloader, nbp, train_grm, args)
-            train_truth_value_noisy_likelihood(
-                f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
-        elif args.objective.lower() == 'noisymargin':
-            train_truth_value_noisy_margin(
-                f"learn truth value noisy warm up", train_dataloader, nbp, ProductTNorm, args)
-        else:
-            print("no training")
-            eval_only = True
+    # eval_only = False
+    # for e in range(args.epoch_warmup):
+    #     if args.objective.lower() == 'noisylikelihood':
+    #         # # train_epoch_noisy_v2(f"training epoch {e}",
+    #         #                      train_dataloader, nbp, train_grm, args)
+    #         # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
+    #         # train_upper_bound_noisy_likelihood(f"train upper bound noisy", train_dataloader, nbp, train_grm, args)
+    #         train_truth_value_noisy_likelihood(
+    #             f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
+    #     elif args.objective.lower() == 'noisymargin':
+    #         train_truth_value_noisy_margin(
+    #             f"learn truth value noisy warm up", train_dataloader, nbp, ProductTNorm, args)
+    #     else:
+    #         print("no training")
+    #         eval_only = True
 
-        if (e+1) % 1 == 0:
-            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
-                                                         valid_dataloader, nbp, ProductTNorm)
-            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
-                                                         test_dataloader, nbp, ProductTNorm)
+    #     if (e+1) % 1 == 0:
+    #         evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
+    #                                                      valid_dataloader, nbp, ProductTNorm)
+    #         evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
+    #                                                      test_dataloader, nbp, ProductTNorm)
 
-            if eval_only:
-                break
+    #         if eval_only:
+    #             break
 
 
     eval_only = False
@@ -711,8 +705,8 @@ if __name__ == "__main__":
             # train_lower_bound_noisy_likelihood(f"train lower bound noisy", train_dataloader, nbp, train_grm, args)
             # train_upper_bound_noisy_likelihood(
                 # f"train upper bound noisy", train_dataloader, nbp, ProductTNorm, args)
-            train_truth_value_noisy_likelihood(
-                f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
+            # train_truth_value_noisy_likelihood(
+            #     f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
             train_truth_value_noisy_likelihood(
                 f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
         elif args.objective.lower() == 'noisymargin':
@@ -723,12 +717,12 @@ if __name__ == "__main__":
             eval_only = True
 
         if (e+1) % 1 == 0:
-            # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate train epoch {e+1}",
-            #                                             train_dataloader, nbp, ProductTNorm)
-            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
-                                                         valid_dataloader, nbp, ProductTNorm)
-            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
-                                                         test_dataloader, nbp, ProductTNorm)
+            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate train epoch {e+1}",
+                                                        train_dataloader, nbp, ProductTNorm)
+            # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
+            #                                              valid_dataloader, nbp, ProductTNorm)
+            # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
+            #                                              test_dataloader, nbp, ProductTNorm)
 
             if eval_only:
                 break

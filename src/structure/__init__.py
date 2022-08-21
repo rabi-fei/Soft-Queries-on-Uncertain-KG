@@ -1,13 +1,10 @@
-from .knowledge_graph_index import KGIndex
-from .knowledge_graph import KnowledgeGraph
-from .neural_binary_predicate import NeuralBinaryPredicate
-from .nbp_complex import ComplEx
-from .nbp_transe import TransE
-from .nbp_swtranse import SWTransE
-
-
-def get(name):
+def get_nbp_class(name):
     if name.lower() == 'transe':
+        from .nbp_transe import TransE
         return TransE
     if name.lower() == 'swtranse':
+        from .nbp_swtranse import SWTransE
         return SWTransE
+    if name.lower() == 'complex':
+        from .nbp_complex import ComplEx
+        return ComplEx
