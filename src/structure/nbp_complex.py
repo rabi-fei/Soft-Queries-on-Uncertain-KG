@@ -30,6 +30,10 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
     def entity_embedding(self):
         return self._entity_embedding.weight
 
+    @property
+    def relation_embedding(self):
+        return self._relation_embedding.weight
+
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
         lhs = head_emb[..., :self.rank], head_emb[..., self.rank:]

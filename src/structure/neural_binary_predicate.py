@@ -1,7 +1,6 @@
 from abc import abstractmethod
 
 import torch
-from torch import embedding, nn
 
 
 class NeuralBinaryPredicate:
@@ -52,7 +51,11 @@ class NeuralBinaryPredicate:
         pass
 
     @property
-    def entity_embedding(self):
+    def entity_embedding(self) -> torch.Tensor:
+        pass
+
+    @property
+    def relation_embedding(self) -> torch.Tensor:
         pass
 
     @classmethod

@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
-from src.pipeline.reasoning_machine import GradientReasoningMachineEFO
+from src.pipeline.reasoning_machine import GradientReasoningMachineEFO, GNNReasoningMachineEFO, RelationalDeepSet
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
@@ -93,7 +93,7 @@ parser.add_argument("--p", type=int, default=1)
 parser.add_argument("--checkpoint_path")
 
 # optimization
-parser.add_argument("--epoch", type=int, default=100)
+parser.add_argument("--epoch", type=int, default=10000)
 parser.add_argument("--epoch_warmup", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--batch_size_eval", type=int, default=32)
@@ -106,19 +106,25 @@ parser.add_argument("--objective", type=str,
 parser.add_argument("--noisy_sample_size", type=int, default=32)
 
 parser.add_argument("--metric_margin", type=float, default=50)
-parser.add_argument("--sigma", type=float, default=10)
+parser.add_argument("--sigma", type=float, default=1)
 parser.add_argument("--neg_sigma_scaling", type=float, default=1)
 parser.add_argument("--v", type=float, default=.9)
 
 
-def train_upper_bound_noisy_likelihood(
+def train_GNN_upper_bound_noisy_likelihood(
         desc,
         train_dataloader: QueryAnsweringSeqDataLoader,
         nbp: NeuralBinaryPredicate,
-        grm: GradientReasoningMachineEFO,
+        tnorm: Tnorm,
         args):
 
-    optimizer = torch.optim.Adam(nbp.parameters(), args.learning_rate)
+    ent_dim = nbp.entity_embedding.size(1)
+    rel_dim = nbp.relation_embedding.size(1)
+
+    rds = RelationalDeepSet(
+            ent_dim, rel_dim, hidden_dim=2048, num_layer=1
+        ).to(nbp.device)
+    optimizer = torch.optim.Adam(list(rds.parameters()) + list(nbp.parameters()), args.learning_rate)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', 0.1, patience=50, verbose=True, threshold=1e-3)
 
     sigma = args.sigma
@@ -129,28 +135,22 @@ def train_upper_bound_noisy_likelihood(
 
     for ii, fof in t:
         ####################
-        fetch = grm.reasoning(fof, free_var_treatment='existential', fole=True)
+        gnnrm = GNNReasoningMachineEFO(fof, nbp, tnorm, rds)
         loss = 0
 
-        pos_tv_list = []
-        neg_tv_list = []
-        pos_nll_list = []
-        neg_nll_list = []
         tv_list = []
         mle_loss_list = []
 
         # for each formula
         # for fof, fetch in zip(fof, fetched):
-        batch_fvar_local_emb_dict = fetch['fvar_local_emb_dict']
-        batch_tv = fetch['tv']
+        batch_fvar_local_emb = gnnrm.get_embedding('f')
+        batch_tv = gnnrm.evaluate_truth_values()
 
         for i, pos_answer_dict in enumerate(fof.easy_answer_list):
             tv = batch_tv[i]
             tv_list.append(tv.item())
-            pos_tv = tv
-            neg_tv = tv
             for f in pos_answer_dict:
-                fvar_emb = batch_fvar_local_emb_dict[f][i]
+                fvar_emb = batch_fvar_local_emb[i]
                 pos_answer = pos_answer_dict[f]
 
                 pos_embs = nbp.get_entity_emb(pos_answer)
@@ -159,73 +159,33 @@ def train_upper_bound_noisy_likelihood(
 
                 pos_ans_dist = torch.sum(
                     (pos_embs - fvar_emb)**2, dim=-1) / sigma ** 2
-                pos_ans_tv = torch.exp(- pos_ans_dist)
-                pos_tv = grm.tnorm.conjunction(pos_ans_tv, pos_tv)
-                pos_tv_list.append(pos_tv.mean().item())
+                # pos_ans_tv = torch.exp(- pos_ans_dist)
 
                 neg_ans_dist = torch.sum(
                     (neg_embs - fvar_emb)**2, dim=-1) / sigma ** 2 / args.neg_sigma_scaling
-                neg_ans_tv = torch.exp(- neg_ans_dist)
-                neg_tv = grm.tnorm.conjunction(neg_ans_tv, neg_tv)
-                # neg_tv = neg_ans_tv
-                neg_tv_list.append(neg_tv.mean().item())
+                # neg_ans_tv = torch.exp(- neg_ans_dist)
 
-                pos_nll = - torch.log(pos_tv + 1e-10).mean()
-                pos_nll_list.append(pos_nll.item())
-                neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
-                neg_nll_list.append(neg_nll.item())
+                pos_nll = - torch.log(tv + 1e-10).mean()
 
-                mle = pos_nll + neg_nll
+                mle = pos_ans_dist.mean()
                 mle_loss_list.append(mle)
 
         mle_loss = torch.mean(torch.stack(mle_loss_list))
 
-        embedding_reg = 0
-        for symb in fof.symbol_dict:
-            symb_emb = nbp.get_entity_emb(
-                fof.get_term_grounded_entity_id_list(symb)
-            )
-            embedding_reg += nbp.regularization(symb_emb).mean()
-
-        # for pred in fof.predicate_dict:
-        #     pred_emb = nbp.get_entity_emb(
-        #         fof.get_pred_grounded_relation_id_list(pred)
-        #     )
-        #     embedding_reg += nbp.regularization(pred_emb).mean()
-
-        loss = mle_loss + embedding_reg * 0.05
+        loss = mle_loss
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        pos_tv_mean = np.mean(pos_tv_list)
-        neg_tv_mean = np.mean(neg_tv_list)
 
         ####################
         metric_step = {}
         metric_step['loss'] = loss.item()
-        metric_step['pos_tv'] = pos_tv_mean
-        metric_step['pos_nll'] = np.mean(pos_nll_list)
-        metric_step['neg_tv'] = neg_tv_mean
-        metric_step['neg_nll'] = np.mean(neg_nll_list)
+        metric_step['tv'] = tv.mean().item()
+        metric_step['pos_ans_dist'] = pos_ans_dist.mean().item()
         metric_step['tv'] = np.mean(tv_list)
         metric_step['mle_loss'] = mle_loss.item()
         metric_step['sigma'] = sigma
-        metric_step['num_reason_steps'] = len(fetch['eflosses']) - 1
-
-        # metric_step['emb_reg'].append(embedding_regularization.item())
-
-        # if pos_tv_mean < 0.5 and neg_tv_mean < 0.5:
-        #     sigma = sigma * (1+ 1e-3)
-
-        # if pos_tv_mean > 0.5 and neg_tv_mean > 0.5:
-        #     sigma = sigma * (1- 1e-3)
-
-        # if pos_tv_mean - neg_tv_mean > 0.5:
-        #     sigma = sigma * (1- 1e-3)
-
-        # if neg_tv_mean > 0.25:
-        #     sigma = sigma * (1 - 1e-3)
 
         postfix = {'step': ii+1}
         for k in metric_step:
@@ -707,7 +667,7 @@ if __name__ == "__main__":
                 # f"train upper bound noisy", train_dataloader, nbp, ProductTNorm, args)
             # train_truth_value_noisy_likelihood(
             #     f"learn truth value noisy warm up", warmup_dataloader, nbp, ProductTNorm, args)
-            train_truth_value_noisy_likelihood(
+            train_GNN_upper_bound_noisy_likelihood(
                 f"learn truth value noisy", train_dataloader, nbp, ProductTNorm, args)
         elif args.objective.lower() == 'noisymargin':
             train_truth_value_noisy_margin(
