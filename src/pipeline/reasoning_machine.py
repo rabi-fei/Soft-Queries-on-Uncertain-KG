@@ -13,16 +13,14 @@ from src.language.tnorm import Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 
 
-class GradientReasoningMachineEFO:
+class GradientEFOReasoner:
     def __init__(self,
-                 formula: FirstOrderFormula,
                  nbp: NeuralBinaryPredicate,
                  tnorm: Tnorm,
                  reasoning_rate,
                  reasoning_steps,
                  reasoning_optimizer,
                  sigma):
-        self.formula: FirstOrderFormula = formula
         self.reasoning_rate = reasoning_rate
         self.reasoning_steps = reasoning_steps
         self.reasoinng_optimizer = reasoning_optimizer
@@ -30,30 +28,35 @@ class GradientReasoningMachineEFO:
         self.tnorm: Tnorm = tnorm
         self.sigma = sigma
 
-        self.term_local_emb_dict = {
-            term_name: None
-            for term_name in self.formula.term_dict
-        }
-
+        # determined during the optimization
+        self.formula: FirstOrderFormula = None
+        self.term_local_emb_dict = {}
         self._last_ground_free_var_emb = {}
 
     @classmethod
     def create(cls,
-               formula: FirstOrderFormula,
                nbp: NeuralBinaryPredicate,
                tnorm: Tnorm,
                reasoning_rate,
                reasoning_steps,
                reasoning_optimizer,
                sigma=1):
-        rm = cls(formula,
-                 nbp,
+        rm = cls(nbp,
                  tnorm,
                  reasoning_rate,
                  reasoning_steps,
                  reasoning_optimizer,
                  sigma)
         return rm
+
+    def initialize_with_formula(self, formula: FirstOrderFormula):
+        self.formula = formula
+        self.term_local_emb_dict = {
+            term_name: None
+            for term_name in self.formula.term_dict
+        }
+
+        self._last_ground_free_var_emb = {}
 
     def set_local_embedding(self, key, tensor):
         self.term_local_emb_dict[key] = tensor.detach().clone()
@@ -320,20 +323,13 @@ class GradientReasoningMachineEFO:
 
 class RelationalGNNLayer(nn.Module):
     def __init__(self, input_dim, rel_dim, output_dim):
-        super().__init__()
+        super(RelationalGNNLayer, self).__init__()
         self.input_dim = input_dim
         self.rel_dim = rel_dim
         self.hidden_dim = output_dim
 
-        self.h2t_proj_weights = nn.Parameter(
-            torch.randn(input_dim + rel_dim, output_dim))
-        self.h2t_proj_bias = nn.Parameter(
-            torch.randn(output_dim))
-
-        self.t2h_proj_weights = nn.Parameter(
-            torch.randn(input_dim + rel_dim, output_dim))
-        self.t2h_proj_bias = nn.Parameter(
-            torch.randn(output_dim))
+        self.h2t_linear = nn.Linear(input_dim + rel_dim, output_dim)
+        # self.t2h_linear = nn.Linear(input_dim + rel_dim, output_dim)
 
     def forward(self, ent_rel_list):
         encoded_entity_list = []
@@ -342,34 +338,34 @@ class RelationalGNNLayer(nn.Module):
             # if rel_order == -1, we estimate the head by rel and tail
             entrel = torch.cat([ent, rel], dim=-1)
             if rel_order > 0:
-                enc_entrel = entrel.mm(self.h2t_proj_weights) + self.h2t_proj_bias
+                enc_entrel = self.h2t_linear(entrel)
             else:
-                enc_entrel = entrel.mm(self.t2h_proj_weights) + self.t2h_proj_bias
+                enc_entrel = self.t2h_linear(entrel)
 
             encoded_entity_list.append([enc_entrel, rel, rel_order])
         return encoded_entity_list
 
 
 class RelationalDeepSet(nn.Module):
-    def __init__(self, ent_dim, rel_dim, hidden_dim, num_layer=1) -> None:
-        super().__init__()
+    def __init__(self, ent_dim, rel_dim, num_layer=1) -> None:
+        super(RelationalDeepSet, self).__init__()
         self.ent_dim = ent_dim
         self.rel_dim = rel_dim
-        self.hidden_dim = hidden_dim
+        self.hidden_dim = ent_dim
         self.num_layer = num_layer
 
         self.init_rlinear = RelationalGNNLayer(self.ent_dim, self.rel_dim, self.hidden_dim)
-        for i in range(self.num_layer-1):
-            # encode the inputs into the hidden dim.
-            setattr(self,
-                f'rlinear-{i}',
-                RelationalGNNLayer(self.hidden_dim, self.rel_dim, self.hidden_dim))
+        # for i in range(self.num_layer-1):
+        #     # encode the inputs into the hidden dim.
+        #     setattr(self,
+        #         f'rlinear-{i}',
+        #         RelationalGNNLayer(self.hidden_dim, self.rel_dim, self.hidden_dim))
 
-        self.clf = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.ReLU(),
-            nn.Linear(self.hidden_dim, self.ent_dim)
-            )
+        # self.clf = nn.Sequential(
+        #     # nn.Linear(self.hidden_dim, self.hidden_dim),
+        #     nn.ReLU(),
+        #     nn.Linear(self.hidden_dim, self.ent_dim)
+        #     )
 
 
     def forward(self, ent_rel_list):
@@ -380,47 +376,46 @@ class RelationalDeepSet(nn.Module):
                             for e, r, o in ent_rel_list]
             return ent_rel_list
 
+        def add(ent_rel_list1, ent_rel_list2):
+            ent_rel_list = [
+                (e1+e2, r, o)
+                for (e1, r, o), (e2, *_)
+                in zip(ent_rel_list1, ent_rel_list2)]
+            return ent_rel_list
+
         hidden_ent_rel_list = self.init_rlinear(ent_rel_list)
-        for i in range(self.num_layer-1):
-            apply_relu(hidden_ent_rel_list)
-            hidden_ent_rel_list = getattr(self,
-                                          f'rlinear-{i}')(hidden_ent_rel_list)
+        # for i in range(self.num_layer-1):
+        #     apply_relu(hidden_ent_rel_list)
+        #     hidden_ent_rel_list = getattr(self,
+        #                                   f'rlinear-{i}')(hidden_ent_rel_list)
+        #     hidden_ent_rel_list = add(hidden_ent_rel_list, ent_rel_list)
 
-        agg = sum([e for e, *_ in hidden_ent_rel_list])
-        out = self.clf(agg)
-        return out
+        agg = 0
+        for e, *_ in hidden_ent_rel_list:
+            agg += e
+        # out = self.clf(agg)
+        return agg
 
 
-class GNNReasoningMachineEFO:
+class GNNEFOReasoner:
     """
     In this class, we estimate the lifted embeddings of existential variables
     by GNN.
 
     """
     def __init__(self,
-                 formula: FirstOrderFormula,
                  nbp: NeuralBinaryPredicate,
                  tnorm: Tnorm,
                  relational_deepset: RelationalDeepSet):
-        self.formula: FirstOrderFormula = formula
-        # not used to optimize, only for update
         self.nbp = nbp
         self.tnorm: Tnorm = tnorm
-
-        self.term_local_emb_dict = {
-            term_name: None
-            for term_name in self.formula.term_dict
-        }
-
-        self._last_ground_free_var_emb = {}
-
-
         self.relational_deepset = relational_deepset
 
+        # formula dependent
+        self.formula: FirstOrderFormula = None
+        self.term_local_emb_dict = {}
+        self._last_ground_free_var_emb = {}
         self.visited_set = set()
-
-        # construct the reverse DFS ordering
-
 
     @classmethod
     def create(cls,
@@ -440,9 +435,15 @@ class GNNReasoningMachineEFO:
                  sigma)
         return rm
 
+    def initialize_with_formula(self, formula):
+        self.formula: FirstOrderFormula = formula
+        self.term_local_emb_dict = {term_name: None
+                                    for term_name in self.formula.term_dict}
+        self._last_ground_free_var_emb = {}
+        self.visited_set = set()
+
     def set_local_embedding(self, key, tensor):
-        self.term_local_emb_dict[key] = tensor.detach().clone()
-        self.term_local_emb_dict[key].requires_grad = True
+        self.term_local_emb_dict[key] = tensor
 
     def term_initialized(self, term_name):
         return self.formula.has_term_grounded_entity_id_list(term_name) \

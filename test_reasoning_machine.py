@@ -1,4 +1,4 @@
-from src.pipeline.reasoning_machine import GradientReasoningMachineEFO
+from src.pipeline.reasoning_machine import GradientEFOReasoner
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import TransE
@@ -21,7 +21,7 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=0
     )
-    grm = GradientReasoningMachineEFO(
+    grm = GradientEFOReasoner(
         reasoning_rate=1e-1,
         reasoning_steps=20,
         reasoning_optimizer='Adam',
