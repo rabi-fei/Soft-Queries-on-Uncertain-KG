@@ -1,6 +1,7 @@
 """
-A file maintains reasoning machine
+A file maintains various reasoners
 """
+from abc import ABC, abstractmethod
 import math
 from typing import Dict, List
 from random import sample
@@ -12,8 +13,36 @@ from src.language.fof import (BinaryPredicate, Conjunction, Disjunction,
 from src.language.tnorm import Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 
+class Reasoner:
+    def __init__(self) -> None:
+        pass
 
-class GradientEFOReasoner:
+    @abstractmethod
+    def create(cls, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def initialize_with_formula(self, formula:FirstOrderFormula):
+        pass
+
+    @abstractmethod
+    def get_embedding(self, term_name):
+        pass
+
+    @abstractmethod
+    def estimate_lifted_embeddings(self):
+        pass
+
+    @abstractmethod
+    def evaluate_truth_values(self, free_var_emb_dict, batch_size_eval):
+        pass
+
+    @abstractmethod
+    def batch_evaluate_truth_values(self, free_var_emb_dict, formula, begin_index, end_index):
+        pass
+
+
+class GradientEFOReasoner(Reasoner):
     def __init__(self,
                  nbp: NeuralBinaryPredicate,
                  tnorm: Tnorm,
@@ -53,10 +82,11 @@ class GradientEFOReasoner:
         self.formula = formula
         self.term_local_emb_dict = {
             term_name: None
-            for term_name in self.formula.term_dict
-        }
+            for term_name in self.formula.term_dict}
 
         self._last_ground_free_var_emb = {}
+
+        self.estimate_lifted_embeddings(free_var_treatment='lifted')
 
     def set_local_embedding(self, key, tensor):
         self.term_local_emb_dict[key] = tensor.detach().clone()
@@ -124,12 +154,11 @@ class GradientEFOReasoner:
             init_vec = torch.normal(0, 1e-3, symb_emb.shape, device=symb_emb.device)
             self.set_local_embedding(term_name, init_vec)
 
-
+    # ? to check the free_var treatment
     def get_embedding(self,
                       term_name,
                       begin_index=None,
-                      end_index=None,
-                      free_var_treatment='lift'):
+                      end_index=None):
         """
             free_var_treatment:
                 (implemented)
@@ -262,24 +291,21 @@ class GradientEFOReasoner:
             # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
             return batch_truth_value
 
-    def optimize_term_local_embedding(self, free_var_treatment, equality):
-        if equality: assert 'ground' in free_var_treatment
-
+    def estimate_lifted_embeddings(self):
         self.initialize_variable_embeddings()
         evar_local_emb = [
             self.get_embedding(term_name)
             for term_name in self.formula.existential_variable_dict
             if self.term_local_emb_dict[term_name] is not None]
 
-        if free_var_treatment.lower() == "lift" or equality:
-            for term_name in self.formula.free_variable_dict:
-                assert self.term_local_emb_dict[term_name] is not None
-                emb = self.get_embedding(term_name, free_var_treatment='lift')
-                evar_local_emb.append(emb)
+        for term_name in self.formula.free_variable_dict:
+            assert self.term_local_emb_dict[term_name] is not None
+            emb = self.get_embedding(term_name)
+            evar_local_emb.append(emb)
 
         # TODO logic needs to be optimized
-        if len(evar_local_emb) == 0 or (len(evar_local_emb) == 1 and free_var_treatment.lower() == 'lift'):
-            return []
+        # if len(evar_local_emb) == 0 or (len(evar_local_emb) == 1 and free_var_treatment.lower() == 'lift'):
+            # return []
 
         OptimizerClass = getattr(torch.optim, self.reasoinng_optimizer)
         optim: torch.optim.Optimizer = OptimizerClass(
@@ -288,22 +314,21 @@ class GradientEFOReasoner:
         traj = [(-1, -1, -1)]
 
         for i in range(self.reasoning_steps):
-            if equality:
-                tv = self.evaluate_truth_values(free_var_treatment='lift')
+            tv = self.evaluate_truth_values(free_var_treatment='lift')
                 # conjunction when equality
-                for term_name in self.formula.free_variable_dict:
-                    free_var_local_emb = self.get_embedding(
-                        term_name, free_var_treatment='lift')
-                    free_var_ground_emb = self.get_embedding(
-                        term_name, free_var_treatment=free_var_treatment)
-                    free_var_dist = torch.sum(
-                        (free_var_local_emb - free_var_ground_emb) ** 2, dim=-1)
-                    dist_tv = torch.exp(
-                         free_var_dist / self.sigma ** 2
-                    )
-                    tv = self.tnorm.conjunction(tv, dist_tv)
-            else:
-                tv = self.evaluate_truth_values(free_var_treatment=free_var_treatment)
+                # for term_name in self.formula.free_variable_dict:
+                #     free_var_local_emb = self.get_embedding(
+                #         term_name, free_var_treatment='lift')
+                #     free_var_ground_emb = self.get_embedding(
+                #         term_name, free_var_treatment=free_var_treatment)
+                #     free_var_dist = torch.sum(
+                #         (free_var_local_emb - free_var_ground_emb) ** 2, dim=-1)
+                #     dist_tv = torch.exp(
+                #          free_var_dist / self.sigma ** 2
+                #     )
+                #     tv = self.tnorm.conjunction(tv, dist_tv)
+            # else:
+                # tv = self.evaluate_truth_values(free_var_treatment=free_var_treatment)
 
             ntv = -tv.mean()
             efvar_local_emb_mat = torch.stack(evar_local_emb)
@@ -355,17 +380,17 @@ class RelationalDeepSet(nn.Module):
         self.num_layer = num_layer
 
         self.init_rlinear = RelationalGNNLayer(self.ent_dim, self.rel_dim, self.hidden_dim)
-        # for i in range(self.num_layer-1):
-        #     # encode the inputs into the hidden dim.
-        #     setattr(self,
-        #         f'rlinear-{i}',
-        #         RelationalGNNLayer(self.hidden_dim, self.rel_dim, self.hidden_dim))
+        for i in range(self.num_layer-1):
+            # encode the inputs into the hidden dim.
+            setattr(self,
+                f'rlinear-{i}',
+                RelationalGNNLayer(self.hidden_dim, self.rel_dim, self.hidden_dim))
 
-        # self.clf = nn.Sequential(
-        #     # nn.Linear(self.hidden_dim, self.hidden_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(self.hidden_dim, self.ent_dim)
-        #     )
+        self.clf = nn.Sequential(
+            # nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.ent_dim)
+            )
 
 
     def forward(self, ent_rel_list):
@@ -384,11 +409,11 @@ class RelationalDeepSet(nn.Module):
             return ent_rel_list
 
         hidden_ent_rel_list = self.init_rlinear(ent_rel_list)
-        # for i in range(self.num_layer-1):
-        #     apply_relu(hidden_ent_rel_list)
-        #     hidden_ent_rel_list = getattr(self,
-        #                                   f'rlinear-{i}')(hidden_ent_rel_list)
-        #     hidden_ent_rel_list = add(hidden_ent_rel_list, ent_rel_list)
+        for i in range(self.num_layer-1):
+            apply_relu(hidden_ent_rel_list)
+            hidden_ent_rel_list = getattr(self,
+                                          f'rlinear-{i}')(hidden_ent_rel_list)
+            hidden_ent_rel_list = add(hidden_ent_rel_list, ent_rel_list)
 
         agg = 0
         for e, *_ in hidden_ent_rel_list:
@@ -397,11 +422,11 @@ class RelationalDeepSet(nn.Module):
         return agg
 
 
-class GNNEFOReasoner:
+class GNNEFOReasoner(Reasoner):
     """
     In this class, we estimate the lifted embeddings of existential variables
     by GNN.
-
+    ? how to handle negation query ?
     """
     def __init__(self,
                  nbp: NeuralBinaryPredicate,
@@ -449,6 +474,9 @@ class GNNEFOReasoner:
         return self.formula.has_term_grounded_entity_id_list(term_name) \
                     or self.term_local_emb_dict[term_name] is not None
 
+    def estimate_lifted_embeddings(self):
+        self.get_embedding('f')
+
     def get_embedding(self,
                       term_name,
                       begin_index=None,
@@ -491,10 +519,9 @@ class GNNEFOReasoner:
                 ent_rel_ord.append([ent, rel, ord])
             emb = self.relational_deepset(ent_rel_ord)
             self.set_local_embedding(term_name, emb)
-        print("return emb of ", term_name)
         return emb
 
-    def evaluate_truth_values(self, batch_size_eval=None):
+    def evaluate_truth_values(self, free_var_emb_dict={}, batch_size_eval=None):
         """
         Input args:
 
@@ -506,6 +533,7 @@ class GNNEFOReasoner:
             collect = []
             while begin_idx < self.formula.num_instances:
                 ret = self.batch_evaluate_truth_values(
+                    free_var_emb_dict,
                     self.formula.formula,
                     begin_idx, end_idx)
                 collect.append(ret)
@@ -522,10 +550,10 @@ class GNNEFOReasoner:
             return run_in_batch(batch_size=self.formula.num_instances)
 
     def batch_evaluate_truth_values(self,
+                                    free_var_emb_dict,
                                     formula,
                                     begin_index,
-                                    end_index,
-                                  ):
+                                    end_index):
         """
         Recursive evaluation of the formula functions
         Input args:
@@ -535,40 +563,60 @@ class GNNEFOReasoner:
                  [num candidate answers, batch size]
                  or
                  [batch size]
-
         """
+
         if isinstance(formula, Conjunction):
             return self.tnorm.conjunction(
                 self.batch_evaluate_truth_values(
-                    formula.formulas[0], begin_index, end_index),
+                    free_var_emb_dict,
+                    formula.formulas[0],
+                    begin_index,
+                    end_index),
                 self.batch_evaluate_truth_values(
-                    formula.formulas[1], begin_index, end_index)
-            )
+                    free_var_emb_dict,
+                    formula.formulas[1],
+                    begin_index,
+                    end_index))
 
         elif isinstance(formula, Disjunction):
             return self.tnorm.disjunction(
                 self.batch_evaluate_truth_values(
-                    formula.formulas[0], begin_index, end_index),
+                    free_var_emb_dict,
+                    formula.formulas[0],
+                    begin_index,
+                    end_index),
                 self.batch_evaluate_truth_values(
-                    formula.formulas[1], begin_index, end_index)
-            )
+                    free_var_emb_dict,
+                    formula.formulas[1],
+                    begin_index,
+                    end_index))
 
         elif isinstance(formula, Negation):
             return self.tnorm.negation(
                 self.batch_evaluate_truth_values(
-                    formula.formula, begin_index, end_index)
-            )
+                    free_var_emb_dict,
+                    formula.formula,
+                    begin_index,
+                    end_index))
 
         elif isinstance(formula, BinaryPredicate):
             head_name = formula.head.name
+            if free_var_emb_dict and formula.head.is_free:
+                head_emb = free_var_emb_dict[head_name]
+            else:
+                head_emb = self.get_embedding(
+                    head_name, begin_index, end_index)
+
             tail_name = formula.tail.name
-            head_emb = self.get_embedding(
-                head_name, begin_index, end_index)
-            tail_emb = self.get_embedding(
-                tail_name, begin_index, end_index)
+            if free_var_emb_dict and formula.tail.is_free:
+                tail_emb = free_var_emb_dict[tail_name]
+            else:
+                tail_emb = self.get_embedding(
+                    tail_name, begin_index, end_index)
 
             rel_emb = self.nbp.get_relation_emb(
                 formula.relation_id_list[begin_index: end_index])
+
             batch_score = self.nbp.embedding_score(head_emb, rel_emb, tail_emb)
             batch_truth_value = self.nbp.score2truth_value(batch_score)
             # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
