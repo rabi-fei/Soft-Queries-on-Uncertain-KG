@@ -352,22 +352,30 @@ class RelationalGNNLayer(nn.Module):
         self.input_dim = input_dim
         self.rel_dim = rel_dim
         self.hidden_dim = output_dim
-
         self.h2t_linear = nn.Linear(input_dim + rel_dim, output_dim)
         # self.t2h_linear = nn.Linear(input_dim + rel_dim, output_dim)
+        self.negation_layer = nn.Sequential(
+            nn.Linear(output_dim, output_dim),
+            nn.ReLU(),
+            nn.Linear(output_dim, output_dim)
+        )
 
     def forward(self, ent_rel_list):
         encoded_entity_list = []
-        for ent, rel, rel_order in ent_rel_list:
+        for ent, rel, rel_order, neg in ent_rel_list:
             # if rel_order == +1, we estimate the tail by head and rel
             # if rel_order == -1, we estimate the head by rel and tail
             entrel = torch.cat([ent, rel], dim=-1)
             if rel_order > 0:
                 enc_entrel = self.h2t_linear(entrel)
             else:
+                assert NotImplementedError
                 enc_entrel = self.t2h_linear(entrel)
 
-            encoded_entity_list.append([enc_entrel, rel, rel_order])
+            if neg: # if predicate has negation
+                enc_entrel = self.negation_layer(enc_entrel)
+
+            encoded_entity_list.append([enc_entrel, rel, rel_order, neg])
         return encoded_entity_list
 
 
@@ -397,14 +405,14 @@ class RelationalDeepSet(nn.Module):
         # element wise entity transformation
 
         def apply_relu(ent_rel_list):
-            ent_rel_list = [(torch.relu(e), r, o)
-                            for e, r, o in ent_rel_list]
+            ent_rel_list = [(torch.relu(e), r, o, n)
+                            for e, r, o, n in ent_rel_list]
             return ent_rel_list
 
         def add(ent_rel_list1, ent_rel_list2):
             ent_rel_list = [
                 (e1+e2, r, o)
-                for (e1, r, o), (e2, *_)
+                for (e1, r, o, n), (e2, *_)
                 in zip(ent_rel_list1, ent_rel_list2)]
             return ent_rel_list
 
@@ -502,6 +510,7 @@ class GNNEFOReasoner(Reasoner):
             ent_rel_ord = []
             for pred_name in related_predicate_list:
                 head, tail = self.formula.predicate_dict[pred_name].get_terms()
+                neg = self.formula.predicate_dict[pred_name].skolem_negation
                 rel_id = self.formula.get_pred_grounded_relation_id_list(pred_name)
                 rel_id = rel_id[begin_index: end_index]
                 rel = self.nbp.get_relation_emb(rel_id)
@@ -517,7 +526,7 @@ class GNNEFOReasoner(Reasoner):
                     ent = self.get_embedding(head.name, begin_index, end_index)
                 else:
                     raise ValueError()
-                ent_rel_ord.append([ent, rel, ord])
+                ent_rel_ord.append([ent, rel, ord, neg])
             emb = self.relational_deepset(ent_rel_ord)
             self.set_local_embedding(term_name, emb)
         return emb

@@ -194,6 +194,7 @@ class BinaryPredicate(Formula):
         self.head = head
         self.tail = tail
         self.relation_id_list = []
+        self.skolem_negation = False
 
     @classmethod
     def parse(cls, ldict):
@@ -254,6 +255,8 @@ class Negation(Connective):
         assert op == cls.op
         args = ldict['args']
         formula = Formula.parse(args['formula'])
+        if formula.op == 'pred':
+            formula.skolem_negation = True
         return cls(formula)
 
     def to_ldict(self):

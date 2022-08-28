@@ -83,7 +83,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
-    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=32):
+    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=16):
         batch_size = batch_embedding_input.size(0)
         begin = 0
         entity_ranking_list = []
@@ -131,58 +131,58 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
 
 
 
-class ComplExPlus(ComplEx):
-    def __init__(self,
-                 num_entities: int,
-                 num_relations: int,
-                 embedding_dim: int,
-                 latent_dim: int = 128,
-                 margin: float = 0,
-                 init_size: float = 1e-3,
-                 device = 'cpu',
-                 **kwargs):
-        super(ComplExPlus, self).__init__(
-            num_entities,
-            num_relations,
-            embedding_dim,
-            margin,
-            init_size,
-            device
-        )
+# class ComplExPlus(ComplEx):
+#     def __init__(self,
+#                  num_entities: int,
+#                  num_relations: int,
+#                  embedding_dim: int,
+#                  latent_dim: int = 128,
+#                  margin: float = 0,
+#                  init_size: float = 1e-3,
+#                  device = 'cpu',
+#                  **kwargs):
+#         super(ComplExPlus, self).__init__(
+#             num_entities,
+#             num_relations,
+#             embedding_dim,
+#             margin,
+#             init_size,
+#             device
+#         )
 
-        self._entity_embedding.requires_grad_(False)
-        self._relation_embedding.requires_grad_(False)
+#         self._entity_embedding.requires_grad_(False)
+#         self._relation_embedding.requires_grad_(False)
 
-        # self.mlp = nn.Sequential(
-        #     nn.Linear(2 * embedding_dim, latent_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(latent_dim, latent_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(latent_dim, 2 * embedding_dim)
-        # )
+#         # self.mlp = nn.Sequential(
+#         #     nn.Linear(2 * embedding_dim, latent_dim),
+#         #     nn.ReLU(),
+#         #     nn.Linear(latent_dim, latent_dim),
+#         #     nn.ReLU(),
+#         #     nn.Linear(latent_dim, 2 * embedding_dim)
+#         # )
 
 
-        self.mlp = nn.Linear(2 * embedding_dim, 2 * embedding_dim)
-        self.mlp.weight.data = torch.eye(2*embedding_dim, requires_grad=True)
+#         self.mlp = nn.Linear(2 * embedding_dim, 2 * embedding_dim)
+#         self.mlp.weight.data = torch.eye(2*embedding_dim, requires_grad=True)
 
-        # self.mlp_r = nn.Sequential(
-        #     nn.Linear(2 * embedding_dim, latent_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(latent_dim, latent_dim),
-        #     nn.ReLU(),
-        #     nn.Linear(latent_dim, 2 * embedding_dim)
-        # )
+#         # self.mlp_r = nn.Sequential(
+#         #     nn.Linear(2 * embedding_dim, latent_dim),
+#         #     nn.ReLU(),
+#         #     nn.Linear(latent_dim, latent_dim),
+#         #     nn.ReLU(),
+#         #     nn.Linear(latent_dim, 2 * embedding_dim)
+#         # )
 
-        # self.mlp_r = nn.Linear(2 * embedding_dim, 2 * embedding_dim)
-        # self.mlp_r.weight.data = torch.eye(2*embedding_dim, requires_grad=True)
+#         # self.mlp_r = nn.Linear(2 * embedding_dim, 2 * embedding_dim)
+#         # self.mlp_r.weight.data = torch.eye(2*embedding_dim, requires_grad=True)
 
-    def get_parameters(self):
-        return self.mlp.parameters()
+#     def get_parameters(self):
+#         return self.mlp.parameters()
 
-    def get_entity_emb(self, entity_id_or_tensor):
-        original = super().get_entity_emb(entity_id_or_tensor)
-        return self.mlp(original)
+#     def get_entity_emb(self, entity_id_or_tensor):
+#         original = super().get_entity_emb(entity_id_or_tensor)
+#         return self.mlp(original)
 
-    # def get_relation_emb(self, relation_id_or_tensor):
-    #     original = super().get_relation_emb(relation_id_or_tensor)
-    #     return original + self.mlp_r(original)
+#     # def get_relation_emb(self, relation_id_or_tensor):
+#     #     original = super().get_relation_emb(relation_id_or_tensor)
+#     #     return original + self.mlp_r(original)

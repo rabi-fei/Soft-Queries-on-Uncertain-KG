@@ -193,10 +193,14 @@ def train_lifted_estimator(
         ####################
         metric_step = {}
         metric_step['pos_dist'] = pos_dist.mean().item()
+        metric_step['pos_nll'] = pos_nll.mean().item()
         metric_step['neg_dist'] = neg_dist.mean().item()
+        metric_step['neg_nll'] = neg_nll.mean().item()
         metric_step['lifted_tv'] = lifted_tv.mean().item()
+        metric_step['lifted_nll'] = lifted_nll.mean().item()
         metric_step['pos_tv'] = pos_tv.mean().item()
         metric_step['neg_tv'] = neg_tv.mean().item()
+        metric_step['marginal_regression_loss'] = marginal_regression_loss.mean().item()
         metric_step['loss'] = loss.item()
 
         postfix = {'step': ifof+1}
