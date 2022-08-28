@@ -62,7 +62,7 @@ beta_lstr_list = [
     "r1(s1,e1)&r2(e1,f)&!r3(s2,f)", # pin
     "r1(s1,e1)&!r2(e1,f)&r3(s2,f)", # pni
     "r1(s1,f)|r2(s2,f)", # 2u
-    "r1(s1,e1)|r2(s2,e1))&r3(e1,f)", # up
+    "(r1(s1,e1)|r2(s2,e1))&r3(e1,f)", # up
     "!(!r1(s1,f)&!r2(s2,f))", # 2u-dnf
     "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",# up-dnf
 ]
@@ -279,12 +279,12 @@ def convert_beta_folder(beta_folder, output_folder):
 
 
 if __name__ == "__main__":
-    beta_folder = "../FirstOrderQueryEstimation/data/{}"
+    beta_folder = "/home/zwanggc/Meta-Learning-for-EFO1/data/{}"
     output_folder = "./data/{}"
 
     for dataset in [
-        "FB15k-237-q2b",
-        "FB15k-q2b", "NELL-q2b"]:
+        "FB15k-237-betae",
+        "FB15k-betae", "NELL-betae"]:
         print(dataset)
         convert_beta_folder(beta_folder.format(dataset),
                             output_folder.format(dataset))

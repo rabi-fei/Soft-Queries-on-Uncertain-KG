@@ -488,7 +488,7 @@ class GNNEFOReasoner(Reasoner):
         self.visited_set.add(term_name)
 
         if self.term_local_emb_dict[term_name] is not None:
-            return self.term_local_emb_dict[term_name]
+            return self.term_local_emb_dict[term_name][begin_index: end_index]
 
         if self.formula.has_term_grounded_entity_id_list(term_name):
             entity_id = self.formula.get_term_grounded_entity_id_list(term_name)
@@ -503,17 +503,18 @@ class GNNEFOReasoner(Reasoner):
             for pred_name in related_predicate_list:
                 head, tail = self.formula.predicate_dict[pred_name].get_terms()
                 rel_id = self.formula.get_pred_grounded_relation_id_list(pred_name)
+                rel_id = rel_id[begin_index: end_index]
                 rel = self.nbp.get_relation_emb(rel_id)
                 if head.name == term_name:
                     if tail.name in self.visited_set:
                         continue
                     ord = -1
-                    ent = self.get_embedding(tail.name)
+                    ent = self.get_embedding(tail.name, begin_index, end_index)
                 elif tail.name == term_name:
                     if head.name in self.visited_set:
                         continue
                     ord = 1
-                    ent = self.get_embedding(head.name)
+                    ent = self.get_embedding(head.name, begin_index, end_index)
                 else:
                     raise ValueError()
                 ent_rel_ord.append([ent, rel, ord])

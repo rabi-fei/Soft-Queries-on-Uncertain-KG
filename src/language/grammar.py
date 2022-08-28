@@ -14,6 +14,7 @@ Term = e[number]
 
 from .fof import Conjunction, Disjunction, Formula, Lobject, Negation, BinaryPredicate, Term
 
+
 def remove_outmost_backets(lstr: str):
     if not (lstr[0] == '(' and lstr[-1] == ')'):
         return lstr
@@ -31,13 +32,13 @@ def remove_outmost_backets(lstr: str):
     else:
         return lstr
 
+
 def remove_brackets(lstr: str):
     new_lstr = remove_outmost_backets(lstr)
     while new_lstr != lstr:
         lstr = new_lstr
         new_lstr = remove_outmost_backets(lstr)
     return lstr
-
 
 
 def map_term_name_to_type(name: str):
@@ -55,7 +56,9 @@ def map_term_name_to_type(name: str):
         term_id = int(name)
         return term_id, False
 
+
 def parse_term(term_name):
+    assert ')' not in term_name
     term_state, is_abstract = map_term_name_to_type(term_name)
     if is_abstract:
         term = Term(state=term_state, name=term_name)
