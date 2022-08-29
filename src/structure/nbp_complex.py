@@ -36,14 +36,15 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
 
 
     def embedding_score(self, head_emb, rel_emb, tail_emb):
-        lhs = head_emb[..., :self.rank], head_emb[..., self.rank:]
-        rel = rel_emb[..., :self.rank],  rel_emb[..., self.rank:]
-        rhs = tail_emb[..., :self.rank], tail_emb[..., self.rank:]
-
-        return torch.sum(
-            (lhs[0] * rel[0] - lhs[1] * rel[1]) * rhs[0] +
-            (lhs[0] * rel[1] + lhs[1] * rel[0]) * rhs[1],
-            dim=-1)
+        # lhs = head_emb[..., :self.rank], head_emb[..., self.rank:]
+        # rel = rel_emb[..., :self.rank],  rel_emb[..., self.rank:]
+        # rhs = tail_emb[..., :self.rank], tail_emb[..., self.rank:]
+        # return torch.sum(
+        #     (lhs[0] * rel[0] - lhs[1] * rel[1]) * rhs[0] +
+        #     (lhs[0] * rel[1] + lhs[1] * rel[0]) * rhs[1],
+        #     dim=-1)
+        est_tail = self.estimate_tail_emb(head_emb, rel_emb)
+        return self.entity_pair_scoring(est_tail, tail_emb)
 
     def score2truth_value(self, score):
         return torch.sigmoid(score / self.margin)
@@ -59,11 +60,11 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
 
     def estimate_head_emb(self, tail_emb, rel_emb):
         rhs = tail_emb[:, :self.rank], tail_emb[:, self.rank:]
-        rel = rel_emb[:, :self.rank], rel_emb[:, self.rank:]
+        rel = rel_emb[:, :self.rank], -rel_emb[:, self.rank:]
 
         return torch.cat([
-            rhs[0] * rel[0] + rhs[1] * rel[1],
-            rhs[0] * rel[1] - rhs[1] * rel[0]
+            rhs[0] * rel[0] - rhs[1] * rel[1],
+            rhs[0] * rel[1] + rhs[1] * rel[0]
         ], 1)
 
     def estiamte_rel_emb(self, head_emb, tail_emb):
@@ -83,6 +84,10 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ent_id = torch.tensor(entity_id_or_tensor, device=self.device)
         return self._entity_embedding(ent_id)
 
+    def entity_pair_scoring(self, emb1, emb2):
+        scores = torch.sum(emb1 * emb2, dim=-1)
+        return scores
+
     def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=16):
         batch_size = batch_embedding_input.size(0)
         begin = 0
@@ -94,7 +99,9 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
             # batch_size, all_candidates
             # ranking score should be the higher the better
             # ranking_score[entity_id] = the score of {entity_id}
-            ranking_score = - torch.norm(eval_batch_embedding_input - self.entity_embedding, dim=-1)
+            # ranking_score = - torch.norm(eval_batch_embedding_input - self.entity_embedding, dim=-1)
+            ranking_score = self.entity_pair_scoring(eval_batch_embedding_input,
+                                                     self.entity_embedding)
             # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
             ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
             # entity_rankings[entity_id] = {rankings} of the entity

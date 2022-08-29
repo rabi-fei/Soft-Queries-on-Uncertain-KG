@@ -85,3 +85,7 @@ class NeuralBinaryPredicate:
     @abstractmethod
     def get_all_entity_rankings(self, batch_embedding_input):
         pass
+
+    @abstractmethod
+    def entity_pair_scoring(self, emb1, emb2):
+        pass

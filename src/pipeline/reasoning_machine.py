@@ -411,7 +411,7 @@ class RelationalDeepSet(nn.Module):
 
         def add(ent_rel_list1, ent_rel_list2):
             ent_rel_list = [
-                (e1+e2, r, o)
+                (e1+e2, r, o, n)
                 for (e1, r, o, n), (e2, *_)
                 in zip(ent_rel_list1, ent_rel_list2)]
             return ent_rel_list

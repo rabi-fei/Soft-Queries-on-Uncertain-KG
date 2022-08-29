@@ -158,33 +158,22 @@ def train_lifted_estimator(
         batch_neg_emb = nbp.get_entity_emb(
             torch.cat(neg_answers_list, dim=1))
 
-        pos_dist = torch.sum(
-            (batch_fvar_emb - batch_pos_emb) ** 2,
-            dim=-1)
-        neg_dist = torch.sum(
-            (batch_fvar_emb - batch_neg_emb) ** 2,
-            dim=-1)
-        marginal_regression_loss = pos_dist.mean() \
-            + torch.relu(args.margin - neg_dist).mean()
+        pos_score = nbp.entity_pair_scoring(batch_pos_emb, batch_fvar_emb) / sigma
+        nce_loss = F.logsigmoid(pos_score)
+        neg_score = nbp.entity_pair_scoring(batch_neg_emb, batch_fvar_emb) / sigma
+        nce_loss -= F.logsigmoid(neg_score)
 
         lifted_tv = reasoner.evaluate_truth_values()
         lifted_nll = - torch.log(lifted_tv + 1e-10).mean()
 
         pos_tv = reasoner.batch_evaluate_truth_values(
-            {'f': batch_pos_emb},
-            fof.formula,
-            i,
-            i+1)
+            {'f': batch_pos_emb}, fof.formula)
         pos_nll = - torch.log(pos_tv + 1e-10).mean()
         neg_tv = reasoner.batch_evaluate_truth_values(
-            {'f': batch_neg_emb},
-            fof.formula,
-            i,
-            i+1)
+            {'f': batch_neg_emb}, fof.formula)
         neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
 
-        loss = lifted_nll + pos_nll + neg_nll + marginal_regression_loss / sigma
-        # loss = pos_nll + neg_nll
+        loss = lifted_nll + pos_nll + neg_nll + nce_loss
 
         optimizer.zero_grad()
         loss.backward()
@@ -192,9 +181,9 @@ def train_lifted_estimator(
 
         ####################
         metric_step = {}
-        metric_step['pos_dist'] = pos_dist.mean().item()
+        metric_step['pos_dist'] = pos_score.mean().item()
         metric_step['pos_nll'] = pos_nll.mean().item()
-        metric_step['neg_dist'] = neg_dist.mean().item()
+        metric_step['neg_dist'] = neg_score.mean().item()
         metric_step['neg_nll'] = neg_nll.mean().item()
         metric_step['lifted_tv'] = lifted_tv.mean().item()
         metric_step['lifted_nll'] = lifted_nll.mean().item()
@@ -655,14 +644,16 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=0)
     print("dataset prepared")
-    evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set 0",
-                                                 valid_dataloader, nbp, reasoner)
-    evaluate_by_nearest_search(f"NN evaluate validate set 0",
-                               valid_dataloader, nbp, reasoner)
-    evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set 0",
-                                                 test_dataloader, nbp, reasoner)
-    evaluate_by_nearest_search(f"NN evaluate validate set 0",
-                               test_dataloader, nbp, reasoner)
+
+    # evaluation before the training
+    # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set 0",
+    #                                              valid_dataloader, nbp, reasoner)
+    # evaluate_by_nearest_search(f"NN evaluate validate set 0",
+    #                            valid_dataloader, nbp, reasoner)
+    # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set 0",
+    #                                              test_dataloader, nbp, reasoner)
+    # evaluate_by_nearest_search(f"NN evaluate test set 0",
+    #                            test_dataloader, nbp, reasoner)
 
     for e in range(args.epoch):
         train_lifted_estimator(f"learn truth value noisy",
@@ -674,5 +665,5 @@ if __name__ == "__main__":
                                    valid_dataloader, nbp, reasoner)
         evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
                                                      test_dataloader, nbp, reasoner)
-        evaluate_by_nearest_search(f"NN evaluate validate set {e+1}",
+        evaluate_by_nearest_search(f"NN evaluate test set {e+1}",
                                    test_dataloader, nbp, reasoner)
