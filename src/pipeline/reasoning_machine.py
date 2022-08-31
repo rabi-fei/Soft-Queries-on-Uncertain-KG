@@ -2,6 +2,9 @@
 A file maintains various reasoners
 """
 from abc import ABC, abstractmethod
+from collections import defaultdict
+from curses import termname
+from imp import is_frozen
 import math
 from typing import Dict, List
 from random import sample
@@ -380,15 +383,15 @@ class RelationalGNNLayer(nn.Module):
 
 
 class RelationalDeepSet(nn.Module):
-    def __init__(self, ent_dim, rel_dim, num_layer=1) -> None:
+    def __init__(self, ent_dim, rel_dim, num_layers=1) -> None:
         super(RelationalDeepSet, self).__init__()
         self.ent_dim = ent_dim
         self.rel_dim = rel_dim
         self.hidden_dim = ent_dim
-        self.num_layer = num_layer
+        self.num_layers = num_layers
 
         self.init_rlinear = RelationalGNNLayer(self.ent_dim, self.rel_dim, self.hidden_dim)
-        for i in range(self.num_layer-1):
+        for i in range(self.num_layers-1):
             # encode the inputs into the hidden dim.
             setattr(self,
                 f'rlinear-{i}',
@@ -417,7 +420,7 @@ class RelationalDeepSet(nn.Module):
             return ent_rel_list
 
         hidden_ent_rel_list = self.init_rlinear(ent_rel_list)
-        for i in range(self.num_layer-1):
+        for i in range(self.num_layers-1):
             apply_relu(hidden_ent_rel_list)
             hidden_ent_rel_list = getattr(self,
                                           f'rlinear-{i}')(hidden_ent_rel_list)
@@ -430,11 +433,12 @@ class RelationalDeepSet(nn.Module):
         return agg
 
 
-class GNNEFOReasoner(Reasoner):
+class DeepsetEFOReasoner(Reasoner):
     """
     In this class, we estimate the lifted embeddings of existential variables
     by GNN.
     ? how to handle negation query ?
+    The computation order is a unrolling DFS order
     """
     def __init__(self,
                  nbp: NeuralBinaryPredicate,
@@ -631,3 +635,114 @@ class GNNEFOReasoner(Reasoner):
             batch_truth_value = self.nbp.score2truth_value(batch_score)
             # batch_truth_value = batch_score  # CQD's trick for 2i, 3i
             return batch_truth_value
+
+def complex_vector_multiplication(cva0,cva1,cvb0,cvb1):
+    assert (cva0.size(-1) == cva1.size(-1) == cvb0.size(-1) == cvb1.size(-1))
+    return torch.cat([
+        cva0 * cvb0 - cva1 * cvb1,
+        cva0 * cvb1 + cva1 * cvb0
+    ], 1)
+
+
+class LogicalGNNLayerComplEx(nn.Module):
+    """
+    data format [batch, dim]
+    """
+    def __init__(self, emb_dim, hidden_dim, eps):
+        super(LogicalGNNLayerComplEx, self).__init__()
+        self.emb_dim = emb_dim
+        self.feature_dim = 2 * emb_dim # for complex
+
+        self.hidden_dim = hidden_dim
+        self.hidden_feature_dim = 2 * hidden_dim
+
+        self.eps = eps
+
+        self.existential_token = nn.Parameter(
+            torch.rand((1, self.feature_dim)))
+        self.layer_to_terms_embs_dict = {}
+        self.mlp = nn.Sequential(
+            nn.Linear(self.feature_dim, self.hidden_feature_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_feature_dim, self.hidden_feature_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_feature_dim, self.feature_dim),
+        )
+
+    def massage_passing(self, input):
+        predicates, term_emb_dict, pred_emb_dict = input
+
+        term_collect_embs_dict = defaultdict(list)
+        for pred in predicates:
+            head, tail = pred.head, pred.tail
+            head_emb = term_emb_dict[head.name]
+            head_embs = head_emb[..., :self.emb_dim], head_emb[..., self.emb_dim:]
+            tail_emb = term_emb_dict[tail.name]
+            tail_embs = tail_emb[..., :self.emb_dim], tail_emb[..., self.emb_dim:]
+            pred_emb = pred_emb_dict[pred.name]
+            pred_embs = pred_emb[..., :self.emb_dim], pred_emb[..., self.emb_dim:]
+            sign = -1 if pred.skolem_negation else 1
+
+            term_collect_embs_dict[head].append(
+                sign * complex_vector_multiplication(
+                    tail_embs[0], tail_embs[1], pred_embs[0], -pred_embs[1])
+            )
+            term_collect_embs_dict[tail].append(
+                sign * complex_vector_multiplication(
+                    head_embs[0], head_embs[1], pred_embs[0], pred_embs[1])
+            )
+        return term_collect_embs_dict
+
+    def forward(self, predicates, init_term_emb_dict, pred_emb_dict):
+        term_collect_embs_dict = self.message_passing(
+            predicates, init_term_emb_dict, pred_emb_dict
+        )
+        term_agg_emb_dict = {
+            t: sum(collect_emb_list) + init_term_emb_dict[t] * self.eps
+            for t, collect_emb_list in term_collect_embs_dict
+        }
+        out_term_emb_dict = {
+            t: self.mlp(aggemb)
+            for t, aggemb in term_agg_emb_dict
+        }
+        return predicates, out_term_emb_dict, pred_emb_dict
+
+class GNNEFOReasonerComplEx(Reasoner):
+    def __init__(self,
+                 nbp: NeuralBinaryPredicate,
+                 tnorm: Tnorm,
+                 num_gnn_layers: int=2,
+                 gnn_hidden_dim = 512):
+        self.nbp = nbp
+        self.tnorm: Tnorm = tnorm
+        self.logical_gnn_layer = LogicalGNNLayerComplEx(nbp.embedding_dim,
+                                                        gnn_hidden_dim,
+                                                        eps=0.1)
+
+        # formula dependent
+        self.formula: FirstOrderFormula = None
+        self.term_local_emb_dict = {}
+        self._last_ground_free_var_emb = {}
+
+    def initialize_with_formula(self, formula):
+        self.formula = formula
+        self.term_local_emb_dict = {term_name: None
+                                    for term_name in self.formula.term_dict}
+        self._last_ground_free_var_emb = {}
+        self.visited_set = set()
+
+    def set_local_embedding(self, key, tensor):
+        self.term_local_emb_dict[key] = tensor
+
+    def term_initialized(self, term_name):
+        return self.formula.has_term_grounded_entity_id_list(term_name) \
+                    or self.term_local_emb_dict[term_name] is not None
+
+    def initialize_local_embedding(self):
+        for term_name in self.formula.term_dict:
+            if self.formula.has_term_grounded_entity_id_list(term_name):
+                entity_id = self.formula.get_term_grounded_entity_id_list(term_name)
+                emb = self.nbp.get_entity_emb(entity_id)
+                self.set_local_embedding(term_name, emb)
+            elif self.formula.term_dict[term_name].is_existential:
+                self.gnn

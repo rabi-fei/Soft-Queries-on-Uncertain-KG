@@ -81,11 +81,47 @@ python3 lifted_embedding_estimation_with_truth_value.py --embedding_dim 1000 --d
 
 
 python3 lifted_embedding_estimation_with_truth_value.py \
-    --task_folder data/FB15k-237-q2b \
+    --task_folder data/FB15k-237-betae \
+    --embedding_dim 1000 \
+    --device cuda:2 \
+    --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
+    --learning_rate 1e-5 \
+    --batch_size 64 \
+    --reasoner gnn \
+    --output_dir log/train_GNN_reasoner_betae
+
+
+python3 lifted_embedding_estimation_with_truth_value.py \
+    --task_folder data/FB15k-237-betae \
+    --embedding_dim 1000 \
+    --device cuda:1 \
+    --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
+    --learning_rate 1e-5 \
+    --batch_size 64 \
+    --reasoner gnn \
+    --margin 10 \
+    --output_dir log/train_GNN_reasoner_betae_margin=10
+
+
+python3 lifted_embedding_estimation_with_truth_value.py \
+    --task_folder data/FB15k-237-betae \
     --embedding_dim 1000 \
     --device cuda:0 \
     --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
-    --learning_rate 1e-4 \
+    --learning_rate 1e-5 \
     --batch_size 64 \
     --reasoner gnn \
-    --output_dir log/train_GNN_reasoner_q2b
+    --margin 100 \
+    --output_dir log/train_GNN_reasoner_betae_margin=100
+
+
+python3 lifted_embedding_estimation_with_truth_value.py \
+    --task_folder data/FB15k-237-betae \
+    --embedding_dim 1000 \
+    --device cuda:3 \
+    --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
+    --learning_rate 1e-5 \
+    --batch_size 64 \
+    --reasoner gnn \
+    --margin 0.1 \
+    --output_dir log/train_GNN_reasoner_betae_margin=01

@@ -78,6 +78,8 @@ def parse_lstr_to_lformula(lstr: str) -> Formula:
     if lstr[0] == '!':
         sub_lstr = _lstr[1:]
         sub_formula = parse_lstr_to_lformula(sub_lstr)
+        if sub_formula.op == 'pred':
+            sub_formula.skolem_negation = True
         return Negation(formula=sub_formula)
 
     binary_operator_index = -1

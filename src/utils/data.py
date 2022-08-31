@@ -164,6 +164,7 @@ class QueryAnsweringSeqDataLoader:
                 if lstr not in target_lstr:
                     continue
             if not qaa:
+                print(lstr, "query type is empty, continue")
                 continue
             self.lstr_iterator[lstr] = DataLoader(qaa[:size_limit],
                 collate_fn=QAACollator(lstr),

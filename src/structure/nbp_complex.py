@@ -16,7 +16,7 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
 
         self.num_entities = num_entities
         self.num_relations = num_relations
-        self.rank = embedding_dim
+        self.embedding_dim = embedding_dim
         self.device = device
         self.margin = margin
 
@@ -50,8 +50,8 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         return torch.sigmoid(score / self.margin)
 
     def estimate_tail_emb(self, head_emb, rel_emb):
-        lhs = head_emb[:, :self.rank], head_emb[:, self.rank:]
-        rel = rel_emb[:, :self.rank], rel_emb[:, self.rank:]
+        lhs = head_emb[:, :self.embedding_dim], head_emb[:, self.embedding_dim:]
+        rel = rel_emb[:, :self.embedding_dim], rel_emb[:, self.embedding_dim:]
 
         return torch.cat([
             lhs[0] * rel[0] - lhs[1] * rel[1],
@@ -59,8 +59,8 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ], 1)
 
     def estimate_head_emb(self, tail_emb, rel_emb):
-        rhs = tail_emb[:, :self.rank], tail_emb[:, self.rank:]
-        rel = rel_emb[:, :self.rank], -rel_emb[:, self.rank:]
+        rhs = tail_emb[:, :self.embedding_dim], tail_emb[:, self.embedding_dim:]
+        rel = rel_emb[:, :self.embedding_dim], -rel_emb[:, self.embedding_dim:]
 
         return torch.cat([
             rhs[0] * rel[0] - rhs[1] * rel[1],
@@ -68,8 +68,8 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ], 1)
 
     def estiamte_rel_emb(self, head_emb, tail_emb):
-        lhs = head_emb[:, :self.rank], head_emb[:, self.rank:]
-        rhs = tail_emb[:, :self.rank], tail_emb[:, self.rank:]
+        lhs = head_emb[:, :self.embedding_dim], head_emb[:, self.embedding_dim:]
+        rhs = tail_emb[:, :self.embedding_dim], tail_emb[:, self.embedding_dim:]
 
         return torch.cat([
             lhs[0] * rhs[0] + lhs[1] * rhs[1],
@@ -119,8 +119,8 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
     def get_queries(self, queries: torch.Tensor):
         lhs = self.embeddings[0](queries[:, 0])
         rel = self.embeddings[1](queries[:, 1])
-        lhs = lhs[:, :self.rank], lhs[:, self.rank:]
-        rel = rel[:, :self.rank], rel[:, self.rank:]
+        lhs = lhs[:, :self.embedding_dim], lhs[:, self.embedding_dim:]
+        rel = rel[:, :self.embedding_dim], rel[:, self.embedding_dim:]
 
         return torch.cat([
             lhs[0] * rel[0] - lhs[1] * rel[1],
@@ -128,10 +128,10 @@ class ComplEx(NeuralBinaryPredicate, nn.Module):
         ], 1)
 
     def get_random_entity_embed(self, batch_size):
-        return torch.normal(0, 1e-3, (batch_size, self.rank * 2), device=self.device, requires_grad=True)
+        return torch.normal(0, 1e-3, (batch_size, self.embedding_dim * 2), device=self.device, requires_grad=True)
 
     def regularization(self, emb):
-        r, i = emb[..., :self.rank], emb[..., self.rank:]
+        r, i = emb[..., :self.embedding_dim], emb[..., self.embedding_dim:]
         norm_vec =  torch.sqrt(r ** 2 + i ** 2)
         reg = torch.sum(norm_vec ** 3, -1)
         return reg

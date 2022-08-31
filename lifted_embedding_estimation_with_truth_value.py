@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
-from src.pipeline.reasoning_machine import GradientEFOReasoner, GNNEFOReasoner, Reasoner, RelationalDeepSet
+from src.pipeline.reasoning_machine import GradientEFOReasoner, DeepsetEFOReasoner, Reasoner, RelationalDeepSet
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
@@ -86,7 +86,7 @@ parser.add_argument("--eval_queries", action='append')
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
 parser.add_argument("--embedding_dim", type=int, default=500)
-parser.add_argument("--margin", type=float, default=50)
+parser.add_argument("--margin", type=float, default=1)
 parser.add_argument("--p", type=int, default=1)
 parser.add_argument("--checkpoint_path")
 
@@ -95,8 +95,8 @@ parser.add_argument("--optimizer", type=str, default='AdamW')
 parser.add_argument("--epoch", type=int, default=100)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--batch_size_eval", type=int, default=32)
-parser.add_argument("--learning_rate", type=float, default=1e-4)
-parser.add_argument("--weight_decay", type=float, default=1e-2)
+parser.add_argument("--learning_rate", type=float, default=1e-5)
+parser.add_argument("--weight_decay", type=float, default=1e-4)
 parser.add_argument("--objective", type=str, default='none')
 parser.add_argument("--noisy_sample_size", type=int, default=32)
 parser.add_argument("--metric_margin", type=float, default=50)
@@ -112,10 +112,6 @@ parser.add_argument("--reasoning_steps_eval", type=int, default=1000)
 # reasoner = gnn
 parser.add_argument("--num_layers", type=int, default=1)
 
-# first order logic with equality
-parser.add_argument("--sigma", type=float, default=1000)
-parser.add_argument("--v", type=float, default=.9)
-
 
 def train_lifted_estimator(
         desc: str,
@@ -125,7 +121,7 @@ def train_lifted_estimator(
         optimizer: torch.optim.Optimizer,
         args):
 
-    sigma = args.sigma
+    sigma = args.margin
     trajectory = defaultdict(list)
 
     fof_list = train_dataloader.get_fof_list()
@@ -135,6 +131,7 @@ def train_lifted_estimator(
     for ifof, fof in t:
         ####################
         loss = 0
+        metric_step = {}
 
         reasoner.initialize_with_formula(fof)
 
@@ -158,38 +155,50 @@ def train_lifted_estimator(
         batch_neg_emb = nbp.get_entity_emb(
             torch.cat(neg_answers_list, dim=1))
 
+        if fof.quantifier_rank == 0:
+            pos_tv = reasoner.evaluate_truth_values({'f': batch_pos_emb})
+            pos_nll = - torch.log(pos_tv + 1e-10).mean()
+            neg_tv = reasoner.evaluate_truth_values({'f': batch_neg_emb})
+            neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
+            loss += pos_nll + neg_nll
+            metric_step['pos_tv'] = pos_tv.mean().item()
+            metric_step['pos_nll'] = pos_nll.item()
+            metric_step['neg_tv'] = neg_tv.mean().item()
+            metric_step['neg_nll'] = neg_nll.item()
+        else:
+            metric_step['pos_tv'] = np.nan
+            metric_step['pos_nll'] = np.nan
+            metric_step['neg_tv'] = np.nan
+            metric_step['neg_nll'] = np.nan
+
         pos_score = nbp.entity_pair_scoring(batch_pos_emb, batch_fvar_emb) / sigma
-        nce_loss = F.logsigmoid(pos_score)
         neg_score = nbp.entity_pair_scoring(batch_neg_emb, batch_fvar_emb) / sigma
-        nce_loss -= F.logsigmoid(neg_score)
+        contrastive_ratio = torch.exp(pos_score) / (torch.exp(pos_score) + torch.sum(torch.exp(neg_score), dim=0))
+        contrastive_nll = - torch.log(contrastive_ratio + 1e-10).mean()
 
         lifted_tv = reasoner.evaluate_truth_values()
         lifted_nll = - torch.log(lifted_tv + 1e-10).mean()
 
-        pos_tv = reasoner.batch_evaluate_truth_values(
-            {'f': batch_pos_emb}, fof.formula)
-        pos_nll = - torch.log(pos_tv + 1e-10).mean()
-        neg_tv = reasoner.batch_evaluate_truth_values(
-            {'f': batch_neg_emb}, fof.formula)
-        neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
+        loss += lifted_nll + contrastive_nll
 
-        loss = lifted_nll + pos_nll + neg_nll + nce_loss
+        # eids, rids = fof.get_all_gounded_ids()
+        # e_emb = nbp.get_entity_emb(eids)
+        # r_emb = nbp.get_relation_emb(rids)
+        # reg = nbp.regularization(e_emb).sum() + nbp.regularization(r_emb).sum()
+        # metric_step['reg'] = reg.item()
+
+        # loss += reg * 0.005
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
         ####################
-        metric_step = {}
-        metric_step['pos_dist'] = pos_score.mean().item()
-        metric_step['pos_nll'] = pos_nll.mean().item()
-        metric_step['neg_dist'] = neg_score.mean().item()
-        metric_step['neg_nll'] = neg_nll.mean().item()
         metric_step['lifted_tv'] = lifted_tv.mean().item()
         metric_step['lifted_nll'] = lifted_nll.mean().item()
-        metric_step['pos_tv'] = pos_tv.mean().item()
-        metric_step['neg_tv'] = neg_tv.mean().item()
-        metric_step['marginal_regression_loss'] = marginal_regression_loss.mean().item()
+        metric_step['pos_score'] = pos_score.mean().item()
+        metric_step['neg_score'] = neg_score.mean().item()
+        metric_step['contrastive_nll'] = contrastive_nll.mean().item()
         metric_step['loss'] = loss.item()
 
         postfix = {'step': ifof+1}
@@ -591,10 +600,11 @@ if __name__ == "__main__":
     if args.reasoner == 'gnn':
         ent_dim = nbp.entity_embedding.size(1)
         rel_dim = nbp.relation_embedding.size(1)
-        rds = RelationalDeepSet(ent_dim, rel_dim, num_layer=3).to(nbp.device)
-        reasoner = GNNEFOReasoner(nbp, tnorm, rds)
+        rds = RelationalDeepSet(ent_dim, rel_dim, num_layers=args.num_layers).to(nbp.device)
+        reasoner = DeepsetEFOReasoner(nbp, tnorm, rds)
         optimizer = getattr(torch.optim, args.optimizer)(
-            list(rds.parameters()) + list(nbp.parameters()),
+            # list(rds.parameters()) + list(nbp.parameters()),
+            list(rds.parameters()),
             lr=args.learning_rate,
             weight_decay=args.weight_decay)
 
@@ -633,14 +643,14 @@ if __name__ == "__main__":
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
         target_lstr=eval_queries,
-        batch_size=1000,
+        batch_size=2000,
         shuffle=False,
         num_workers=0)
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
         target_lstr=eval_queries,
-        batch_size=1000,
+        batch_size=2000,
         shuffle=False,
         num_workers=0)
     print("dataset prepared")

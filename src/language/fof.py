@@ -499,3 +499,16 @@ class FirstOrderFormula:
     @property
     def num_predicates(self):
         return self.formula.num_predicates
+
+    @property
+    def quantifier_rank(self):
+        return len(self.existential_variable_dict) + len(self.universal_variable_dict)
+
+    def get_all_gounded_ids(self):
+        entity_ids = []
+        for term_name in self.term_grounded_entity_id_dict:
+            entity_ids += self.term_grounded_entity_id_dict[term_name]
+        relation_ids = []
+        for pred_name in self.pred_grounded_relation_id_dict:
+            relation_ids += self.pred_grounded_relation_id_dict[pred_name]
+        return entity_ids, relation_ids

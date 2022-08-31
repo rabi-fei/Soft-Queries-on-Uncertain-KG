@@ -195,6 +195,9 @@ def convert_beta_folder(beta_folder, output_folder):
     for key, labeled_type, lstr in zip(
         beta_types_key_list, labeled_beta_types_list, beta_lstr_list):
         samples = list(train_queries[key])
+        if len(samples) == 0:
+            print(key, lstr, "not found in the dataset")
+            continue
 
         lformula = parse_lstr_to_lformula(lstr)
         folf = fof.FirstOrderFormula(lformula)
@@ -209,6 +212,7 @@ def convert_beta_folder(beta_folder, output_folder):
                 (d, answer, [])
             )
     with open(osp.join(output_folder, 'train-qaa.json'), 'wt') as f:
+        print([k for k in lstr_xy_dict])
         json.dump(lstr_xy_dict, f)
 
     # valid queries
@@ -279,12 +283,12 @@ def convert_beta_folder(beta_folder, output_folder):
 
 
 if __name__ == "__main__":
-    beta_folder = "/home/zwanggc/Meta-Learning-for-EFO1/data/{}"
+    beta_folder = "/data/zwanggc/FirstOrderQueryEstimation/data/{}"
     output_folder = "./data/{}"
 
     for dataset in [
-        "FB15k-237-betae",
-        "FB15k-betae", "NELL-betae"]:
+        "FB15k-237-q2b",
+        "FB15k-q2b", "NELL-q2b"]:
         print(dataset)
         convert_beta_folder(beta_folder.format(dataset),
                             output_folder.format(dataset))
