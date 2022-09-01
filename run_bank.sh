@@ -125,3 +125,6 @@ python3 lifted_embedding_estimation_with_truth_value.py \
     --reasoner gnn \
     --margin 0.1 \
     --output_dir log/train_GNN_reasoner_betae_margin=01
+
+
+lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k-237-betae --embedding_dim 1000 --device cuda:3 --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt --learning_rate 1e-3 --batch_size 4096 --reasoner gnn --margin 1 --output_dir log/debug_gnn_reasoner

@@ -1,26 +1,30 @@
 import argparse
-from collections import defaultdict
+import json
 import logging
 import os
 import os.path as osp
-import json
 import random
+from collections import defaultdict
 
+import numpy as np
 import torch
+import torch.nn.functional as F
 import tqdm
 from torch import nn
-import torch.nn.functional as F
-import numpy as np
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
-from src.pipeline.reasoning_machine import GradientEFOReasoner, DeepsetEFOReasoner, Reasoner, RelationalDeepSet
+from src.pipeline.reasoning_machine import (DeepsetEFOReasoner,
+                                            GradientEFOReasoner, Reasoner,
+                                            GNNEFOReasonerComplEx,
+                                            RelationalDeepSet,
+                                            LogicalGNNLayerComplEx)
+from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.structure import get_nbp_class
-from src.utils.data import (QueryAnsweringSeqDataLoader, QueryAnsweringMixDataLoader,
-                            TrainRandomSentencePairDataLoader,
-                            RaggedBatch)
+from src.utils.data import (QueryAnsweringMixDataLoader,
+                            QueryAnsweringSeqDataLoader, RaggedBatch,
+                            TrainRandomSentencePairDataLoader)
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -102,8 +106,8 @@ parser.add_argument("--noisy_sample_size", type=int, default=32)
 parser.add_argument("--metric_margin", type=float, default=50)
 
 # reasoning machine
-parser.add_argument("--reasoner", type=str, default=['gnn', 'gradient'])
-parser.add_argument("--tnorm", type=str, default=['product', 'godel'])
+parser.add_argument("--reasoner", type=str, default='gnn', choices=['gnn', 'gradient'])
+parser.add_argument("--tnorm", type=str, default='product', choices=['product', 'godel'])
 # reasoner = gradient
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
 parser.add_argument("--reasoning_steps", type=int, default=1000)
@@ -126,6 +130,7 @@ def train_lifted_estimator(
 
     fof_list = train_dataloader.get_fof_list()
     t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
+    loss_func = nn.CrossEntropyLoss()
 
     # for each batch
     for ifof, fof in t:
@@ -138,7 +143,12 @@ def train_lifted_estimator(
         # this procedure is somewhat of low efficiency
         # ? can we change it to batch implementation ?
 
+        reasoner.estimate_lifted_embeddings()
         batch_fvar_emb = reasoner.get_embedding('f')
+
+        lifted_tv = reasoner.evaluate_truth_values()
+        lifted_nll = - torch.log(lifted_tv + 1e-10).mean()
+        loss += lifted_nll
 
         pos_1answer_list = []
         neg_answers_list = []
@@ -155,31 +165,31 @@ def train_lifted_estimator(
         batch_neg_emb = nbp.get_entity_emb(
             torch.cat(neg_answers_list, dim=1))
 
-        if fof.quantifier_rank == 0:
-            pos_tv = reasoner.evaluate_truth_values({'f': batch_pos_emb})
-            pos_nll = - torch.log(pos_tv + 1e-10).mean()
-            neg_tv = reasoner.evaluate_truth_values({'f': batch_neg_emb})
-            neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
-            loss += pos_nll + neg_nll
-            metric_step['pos_tv'] = pos_tv.mean().item()
-            metric_step['pos_nll'] = pos_nll.item()
-            metric_step['neg_tv'] = neg_tv.mean().item()
-            metric_step['neg_nll'] = neg_nll.item()
-        else:
-            metric_step['pos_tv'] = np.nan
-            metric_step['pos_nll'] = np.nan
-            metric_step['neg_tv'] = np.nan
-            metric_step['neg_nll'] = np.nan
+        # if fof.quantifier_rank == 1:
+        pos_tv = reasoner.evaluate_truth_values({'f': batch_pos_emb})
+        pos_nll = - torch.log(pos_tv + 1e-10).mean()
+        neg_tv = reasoner.evaluate_truth_values({'f': batch_neg_emb})
+        neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
+        loss += pos_nll + neg_nll
+        metric_step['pos_tv'] = pos_tv.mean().item()
+        metric_step['pos_nll'] = pos_nll.item()
+        metric_step['neg_tv'] = neg_tv.mean().item()
+        metric_step['neg_nll'] = neg_nll.item()
+        # else:
+        #     metric_step['pos_tv'] = np.nan
+        #     metric_step['pos_nll'] = np.nan
+        #     metric_step['neg_tv'] = np.nan
+        #     metric_step['neg_nll'] = np.nan
 
-        pos_score = nbp.entity_pair_scoring(batch_pos_emb, batch_fvar_emb) / sigma
-        neg_score = nbp.entity_pair_scoring(batch_neg_emb, batch_fvar_emb) / sigma
-        contrastive_ratio = torch.exp(pos_score) / (torch.exp(pos_score) + torch.sum(torch.exp(neg_score), dim=0))
-        contrastive_nll = - torch.log(contrastive_ratio + 1e-10).mean()
+        pos_score = torch.exp(torch.cosine_similarity(
+            batch_pos_emb, batch_fvar_emb, dim=-1) / sigma)
+        neg_score = torch.exp(torch.cosine_similarity(
+            batch_neg_emb, batch_fvar_emb, dim=-1) / sigma)
+        contrastive_nll = - torch.log(
+            pos_score / (pos_score + neg_score.sum(0))
+        ).mean()
 
-        lifted_tv = reasoner.evaluate_truth_values()
-        lifted_nll = - torch.log(lifted_tv + 1e-10).mean()
-
-        loss += lifted_nll + contrastive_nll
+        loss += contrastive_nll
 
         # eids, rids = fof.get_all_gounded_ids()
         # e_emb = nbp.get_entity_emb(eids)
@@ -597,16 +607,31 @@ if __name__ == "__main__":
     else:
         tnorm = GodelTNorm
 
-    if args.reasoner == 'gnn':
+    if args.reasoner == 'deepset':
         ent_dim = nbp.entity_embedding.size(1)
         rel_dim = nbp.relation_embedding.size(1)
-        rds = RelationalDeepSet(ent_dim, rel_dim, num_layers=args.num_layers).to(nbp.device)
+        rds = RelationalDeepSet(
+            ent_dim, rel_dim, num_layers=args.num_layers).to(nbp.device)
         reasoner = DeepsetEFOReasoner(nbp, tnorm, rds)
         optimizer = getattr(torch.optim, args.optimizer)(
             # list(rds.parameters()) + list(nbp.parameters()),
             list(rds.parameters()),
             lr=args.learning_rate,
             weight_decay=args.weight_decay)
+
+    elif args.reasoner == 'gnn':
+        lgnn_layer = LogicalGNNLayerComplEx(nbp.embedding_dim,
+                                            hidden_dim=4096,
+                                            num_entities=nbp.num_entities,
+                                            eps=0.1)
+        lgnn_layer.to(nbp.device)
+        reasoner = GNNEFOReasonerComplEx(nbp, tnorm, lgnn_layer)
+        optimizer = getattr(torch.optim, args.optimizer)(
+            # list(lgnn_layer.parameters()) + list(nbp.parameters()),
+            list(lgnn_layer.parameters()),
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 30, 0.1)
 
     elif args.reasoner == 'gradient':
         reasoner = GradientEFOReasoner(nbp, tnorm,
@@ -643,14 +668,14 @@ if __name__ == "__main__":
     valid_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'valid-qaa.json'),
         target_lstr=eval_queries,
-        batch_size=2000,
+        batch_size=5000,
         shuffle=False,
         num_workers=0)
 
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
         target_lstr=eval_queries,
-        batch_size=2000,
+        batch_size=5000,
         shuffle=False,
         num_workers=0)
     print("dataset prepared")
@@ -668,12 +693,13 @@ if __name__ == "__main__":
     for e in range(args.epoch):
         train_lifted_estimator(f"learn truth value noisy",
                                train_dataloader, nbp, reasoner, optimizer, args)
-
-        evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
-                                                     valid_dataloader, nbp, reasoner)
-        evaluate_by_nearest_search(f"NN evaluate validate set {e+1}",
-                                   valid_dataloader, nbp, reasoner)
-        evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
-                                                     test_dataloader, nbp, reasoner)
-        evaluate_by_nearest_search(f"NN evaluate test set {e+1}",
-                                   test_dataloader, nbp, reasoner)
+        scheduler.step()
+        if (e+1) % 5 == 0:
+            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
+                                                        valid_dataloader, nbp, reasoner)
+            evaluate_by_nearest_search(f"NN evaluate validate set {e+1}",
+                                    valid_dataloader, nbp, reasoner)
+            evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
+                                                        test_dataloader, nbp, reasoner)
+            evaluate_by_nearest_search(f"NN evaluate test set {e+1}",
+                                    test_dataloader, nbp, reasoner)

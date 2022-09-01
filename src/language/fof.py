@@ -502,7 +502,9 @@ class FirstOrderFormula:
 
     @property
     def quantifier_rank(self):
-        return len(self.existential_variable_dict) + len(self.universal_variable_dict)
+        return len(self.existential_variable_dict) \
+               + len(self.universal_variable_dict) \
+               + len(self.free_variable_dict)
 
     def get_all_gounded_ids(self):
         entity_ids = []
