@@ -145,14 +145,12 @@ class GradientEFOReasoner(Reasoner):
                  tnorm: Tnorm,
                  reasoning_rate,
                  reasoning_steps,
-                 reasoning_optimizer,
-                 sigma):
+                 reasoning_optimizer):
         self.reasoning_rate = reasoning_rate
         self.reasoning_steps = reasoning_steps
         self.reasoinng_optimizer = reasoning_optimizer
         self.nbp = nbp
         self.tnorm: Tnorm = tnorm
-        self.sigma = sigma
 
         # determined during the optimization
         self.formula: FirstOrderFormula = None
