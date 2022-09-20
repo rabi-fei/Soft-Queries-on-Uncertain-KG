@@ -89,14 +89,16 @@ parser.add_argument("--eval_queries", action='append')
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
-parser.add_argument("--embedding_dim", type=int, default=500)
-parser.add_argument("--margin", type=float, default=1)
+parser.add_argument("--embedding_dim", type=int, default=1000)
+parser.add_argument("--margin", type=float, default=0.1)
+parser.add_argument("--scale", type=float, default=0.1)
 parser.add_argument("--p", type=int, default=1)
 parser.add_argument("--checkpoint_path")
 
 # optimization for the entire process
 parser.add_argument("--optimizer", type=str, default='AdamW')
 parser.add_argument("--epoch", type=int, default=100)
+parser.add_argument("--pretrain_epoch", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--batch_size_eval", type=int, default=8)
 # need justification
@@ -107,8 +109,10 @@ parser.add_argument("--weight_decay", type=float, default=1e-4)
 parser.add_argument("--noisy_sample_size", type=int, default=32)
 # contrastive learning temperature
 parser.add_argument("--temp", type=float, default=0.1)
+# neg sampling distance margin
+parser.add_argument("--dist_margin", type=float, default=10.0)
 
-parser.add_argument("--objective", type=str, default='tv', choices=['tv', 'nn'])
+parser.add_argument("--objective", type=str, default='lift-contrastive_cosine-neg_sample_dist')
 # reasoning machine
 parser.add_argument("--reasoner", type=str, default='gnn', choices=['gnn', 'deepset', 'gradient'])
 parser.add_argument("--tnorm", type=str, default='product', choices=['product', 'godel'])
@@ -133,7 +137,6 @@ def train_neural_binary_predicate(
 
     fof_list = train_dataloader.get_fof_list()
     t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
-    loss_func = nn.CrossEntropyLoss()
 
     # for each batch
     for ifof, fof in t:
@@ -211,7 +214,6 @@ def train_lifted_estimator(
 
     fof_list = train_dataloader.get_fof_list()
     t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
-    loss_func = nn.CrossEntropyLoss()
 
     # for each batch
     for ifof, fof in t:
@@ -227,11 +229,11 @@ def train_lifted_estimator(
         reasoner.estimate_lifted_embeddings()
         batch_fvar_emb = reasoner.get_embedding('f')
 
-        if args.objective == 'nn':
+        if 'lift' in args.objective:
             lifted_tv = reasoner.evaluate_truth_values()
             lifted_nll = - torch.log(lifted_tv + 1e-10).mean()
             metric_step['lifted_tv'] = lifted_tv.mean().item()
-            metric_step['lifted_nll'] = lifted_nll.mean().item()
+            metric_step['lifted_tv_nll'] = lifted_nll.mean().item()
             loss += lifted_nll
 
         pos_1answer_list = []
@@ -254,30 +256,38 @@ def train_lifted_estimator(
         neg_tv = reasoner.evaluate_truth_values({'f': batch_neg_emb})
         neg_nll = - torch.log(1 - neg_tv + 1e-10).mean()
         metric_step['pos_tv'] = pos_tv.mean().item()
-        metric_step['pos_nll'] = pos_nll.item()
+        metric_step['pos_tv_nll'] = pos_nll.item()
         metric_step['neg_tv'] = neg_tv.mean().item()
-        metric_step['neg_nll'] = neg_nll.item()
+        metric_step['neg_tv_nll'] = neg_nll.item()
         loss += pos_nll + neg_nll
 
-        if args.objective == 'nn':
-            # pos_score = torch.exp(torch.cosine_similarity(
-            #     batch_pos_emb, batch_fvar_emb, dim=-1) / T)
-            # neg_score = torch.exp(torch.cosine_similarity(
-            #     batch_neg_emb, batch_fvar_emb, dim=-1) / T)
-
-            pos_score = torch.exp(5 - torch.mean(
-                (batch_pos_emb - batch_fvar_emb)**2, dim=-1) / T)
-            neg_score = torch.exp(5 - torch.mean(
-                (batch_neg_emb - batch_fvar_emb)**2, dim=-1)/ T)
-
+        if 'contrastive_cosine' in args.objective:
+            contrastive_pos_score = torch.exp(torch.cosine_similarity(
+                batch_pos_emb, batch_fvar_emb, dim=-1) / T)
+            contrastive_neg_score = torch.exp(torch.cosine_similarity(
+                batch_neg_emb, batch_fvar_emb, dim=-1) / T)
 
             contrastive_nll = - torch.log(
-                pos_score / (pos_score + neg_score.sum(0))
+                contrastive_pos_score / (contrastive_pos_score + contrastive_neg_score.sum(0))
             ).mean()
-            metric_step['pos_score'] = pos_score.mean().item()
-            metric_step['neg_score'] = neg_score.mean().item()
-            metric_step['contrastive_nll'] = contrastive_nll.mean().item()
+            metric_step['contrastive_pos_score'] = contrastive_pos_score.mean().item()
+            metric_step['contrastive_neg_score'] = contrastive_neg_score.mean().item()
+            metric_step['contrastive_nll'] = contrastive_nll.item()
             loss += contrastive_nll
+
+        if 'neg_sample_dist' in args.objective:
+            pos_sample_score = torch.sigmoid(
+                args.dist_margin - torch.sum((batch_pos_emb-batch_fvar_emb)**2, dim=-1) / T)
+            neg_sample_score = torch.sigmoid(
+                args.dist_margin - torch.sum((batch_neg_emb-batch_fvar_emb)**2, dim=-1) / T)
+
+            neg_sample_nll = - torch.log(pos_sample_score + 1e-10).mean() \
+                             - torch.log(1 - neg_sample_score + 1e-10).mean()
+
+            metric_step['pos_sample_score'] = pos_sample_score.mean().item()
+            metric_step['neg_sample_score'] = neg_sample_score.mean().item()
+            metric_step['neg_sample_nll'] = neg_sample_nll.item()
+            loss += neg_sample_nll
 
         optimizer.zero_grad()
         loss.backward()
@@ -340,23 +350,23 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
         pure_hard_ans_rank -= num_skipped_answers.reshape(
             pure_hard_ans_rank.shape)
 
-        rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().numpy()
-        hit1 = (pure_hard_ans_rank < 1).detach().cpu().numpy()
-        hit3 = (pure_hard_ans_rank < 3).detach().cpu().numpy()
-        hit10 = (pure_hard_ans_rank < 10).detach().cpu().numpy()
+        rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().float().numpy()
+        hit1 = (pure_hard_ans_rank < 1).detach().cpu().float().numpy()
+        hit3 = (pure_hard_ans_rank < 3).detach().cpu().float().numpy()
+        hit10 = (pure_hard_ans_rank < 10).detach().cpu().float().numpy()
 
-        metric['mrr'].append(rr.mean())
-        metric['hit1'].append(hit1.mean())
-        metric['hit3'].append(hit3.mean())
-        metric['hit10'].append(hit10.mean())
+        metric['mrr'].extend(rr.ravel().tolist())
+        metric['hit1'].extend(hit1.ravel().tolist())
+        metric['hit3'].extend(hit3.ravel().tolist())
+        metric['hit10'].extend(hit10.ravel().tolist())
 
 
 def evaluate_by_search_emb_then_rank_truth_value(
+        e,
         desc,
         dataloader,
         nbp: NeuralBinaryPredicate,
-        reasoner: Reasoner,
-        target_lstr=[]):
+        reasoner: Reasoner):
     """
     Evaluation used in CQD, two phase computation
     1. continuous optimiation of embeddings quant. + free
@@ -365,14 +375,7 @@ def evaluate_by_search_emb_then_rank_truth_value(
     # first level key: lstr
     # second level key: metric name
     metric = defaultdict(lambda: defaultdict(list))
-    _fofs = dataloader.get_fof_list()
-    # filter the desired lstr
-    fofs = []
-    for f in _fofs:
-        if (((len(target_lstr) == 0) or
-                (f.lstr in target_lstr))
-                and len(f.free_variable_dict) == 1):
-            fofs.append(f)
+    fofs = dataloader.get_fof_list()
 
     # conduct reasoning
     with tqdm.tqdm(fofs, desc=desc) as t:
@@ -386,14 +389,10 @@ def evaluate_by_search_emb_then_rank_truth_value(
                     },
                     batch_size_eval=args.batch_size_eval)  # [num_entities batch_size]
             ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
-            # batch_entity_rankings = nbp.get_all_entity_rankings(batch_est_emb)
-            # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
             ranked_entity_ids = torch.argsort(
                 ranking_score, dim=-1, descending=True)
-            # entity_rankings[entity_id] = {rankings} of the entity
             batch_entity_rankings = torch.argsort(
                 ranked_entity_ids, dim=-1, descending=False)
-            # [batch_size, num_entities]
             compute_evaluation_scores(
                 fof, batch_entity_rankings, metric[fof.lstr])
 
@@ -411,15 +410,17 @@ def evaluate_by_search_emb_then_rank_truth_value(
                     postfix[name + '_hit3'] = sum_metric[name]['hit3']
             t.set_postfix(postfix)
 
+    sum_metric['epoch'] = e
     logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
     torch.cuda.empty_cache()
 
 
 def evaluate_by_nearest_search(
-        desc, dataloader,
+        e,
+        desc,
+        dataloader,
         nbp: NeuralBinaryPredicate,
-        reasoner: GradientEFOReasoner,
-        target_lstr=[]):
+        reasoner: GradientEFOReasoner):
     """
     Evaluation used by nearest neighbor
     1. continuous optimiation of embeddings quant. + free
@@ -428,14 +429,7 @@ def evaluate_by_nearest_search(
     # first level key: lstr
     # second level key: metric name
     metric = defaultdict(lambda: defaultdict(list))
-    _fofs = dataloader.get_fof_list()
-    # filter the desired lstr
-    fofs = []
-    for f in _fofs:
-        if (((len(target_lstr) == 0) or
-                (f.lstr in target_lstr))
-                and len(f.free_variable_dict) == 1):
-            fofs.append(f)
+    fofs = dataloader.get_fof_list()
 
     # conduct reasoning
     with tqdm.tqdm(fofs, desc=desc) as t:
@@ -462,6 +456,7 @@ def evaluate_by_nearest_search(
             if name in sum_metric:
                 postfix[name + '_hit3'] = sum_metric[name]['hit3']
 
+    sum_metric['epoch'] = e
     logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
     torch.cuda.empty_cache()
 
@@ -529,8 +524,8 @@ if __name__ == "__main__":
         lgnn_layer.to(nbp.device)
         reasoner = GNNEFOReasonerComplEx(nbp, tnorm, lgnn_layer)
         optimizer_estimator = getattr(torch.optim, args.optimizer)(
-            list(lgnn_layer.parameters()) + list(nbp._entity_embedding.parameters()),
-            # list(lgnn_layer.parameters()),
+            # list(lgnn_layer.parameters()) + list(nbp._entity_embedding.parameters()),
+            list(lgnn_layer.parameters()),
             lr=args.learning_rate,
             weight_decay=args.weight_decay)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer_estimator, 50, 0.1)
@@ -574,40 +569,73 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=0)
 
+    # valid_1p_dataloader = QueryAnsweringSeqDataLoader(
+    #     osp.join(args.task_folder, 'valid-qaa.json'),
+    #     target_lstr=['r1(s1,f)'],
+    #     batch_size=5000,
+    #     shuffle=False,
+    #     num_workers=0)
+
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
         target_lstr=eval_queries,
         batch_size=5000,
         shuffle=False,
         num_workers=0)
+
+    # test_1p_dataloader = QueryAnsweringSeqDataLoader(
+    #     osp.join(args.task_folder, 'test-qaa.json'),
+    #     target_lstr=['r1(s1,f)'],
+    #     batch_size=5000,
+    #     shuffle=False,
+    #     num_workers=0)
     print("dataset prepared")
 
-    # evaluation before the training
-    # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set 0",
-    #                                              valid_dataloader, nbp, reasoner)
-    # evaluate_by_nearest_search(f"NN evaluate validate set 0",
-    #                            valid_dataloader, nbp, reasoner)
-    # evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set 0",
-    #                                              test_dataloader, nbp, reasoner)
-    # evaluate_by_nearest_search(f"NN evaluate test set 0",
-    #                            test_dataloader, nbp, reasoner)
+    evaluate_by_search_emb_then_rank_truth_value(
+        -1, f"CQD evaluate validate set",
+        valid_dataloader, nbp,
+        reasoner=GradientEFOReasoner(nbp, tnorm,
+                                     reasoning_rate=args.reasoning_rate,
+                                     reasoning_steps=args.reasoning_steps,
+                                     reasoning_optimizer=args.reasoning_optimizer)
+        )
+    evaluate_by_search_emb_then_rank_truth_value(
+        -1, f"CQD evaluate test set",
+        valid_dataloader, nbp,
+        reasoner=GradientEFOReasoner(nbp, tnorm,
+                                     reasoning_rate=args.reasoning_rate,
+                                     reasoning_steps=args.reasoning_steps,
+                                     reasoning_optimizer=args.reasoning_optimizer)
+        )
 
-    for e in range(20):
+    for e in range(args.pretrain_epoch):
         train_neural_binary_predicate(f"epoch {e}",
                                       train_dataloader, nbp, reasoner, optimizer_nbp, args)
+        evaluate_by_search_emb_then_rank_truth_value(
+            e, f"CQD evaluate validate set pretrain {e+1}",
+            valid_dataloader, nbp,
+            reasoner=GradientEFOReasoner(nbp, tnorm,
+                                         reasoning_rate=args.reasoning_rate,
+                                         reasoning_steps=args.reasoning_steps,
+                                         reasoning_optimizer=args.reasoning_optimizer))
+        evaluate_by_search_emb_then_rank_truth_value(
+            e, f"CQD evaluate test set pretrain {e+1}",
+            test_dataloader, nbp,
+            reasoner=GradientEFOReasoner(nbp, tnorm,
+                                         reasoning_rate=args.reasoning_rate,
+                                         reasoning_steps=args.reasoning_steps,
+                                         reasoning_optimizer=args.reasoning_optimizer))
 
     for e in range(args.epoch):
         train_lifted_estimator(f"epoch {e}",
                                train_dataloader, nbp, reasoner, optimizer_estimator, args)
         scheduler.step()
         if (e+1) % 5 == 0:
-            if args.objective == 'tv':
-                evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate validate set {e+1}",
-                                                            valid_dataloader, nbp, reasoner)
-                evaluate_by_search_emb_then_rank_truth_value(f"CQD evaluate test set {e+1}",
-                                                            test_dataloader, nbp, reasoner)
-            if args.objective == 'nn':
-                evaluate_by_nearest_search(f"NN evaluate validate set {e+1}",
-                                           valid_dataloader, nbp, reasoner)
-                evaluate_by_nearest_search(f"NN evaluate test set {e+1}",
-                                           test_dataloader, nbp, reasoner)
+            evaluate_by_search_emb_then_rank_truth_value(e, f"tv evaluate validate set epoch {e+1}",
+                                                         valid_dataloader, nbp, reasoner)
+            evaluate_by_search_emb_then_rank_truth_value(e, f"tv evaluate test set epoch {e+1}",
+                                                         test_dataloader, nbp, reasoner)
+            evaluate_by_nearest_search(e, f"NN evaluate validate set epoch {e+1}",
+                                       valid_dataloader, nbp, reasoner)
+            evaluate_by_nearest_search(e, f"NN evaluate test set epoch {e+1}",
+                                       test_dataloader, nbp, reasoner)

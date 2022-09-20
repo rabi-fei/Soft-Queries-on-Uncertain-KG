@@ -181,7 +181,7 @@ class GradientEFOReasoner(Reasoner):
 
         self._last_ground_free_var_emb = {}
 
-        self.estimate_lifted_embeddings(free_var_treatment='lifted')
+        # self.estimate_lifted_embeddings()
 
     def set_local_embedding(self, key, tensor):
         self.term_local_emb_dict[key] = tensor.detach().clone()
@@ -210,7 +210,7 @@ class GradientEFOReasoner(Reasoner):
 
                 if self.term_initialized(head_name) and not self.term_initialized(tail_name):
                     head_emb = self.get_embedding(
-                        head_name, free_var_treatment='existential'
+                        head_name
                     )
                     rel_emb = self.nbp.get_relation_emb(
                         self.formula.pred_grounded_relation_id_dict[rel_name]
@@ -221,7 +221,7 @@ class GradientEFOReasoner(Reasoner):
 
                 elif not self.term_initialized(head_name) and self.term_initialized(tail_name):
                     tail_emb = self.get_embedding(
-                        head_name, free_var_treatment='existential'
+                        head_name
                     )
                     rel_emb = self.nbp.get_relation_emb(
                         self.formula.pred_grounded_relation_id_dict[rel_name]
@@ -267,43 +267,17 @@ class GradientEFOReasoner(Reasoner):
                 - groundbarycenter: ground the barycenter of the answer set
                 - groundbarycenter: ground the barycenter of the answer set
         """
-        if self.formula.term_dict[term_name].state == Term.FREE:
-            # when it comes to the treatment of free variables, we dont consider batch
-            if free_var_treatment.lower() == 'all':
-                return self.nbp.entity_embedding.unsqueeze(-2)
-            elif free_var_treatment.lower() == 'lift':
-                return self.term_local_emb_dict[term_name]
-            elif 'groundans' in free_var_treatment.lower():
-                k = int(free_var_treatment.split(':')[-1])
-                entity_id_list = [sample(eans[term_name], k=k)[0]
-                                  for eans in self.formula.easy_answer_list[begin_index: end_index]]
-                entity_id_tensor = torch.tensor(entity_id_list).T
-                emb = self.nbp.get_entity_emb(entity_id_tensor)
-                # emb = emb.unsqueeze(-2)
-                self._last_ground_free_var_emb[term_name] = emb
-                return emb
-            elif 'groundnoisy' in free_var_treatment.lower():
-                k = int(free_var_treatment.split(':')[-1])
-                entity_id_list = torch.randint(low=0,
-                                               high=self.nbp.num_entities,
-                                               size=(k, end_index - begin_index))
-                emb = self.nbp.get_entity_emb(entity_id_list)
-                self._last_ground_free_var_emb[term_name] = emb
-                return emb
-            else:
-                raise NotImplementedError
+        if self.formula.has_term_grounded_entity_id_list(term_name):
+            emb = self.nbp.get_entity_emb(
+                self.formula.get_term_grounded_entity_id_list(term_name))
+        elif self.term_local_emb_dict[term_name] is not None:
+            emb = self.term_local_emb_dict[term_name]
         else:
-            if self.formula.has_term_grounded_entity_id_list(term_name):
-                emb = self.nbp.get_entity_emb(
-                    self.formula.get_term_grounded_entity_id_list(term_name))
-            elif self.term_local_emb_dict[term_name] is not None:
-                emb = self.term_local_emb_dict[term_name]
-            else:
-                raise KeyError("Embedding does not found")
-            # when it is not free variable, we consider the batch
-            if begin_index is not None and end_index is not None:
-                emb = emb[begin_index: end_index]
-            return emb
+            raise KeyError("Embedding does not found")
+        # when it is not free variable, we consider the batch
+        if begin_index is not None and end_index is not None:
+            emb = emb[begin_index: end_index]
+        return emb
 
     # def evaluate_truth_values(self, free_var_treatment, batch_size_eval=None):
     #     """
@@ -398,9 +372,6 @@ class GradientEFOReasoner(Reasoner):
             emb = self.get_embedding(term_name)
             evar_local_emb.append(emb)
 
-        # TODO logic needs to be optimized
-        # if len(evar_local_emb) == 0 or (len(evar_local_emb) == 1 and free_var_treatment.lower() == 'lift'):
-            # return []
 
         OptimizerClass = getattr(torch.optim, self.reasoinng_optimizer)
         optim: torch.optim.Optimizer = OptimizerClass(
@@ -409,7 +380,7 @@ class GradientEFOReasoner(Reasoner):
         traj = [(-1, -1, -1)]
 
         for i in range(self.reasoning_steps):
-            tv = self.evaluate_truth_values(free_var_treatment='lift')
+            tv = self.evaluate_truth_values()
                 # conjunction when equality
                 # for term_name in self.formula.free_variable_dict:
                 #     free_var_local_emb = self.get_embedding(

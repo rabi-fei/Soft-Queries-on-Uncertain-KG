@@ -7,7 +7,7 @@ class NeuralBinaryPredicate:
     num_entities: int
     num_relations: int
     device: torch.device
-    margin: float
+    scale: float
 
     @abstractmethod
     def embedding_score(self, head_emb, rel_emb, tail_emb):
@@ -82,9 +82,28 @@ class NeuralBinaryPredicate:
         tail_emb = self._entity_embedding(tail_id_ten)
         return self.embedding_score(head_emb, rel_emb, tail_emb)
 
-    @abstractmethod
-    def get_all_entity_rankings(self, batch_embedding_input):
-        pass
+    def get_all_entity_rankings(self, batch_embedding_input, eval_batch_size=16):
+        batch_size = batch_embedding_input.size(0)
+        begin = 0
+        entity_ranking_list = []
+        for begin in range(0, batch_size, eval_batch_size):
+            end = begin + eval_batch_size
+            eval_batch_embedding_input = batch_embedding_input[begin: end]
+            eval_batch_embedding_input = eval_batch_embedding_input.unsqueeze(-2)
+            # batch_size, all_candidates
+            # ranking score should be the higher the better
+            # ranking_score[entity_id] = the score of {entity_id}
+            # ranking_score = - torch.norm(eval_batch_embedding_input - self.entity_embedding, dim=-1)
+            # ranking_score = self.entity_pair_scoring(eval_batch_embedding_input, self.entity_embedding)
+            ranking_score = torch.cosine_similarity(eval_batch_embedding_input, self.entity_embedding, dim=-1)
+            # ranked_entity_ids[ranking] = {entity_id} at the {rankings}-th place
+            ranked_entity_ids = torch.argsort(ranking_score, dim=-1, descending=True)
+            # entity_rankings[entity_id] = {rankings} of the entity
+            entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
+            entity_ranking_list.append(entity_rankings)
+
+        batch_entity_rankings = torch.cat(entity_ranking_list, dim=0)
+        return batch_entity_rankings
 
     @abstractmethod
     def entity_pair_scoring(self, emb1, emb2):
