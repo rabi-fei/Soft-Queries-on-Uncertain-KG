@@ -99,7 +99,7 @@ parser.add_argument("--checkpoint_path")
 parser.add_argument("--optimizer", type=str, default='AdamW')
 parser.add_argument("--epoch", type=int, default=100)
 parser.add_argument("--pretrain_epoch", type=int, default=0)
-parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--batch_size", type=int, default=4096)
 parser.add_argument("--batch_size_eval", type=int, default=8)
 # need justification
 parser.add_argument("--learning_rate", type=float, default=1e-4)
@@ -112,7 +112,7 @@ parser.add_argument("--temp", type=float, default=0.1)
 # neg sampling distance margin
 parser.add_argument("--dist_margin", type=float, default=10.0)
 
-parser.add_argument("--objective", type=str, default='lift-contrastive_cosine-neg_sample_dist')
+parser.add_argument("--objective", type=str, default='lift-contrastive_cosine')
 # reasoning machine
 parser.add_argument("--reasoner", type=str, default='gnn', choices=['gnn', 'deepset', 'gradient'])
 parser.add_argument("--tnorm", type=str, default='product', choices=['product', 'godel'])
