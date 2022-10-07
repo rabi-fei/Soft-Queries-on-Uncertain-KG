@@ -840,8 +840,10 @@ class LogicalGNNLayerRotatE(nn.Module):
             tail_emb = term_emb_dict[tail_name]
             tail_embs = tail_emb[..., :self.emb_dim], tail_emb[..., self.emb_dim:]
             pred_emb = pred_emb_dict[pred.name]
-            pred_embs = pred_emb[..., :self.emb_dim], pred_emb[..., self.emb_dim:]
+            phase_relation = pred_emb/(self.embedding_range.item()/pi)
 
+            
+            
             sign = -1 if pred.skolem_negation else 1
             term_collect_embs_dict[head_name].append(
                 sign * complex_vector_multiplication(

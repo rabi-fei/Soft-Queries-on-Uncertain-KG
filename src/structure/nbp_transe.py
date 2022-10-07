@@ -11,7 +11,7 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         self.num_relations = num_relations
         self.embedding_dim = embedding_dim
         self.device = device
-        self.margin = margin
+        self.scale = margin
         self.scale = scale
         self.p = p
         self._entity_embedding = nn.Embedding(num_entities, embedding_dim, max_norm=1)
@@ -30,7 +30,7 @@ class TransE(nn.Module, NeuralBinaryPredicate):
         return - torch.norm(head_emb + rel_emb - tail_emb, p=self.p, dim=-1)
 
     def score2truth_value(self, score):
-        return torch.sigmoid(self.margin + score * self.scale)
+        return torch.sigmoid(self.scale + score * self.scale)
 
     def estimate_tail_emb(self, head_emb, rel_emb):
         return head_emb + rel_emb
