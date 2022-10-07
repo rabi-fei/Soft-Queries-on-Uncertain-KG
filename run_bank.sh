@@ -144,3 +144,54 @@ python3 lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k
 python3 lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k-237-betae --embedding_dim 1000 --device cuda:3 --learning_rate 1e-4 --batch_size 4096 --reasoner gnn --margin 1 --output_dir log/train_gnn_reasoner_temp=0_1_margin=0_1_without_pretrain --objective nn --temp 0.1 --margin 0.1
 
 python3 lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k-237-betae --embedding_dim 1000 --device cuda:0 --learning_rate 1e-4 --batch_size 1024 --reasoner gnn --margin 1 --output_dir log/train_gnn_reasoner_temp=33_margin=0_1_without_pretrain --objective nn --temp 33 --margin 0.1
+
+ngc batch run \
+ --name "ml-model.kgtvr-complex1000-default-fb15k-237" \
+ --priority NORMAL \
+ --preempt RUNONCE \
+ --min-timeslice 0s \
+ --total-runtime 0s \
+ --ace nv-us-west-2 \
+ --instance dgx1v.16g.1.norm \
+ --result /results \
+ --image "nvidia/pytorch:22.05-py3" \
+ --org nvidian \
+ --team sae \
+ --workspace 8sr-vg7_STK0qaux2KusFA:/workspace:RW \
+ --order 50
+ --commandline "cd /workspace/Truth-Value-Reasoning-on-Knowledge-Graphs && python3 lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k-237-betae --checkpoint_path pretrain/complex/FB15k-237-model-rank-1000-epoch-100-1602508358.pt --device cuda:0 --output_dir log/fb15k-237/pretrain_complex1000-defaults"
+
+
+ngc batch run \
+ --name "ml-model.kgtvr-complex1000-default-fb15k" \
+ --priority NORMAL \
+ --preempt RUNONCE \
+ --min-timeslice 0s \
+ --total-runtime 0s \
+ --ace nv-us-west-2 \
+ --instance dgx1v.16g.1.norm \
+ --result /results \
+ --image "nvidia/pytorch:22.05-py3" \
+ --org nvidian \
+ --team sae \
+ --workspace 8sr-vg7_STK0qaux2KusFA:/workspace:RW \
+ --order 50
+ --commandline "cd /workspace/Truth-Value-Reasoning-on-Knowledge-Graphs && python3 lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k-237-betae --checkpoint_path pretrain/complex/FB15k-model-rank-1000-epoch-100-1602520745.pt --device cuda:0 --output_dir log/fb15k/pretrain_complex1000-defaults"
+
+
+
+ngc batch run \
+ --name "ml-model.kgtvr-complex1000-default-nell" \
+ --priority NORMAL \
+ --preempt RUNONCE \
+ --min-timeslice 0s \
+ --total-runtime 0s \
+ --ace nv-us-west-2 \
+ --instance dgx1v.16g.1.norm \
+ --result /results \
+ --image "nvidia/pytorch:22.05-py3" \
+ --org nvidian \
+ --team sae \
+ --workspace 8sr-vg7_STK0qaux2KusFA:/workspace:RW \
+ --order 50
+ --commandline "cd /workspace/Truth-Value-Reasoning-on-Knowledge-Graphs && python3 lifted_embedding_estimation_with_truth_value.py --task_folder data/FB15k-237-betae --checkpoint_path pretrain/complex/NELL-model-rank-1000-epoch-100-1602499096.pt --device cuda:0 --output_dir log/nell/pretrain_complex1000-defaults"

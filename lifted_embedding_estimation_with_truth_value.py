@@ -400,6 +400,20 @@ def train_lifted_estimator_v2(
             metric_step['neg_sample_nll'] = neg_sample_nll.mean().item()
             
 
+        if 'neg_sample_dist' in args.objective:
+            pos_sample_score = torch.sigmoid(
+                args.dist_margin - torch.sum((batch_pos_emb-batch_fvar_emb)**2, dim=-1) / T)
+            neg_sample_score = torch.sigmoid(
+                args.dist_margin - torch.sum((batch_neg_emb-batch_fvar_emb)**2, dim=-1) / T)
+
+            neg_sample_nll = - torch.log(pos_sample_score + 1e-10).mean() \
+                             - torch.log(1 - neg_sample_score + 1e-10).mean()
+
+            metric_step['pos_sample_score'] = pos_sample_score.mean().item()
+            metric_step['neg_sample_score'] = neg_sample_score.mean().item()
+            metric_step['neg_sample_nll'] = neg_sample_nll.item()
+            loss += neg_sample_nll
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -699,6 +713,13 @@ if __name__ == "__main__":
         shuffle=False,
         num_workers=0)
 
+    # valid_1p_dataloader = QueryAnsweringSeqDataLoader(
+    #     osp.join(args.task_folder, 'valid-qaa.json'),
+    #     target_lstr=['r1(s1,f)'],
+    #     batch_size=5000,
+    #     shuffle=False,
+    #     num_workers=0)
+
     test_dataloader = QueryAnsweringSeqDataLoader(
         osp.join(args.task_folder, 'test-qaa.json'),
         target_lstr=eval_queries,
@@ -727,7 +748,6 @@ if __name__ == "__main__":
                                         reasoning_optimizer=args.reasoning_optimizer)
             )
         exit()
-
     for e in range(args.epoch):
         train_lifted_estimator_v2(f"epoch {e}",
                                   train_dataloader, nbp, reasoner, optimizer_estimator, args)
