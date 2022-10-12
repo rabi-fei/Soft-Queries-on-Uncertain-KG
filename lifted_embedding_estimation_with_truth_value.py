@@ -662,7 +662,7 @@ if __name__ == "__main__":
         print(lgnn_layer)
         if args.finetune_kge:
             optimizer_estimator = getattr(torch.optim, args.optimizer)(
-                list(lgnn_layer.parameters()) + list(nbp._entity_embedding.parameters()),
+                list(lgnn_layer.parameters()) + list(nbp.parameters()),
 #                 list(lgnn_layer.parameters()),
                 lr=args.learning_rate,
                 weight_decay=args.weight_decay)        
