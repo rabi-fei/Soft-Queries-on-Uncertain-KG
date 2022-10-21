@@ -12,7 +12,7 @@ from random import sample
 import torch
 from torch import nn
 from src.language.fof import (BinaryPredicate, Conjunction, Disjunction,
-                              FirstOrderFormula, Negation, Term)
+                              ConjunctiveFormula, Negation, Term)
 from src.language.tnorm import Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 
@@ -25,7 +25,7 @@ class Reasoner:
         pass
 
     @abstractmethod
-    def initialize_with_formula(self, formula:FirstOrderFormula):
+    def initialize_with_formula(self, formula:ConjunctiveFormula):
         pass
 
     @abstractmethod
@@ -153,7 +153,7 @@ class GradientEFOReasoner(Reasoner):
         self.tnorm: Tnorm = tnorm
 
         # determined during the optimization
-        self.formula: FirstOrderFormula = None
+        self.formula: ConjunctiveFormula = None
         self.term_local_emb_dict = {}
         self._last_ground_free_var_emb = {}
 
@@ -173,7 +173,7 @@ class GradientEFOReasoner(Reasoner):
                  sigma)
         return rm
 
-    def initialize_with_formula(self, formula: FirstOrderFormula):
+    def initialize_with_formula(self, formula: ConjunctiveFormula):
         self.formula = formula
         self.term_local_emb_dict = {
             term_name: None
@@ -512,14 +512,14 @@ class DeepsetEFOReasoner(Reasoner):
         self.relational_deepset = relational_deepset
 
         # formula dependent
-        self.formula: FirstOrderFormula = None
+        self.formula: ConjunctiveFormula = None
         self.term_local_emb_dict = {}
         self._last_ground_free_var_emb = {}
         self.visited_set = set()
 
     @classmethod
     def create(cls,
-               formula: FirstOrderFormula,
+               formula: ConjunctiveFormula,
                nbp: NeuralBinaryPredicate,
                tnorm: Tnorm,
                reasoning_rate,
@@ -536,7 +536,7 @@ class DeepsetEFOReasoner(Reasoner):
         return rm
 
     def initialize_with_formula(self, formula):
-        self.formula: FirstOrderFormula = formula
+        self.formula: ConjunctiveFormula = formula
         self.term_local_emb_dict = {term_name: None
                                     for term_name in self.formula.term_dict}
         self._last_ground_free_var_emb = {}
@@ -962,7 +962,7 @@ class GNNEFOReasonerComplEx(Reasoner):
         self.nbp = nbp
         self.tnorm: Tnorm = tnorm
         self.lgnn_layer = lgnn_layer        # formula dependent
-        self.formula: FirstOrderFormula = None
+        self.formula: ConjunctiveFormula = None
         self.depth_shift = depth_shift
         self.term_local_emb_dict = {}
         self._last_ground_free_var_emb = {}

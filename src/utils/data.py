@@ -7,8 +7,9 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
-from src.language.fof import FirstOrderFormula
-from src.language.grammar import parse_lstr_to_lformula
+from src.language.fof import ConjunctiveFormula, DisjunctiveFormula, Disjunction
+from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, DNF_Transformation, \
+    concate_iu_chains
 
 
 def _iter_triple_from_tsv(triple_file, to_int, check_size):
@@ -91,9 +92,9 @@ class QAACollatorWithNoisySentencePair:
 
     def __call__(self, batch_input):
         lformula = parse_lstr_to_lformula(self.lstr)
-        positive_fof = FirstOrderFormula(lformula)
+        positive_fof = ConjunctiveFormula(lformula)
         lformula = parse_lstr_to_lformula(self.lstr)
-        negative_fof = FirstOrderFormula(lformula)
+        negative_fof = ConjunctiveFormula(lformula)
 
         for rsdict, easy_ans, _ in batch_input:
             positive_fof.append_qa_instances_as_sentence(rsdict,
@@ -120,9 +121,9 @@ class QAACollatorWithNoisyAnswers:
 
     def __call__(self, batch_input):
         lformula = parse_lstr_to_lformula(self.lstr)
-        positive_fof = FirstOrderFormula(lformula)
+        positive_fof = ConjunctiveFormula(lformula)
         lformula = parse_lstr_to_lformula(self.lstr)
-        negative_fof = FirstOrderFormula(lformula)
+        negative_fof = ConjunctiveFormula(lformula)
 
         for rsdict, easy_ans, _ in batch_input:
             positive_fof.append_qa_instances(rsdict,
@@ -140,13 +141,32 @@ class QAACollatorWithNoisyAnswers:
 
         return positive_fof, negative_fof
 
+
 class QAACollator:
     def __init__(self, lstr):
         self.lstr = lstr
 
     def __call__(self, batch_input):
         lformula = parse_lstr_to_lformula(self.lstr)
-        fof = FirstOrderFormula(lformula)
+        fof = ConjunctiveFormula(lformula)
+        for rsdict, easy_ans, hard_ans in batch_input:
+            fof.append_qa_instances(rsdict, easy_ans, hard_ans)
+        return fof
+
+
+class QAACollator_v2:
+    def __init__(self, lstr):
+        self.lstr = lstr
+
+    def __call__(self, batch_input):
+        lformula = parse_lstr_to_lformula_v2(self.lstr)
+        lformula = concate_iu_chains(lformula)
+        if isinstance(lformula, Disjunction):
+            formula_list = lformula.formulas
+        else:
+            formula_list = [lformula]
+        conjunctive_formulas_list = [ConjunctiveFormula(formula) for formula in formula_list]
+        fof = DisjunctiveFormula(conjunctive_formulas_list)
         for rsdict, easy_ans, hard_ans in batch_input:
             fof.append_qa_instances(rsdict, easy_ans, hard_ans)
         return fof
@@ -178,6 +198,36 @@ class QueryAnsweringSeqDataLoader:
                 batch_buffer.append(batch)
         shuffle(batch_buffer)
         return batch_buffer
+
+
+class QueryAnsweringSeqDataLoader_v2:
+    def __init__(self, qaafile, target_lstr=None, size_limit=-1, **dataloader_kwargs) -> None:
+        self.dataloader_kwargs = dataloader_kwargs
+
+        with open(qaafile, 'rt') as f:
+            self.lstr_qaa = json.load(f)
+
+        self.lstr_iterator = {}
+        for lstr, qaa in self.lstr_qaa.items():
+            if target_lstr:
+                if lstr not in target_lstr:
+                    continue
+            if not qaa:
+                print(lstr, "query type is empty, continue")
+                continue
+            self.lstr_iterator[lstr] = DataLoader(qaa[:size_limit],
+                collate_fn=QAACollator_v2(lstr),
+                **self.dataloader_kwargs)
+
+
+    def get_fof_list(self):
+        batch_buffer = []
+        for _, iterator in self.lstr_iterator.items():
+            for batch in iterator:
+                batch_buffer.append(batch)
+        shuffle(batch_buffer)
+        return batch_buffer
+
 
 class QueryAnsweringMixDataLoader:
     def __init__(self, qaafile, **dataloader_kwargs) -> None:

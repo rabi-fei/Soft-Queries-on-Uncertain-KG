@@ -200,7 +200,7 @@ def convert_beta_folder(beta_folder, output_folder):
             continue
 
         lformula = parse_lstr_to_lformula(lstr)
-        folf = fof.FirstOrderFormula(lformula)
+        folf = fof.ConjunctiveFormula(lformula)
         print(folf.formula.lstr())
 
         lstr_xy_dict[lstr] = []
@@ -231,7 +231,7 @@ def convert_beta_folder(beta_folder, output_folder):
         samples = list(valid_queries[key])
 
         lformula = parse_lstr_to_lformula(lstr)
-        folf = fof.FirstOrderFormula(lformula)
+        folf = fof.ConjunctiveFormula(lformula)
         print(folf.formula.lstr())
 
         lstr_xy_dict[lstr] = []
@@ -264,7 +264,7 @@ def convert_beta_folder(beta_folder, output_folder):
         samples = list(test_queries[key])
 
         lformula = parse_lstr_to_lformula(lstr)
-        folf = fof.FirstOrderFormula(lformula)
+        folf = fof.ConjunctiveFormula(lformula)
         print(folf.formula.lstr())
 
         lstr_xy_dict[lstr] = []

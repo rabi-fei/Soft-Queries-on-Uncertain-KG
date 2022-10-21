@@ -280,7 +280,7 @@ class Negation(Connective):
         return self.formula.num_predicates
 
 
-class Conjunction(Connective):
+class Conjunction(Connective):  # TODO: Don't those formulas require a sorting of its sub formulas?
     op = 'conj'
 
     def __init__(self, formulas: List[Formula]) -> None:
@@ -356,9 +356,9 @@ class Disjunction(Connective):
         return sum([formula.num_predicates for formula in self.formulas])
 
 
-class FirstOrderFormula:
+class ConjunctiveFormula:
     """
-    The first order formula
+    The first order formula is supposed to be without disjunction, since we always utilize the DNF normal form.
     it also includes information about the quantifiers
 
     self.formula is parsed from the formula and provide the operator tree for
@@ -514,3 +514,88 @@ class FirstOrderFormula:
         for pred_name in self.pred_grounded_relation_id_dict:
             relation_ids += self.pred_grounded_relation_id_dict[pred_name]
         return entity_ids, relation_ids
+
+    def sample_query(self):
+        pass
+
+
+class DisjunctiveFormula:
+    """
+    We suppose the DNF formula is here, thus, no GNN computation is needed, all we need is gather the answer in each
+    subformula.
+    """
+    def __init__(self,
+                 formula_list: List[ConjunctiveFormula]) -> None:
+        self.formula_list: List[ConjunctiveFormula] = formula_list
+        self.easy_answer_list = []
+        self.hard_answer_list = []
+        self.noisy_answer_list = []
+        self.grounding_dict_list = []
+
+        # update internal storage
+        self.predicate_dict: Dict[str, BinaryPredicate] = {}
+        self.pred_grounded_relation_id_dict: Dict[str, List] = {}
+
+        self.term_dict: Dict[str, Term] = {}
+        self.term_grounded_entity_id_dict: Dict[str, List] = {}
+
+        self.term_name2predicate_name_dict: Dict[str, str] = defaultdict(list)
+        # run initialization
+        self._init_query()
+
+    def _init_query(self):
+        easy_ans_set, hard_ans_set, noisy_ans_set = set(), set(), set()
+        for formula in self.formula_list:
+            easy_ans_set.update(set(formula.easy_answer_list))
+            hard_ans_set.update(set(formula.hard_answer_list))
+            noisy_ans_set.update(set(formula.noisy_answer_list))
+        self.easy_answer_list, self.hard_answer_list, self.noisy_answer_list = list(easy_ans_set), list(hard_ans_set), \
+                                                                               list(noisy_ans_set)
+
+        self.predicate_dict = {}
+        for sub_formula in self.formula_list:
+            self.predicate_dict.update(sub_formula.formula.get_predicates())
+        self.pred_grounded_relation_id_dict = {
+            name: predicate.relation_id_list
+            for name, predicate in self.predicate_dict.items()
+        }
+
+        self.term_dict = {}
+        for _, pred in self.predicate_dict.items():
+            for t in pred.get_terms():
+                self.term_dict[t.name] = t
+
+        self.term_grounded_entity_id_dict = {name: term.entity_id_list
+                                             for name, term in self.term_dict.items()}
+
+        for pred_name, predicate in self.predicate_dict.items():
+            head, tail = predicate.get_terms()
+            self.term_name2predicate_name_dict[head.name].append(pred_name)
+            self.term_name2predicate_name_dict[tail.name].append(pred_name)
+
+    def append_relation_and_symbols(self, append_dict):
+        for sub_formula in self.formula_list:
+            sub_append_dict = {key: append_dict[key] for key in append_dict if key in sub_formula.term_dict or
+                               key in sub_formula.predicate_dict}
+            sub_formula.append_relation_and_symbols(sub_append_dict)
+
+    def append_qa_instances(self,
+                            append_dict,
+                            easy_answers=[],
+                            hard_answers=[],
+                            noisy_answer=[]):
+        self.append_relation_and_symbols(append_dict)
+        self.easy_answer_list.append(easy_answers)
+        self.hard_answer_list.append(hard_answers)
+        self.noisy_answer_list.append(noisy_answer)
+
+    @property
+    def lstr(self):
+        if len(self.formula_list) == 1:
+            lstr = self.formula_list[0].lstr
+        else:
+            lstr = "|".join(f"({f.lstr})" for f in self.formula_list)
+        return lstr
+
+
+
