@@ -26,8 +26,8 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.utils.data import (QueryAnsweringMixDataLoader,
-                            QueryAnsweringSeqDataLoader, RaggedBatch,
-                            TrainRandomSentencePairDataLoader)
+                            QueryAnsweringSeqDataLoader, TrainRandomSentencePairDataLoader)
+from src.utils.data_util import RaggedBatch
 
 torch.autograd.set_detect_anomaly(True)
 

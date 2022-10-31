@@ -3,8 +3,9 @@ import os
 import os.path as osp
 
 from src.structure.knowledge_graph import KnowledgeGraph
+from src.utils.data_util import iter_triple_from_tsv
 from src.structure.knowledge_graph_index import KGIndex
-from src.utils.data import iter_triple_from_tsv
+
 
 def convert_kg_flder(input_folder, output_folder):
     print("processing KG index")
