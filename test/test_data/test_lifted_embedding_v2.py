@@ -27,8 +27,8 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
-                            QueryAnsweringSeqDataLoader_v2, RaggedBatch,
-                            TrainRandomSentencePairDataLoader)
+                            QueryAnsweringSeqDataLoader_v2, TrainRandomSentencePairDataLoader)
+from src.utils.data_util import RaggedBatch
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -80,8 +80,8 @@ negation_query = [
 parser = argparse.ArgumentParser()
 
 # base environment
-parser.add_argument("--device", type=str, default="cpu")
-parser.add_argument("--output_dir", type=str, default='log')
+parser.add_argument("--device", type=str, default="cuda:0")
+parser.add_argument("--output_dir", type=str, default='log/noisy_lr_1e-4_bs_1024')
 
 # input task folder, defines knowledge graph, index, and formulas
 parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
@@ -119,7 +119,7 @@ parser.add_argument("--temp", type=float, default=0.1)
 # neg sampling distance margin
 parser.add_argument("--dist_margin", type=float, default=10.0)
 
-parser.add_argument("--objective", type=str, default='lift-contrastive_cosine')
+parser.add_argument("--objective", type=str, default='noisy')
 parser.add_argument("--contrastive_coef", type=float, default=1.0)
 parser.add_argument("--lift_coef", type=float, default=1.0)
 parser.add_argument("--tv_coef", type=float, default=1.0)

@@ -3,7 +3,7 @@ import random
 import torch
 
 from .abstract_learner import Learner
-from ..utils.data import tensorize_batch_entities
+from ..utils.data_util import tensorize_batch_entities
 from ..structure import KnowledgeGraph, NeuralBinaryPredicate
 
 

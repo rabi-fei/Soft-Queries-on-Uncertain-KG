@@ -1,6 +1,6 @@
 import json
 
-from ..utils.data import iter_triple_from_tsv
+from ..utils.data_util import iter_triple_from_tsv
 
 
 class KGIndex:

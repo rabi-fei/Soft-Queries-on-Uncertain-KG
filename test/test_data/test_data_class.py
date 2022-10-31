@@ -13,27 +13,25 @@ import tqdm
 from torch import nn
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
-from src.pipeline.reasoning_machine import (DeepsetEFOReasoner,
-                                            GradientEFOReasoner, Reasoner,
-                                            GNNEFOReasonerComplEx,
-                                            RelationalDeepSet,
-                                            VanillaGNNLayerComplEx,
-                                            LogicalGNNLayerComplEx)
 from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
-from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.utils.data import (QueryAnsweringMixDataLoader,
-                            QueryAnsweringSeqDataLoader, RaggedBatch,
-                            TrainRandomSentencePairDataLoader)
+from src.utils.data_util import RaggedBatch
 from lifted_embedding_estimation_with_truth_value import name2lstr
 from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, DNF_Transformation, concate_iu_chains
 from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
+from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
+                            QueryAnsweringSeqDataLoader_v2,
+                            TrainRandomSentencePairDataLoader)
+
 
 data_folder = 'data/FB15k-237-betae'
 train_queries = list(name2lstr.values())
-batch_size = 10
+query_2in = 'r1(s1,f)&!r2(s2,f)'
+query_2i = 'r1(s1,f)&r2(s2,f)'
+batch_size = 20
 
+"""
 for name, lstr in name2lstr.items():
     formula = parse_lstr_to_lformula(lstr)
     formula_v2 = parse_lstr_to_lformula_v2(lstr)
@@ -57,6 +55,46 @@ for name, lstr in name2lstr.items():
     print(fof.lstr)
     lstr2name[fof.lstr] = name
 print(lstr2name)
+"""
+
+train_dataloader = QueryAnsweringSeqDataLoader_v2(
+    osp.join(data_folder, 'train-qaa.json'),
+    # size_limit=args.batch_size * 1,
+    target_lstr=['r1(s1,e1)&!r2(e1,f)&r3(s2,f)'],
+    batch_size=batch_size,
+    shuffle=False,
+    num_workers=0)
+kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
+train_kg = KnowledgeGraph.create(
+        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        kgindex=kgidx)
+
+
+
+def test_deterministic_query(data_loader, kg: KnowledgeGraph):
+    fofs = data_loader.get_fof_list_no_shuffle()
+    with tqdm.tqdm(fofs) as t:
+        for fof in t:
+            for i, pos_answer_dict in enumerate(fof.easy_answer_list):
+                easy_answer = pos_answer_dict['f']
+                search_answer = fof.deterministic_query(i, kg)
+                assert set(
+                    easy_answer) == search_answer, f"We show the fof is {i, fof.lstr, fof.easy_answer_list[i], fof.pred_grounded_relation_id_dict, fof.term_grounded_entity_id_dict}, while the search ans is {search_answer}"
+            print(f'batch formula of {fof.lstr} verified')
+
+
+def test_sample_query(given_lstr):
+    lformula = parse_lstr_to_lformula_v2(given_lstr)
+    lformula = concate_iu_chains(lformula)
+    if isinstance(lformula, Disjunction):
+        formula_list = lformula.formulas
+    else:
+        formula_list = [lformula]
+    conjunctive_formulas_list = [ConjunctiveFormula(formula) for formula in formula_list]
+    fof = DisjunctiveFormula(conjunctive_formulas_list)
+    qa_dict = fof.sample_query()
+
+
 
 '''
 train_dataloader = QueryAnsweringSeqDataLoader(

@@ -1,6 +1,6 @@
 import torch
 
-from src.utils.data import tensorize_batch_entities
+from ..utils.data_util import tensorize_batch_entities
 
 from ..structure import KnowledgeGraph, NeuralBinaryPredicate
 from ..utils import RaggedBatch
