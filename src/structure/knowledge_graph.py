@@ -1,3 +1,5 @@
+import copy
+import random
 import time
 from collections import defaultdict
 from typing import List, Tuple, Union, Any
@@ -301,6 +303,8 @@ class KnowledgeGraph:
 
 def subgraph_matching(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
                       data_graph: KnowledgeGraph):
+    if not sub_graph.triples and not neg_sub_graph.triples:
+        return now_candidate_set, True
     if len(now_candidate_set) == 1:
         final_node = list(now_candidate_set)[0]
         exist_answer = bool(now_candidate_set[final_node])
@@ -331,7 +335,7 @@ def subgraph_matching(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, 
             collect_guess_ans = defaultdict(set)
             for candidate in now_candidate_set[guess_node]:
                 new_candidate_set = deepcopy(now_candidate_set)
-                new_candidate_set[guess_node] = candidate
+                new_candidate_set[guess_node] = {candidate}
                 adjacency_node_set = set.union(*[sub_graph.h2t[guess_node], sub_graph.t2h[guess_node],
                                                  neg_sub_graph.h2t[guess_node], neg_sub_graph.t2h[guess_node]])
                 answer, exist_answer = cut_node_sub_problem(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
@@ -444,17 +448,18 @@ def check_candidate_set(candidate_set):
 
 def cut_node_sub_problem(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGraph,
                          neg_sub_graph: KnowledgeGraph, now_candidate_set, data_graph: KnowledgeGraph):
+    new_candidate_set = copy.deepcopy(now_candidate_set)
     all_adj_exist_ans = True
     for adjacency_node in adjacency_node_set:
-        now_candidate_set, adj_exist_ans = node_pair_filtering(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
-                                                               now_candidate_set, data_graph)
+        new_candidate_set, adj_exist_ans = node_pair_filtering(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
+                                                               new_candidate_set, data_graph)
         all_adj_exist_ans = adj_exist_ans and all_adj_exist_ans
     if not all_adj_exist_ans:
         return None, False
     new_sub_graph, new_sub_neg_graph = kg_remove_node(sub_graph, to_cut_node), \
                                        kg_remove_node(neg_sub_graph, to_cut_node)
-    cut_node_candidate_set = now_candidate_set.pop(to_cut_node)
-    sub_answer, sub_exist_answer = subgraph_matching(new_sub_graph, new_sub_neg_graph, now_candidate_set,
+    cut_node_candidate_set = new_candidate_set.pop(to_cut_node)
+    sub_answer, sub_exist_answer = subgraph_matching(new_sub_graph, new_sub_neg_graph, new_candidate_set,
                                                      data_graph)
     if sub_exist_answer:
         sub_answer[to_cut_node] = cut_node_candidate_set
@@ -470,29 +475,152 @@ def cut_node_sub_problem(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGr
         return None, False
 
 
-def subgraph_sample(sample_matrix, data_matrix):
+def ground_variable(sample_matrix, data_matrix):
     """
     This function does a extremely easy task: the graph contains multi edge but no edge type, M_ij = k means that there
     is k edge form i to j.
     """
-    def get_leaf_node(matrix):
-        row_sum, col_sum = np.sum(matrix, dim=0), np.sum(matrix, dim=1)
-        row_max, _, col_max, _ = np.max(matrix, dim=0), np.max(matrix, dim=1)
-        one_hop_row = (row_sum == row_max)
-        one_hop_column = (col_sum == col_max)
+    if np.sum(sample_matrix) == 0:
+        left_node_num = sample_matrix.shape[0]
+        random_candidate = random.sample(set(range(data_matrix.shape[0])), left_node_num)
+        return random_candidate, True
+    leaf_node = get_matrix_leaf_node(sample_matrix)
+
+    if leaf_node is not None:
+        sub_query = remove_matrix_node(sample_matrix, leaf_node)
+        sub_answer, sub_exist = ground_variable(sub_query, data_matrix)
+        if not sub_exist:
+            return None, False
+        else:
+            if np.sum(sample_matrix[leaf_node]) == 0:  # leaf node don't have out edge
+                sub_answer.insert(leaf_node, None)
+                adjacency_node = np.where(sample_matrix[:, leaf_node] != 0)[0][0]
+                adjacency_ans = sub_answer[adjacency_node]
+                leaf_in_edge_num = sample_matrix[adjacency_node][leaf_node]
+                if np.max(data_matrix[adjacency_ans]) <= leaf_in_edge_num:
+                    return None, False
+                leaf_node_ans_list = np.where(data_matrix[adjacency_ans] >= leaf_in_edge_num)[0]
+                leaf_node_ans = random.choice(leaf_node_ans_list)
+                sub_answer[leaf_node] = leaf_node_ans
+                return sub_answer, True
+            else:
+                sub_answer.insert(leaf_node, None)
+                adjacency_node = np.where(sample_matrix[leaf_node] != 0)[0][0]
+                adjacency_ans = sub_answer[adjacency_node]
+                leaf_out_edge_num = sample_matrix[leaf_node][adjacency_node]
+                if np.max(data_matrix[:, adjacency_ans]) < leaf_out_edge_num:
+                    return None, False
+                leaf_node_ans_list = np.where(data_matrix[:, adjacency_ans] >= leaf_out_edge_num)[0]
+                leaf_node_ans = random.choice(leaf_node_ans_list)
+                sub_answer[leaf_node] = leaf_node_ans
+                return sub_answer, True
+    else:
+        node_num = sample_matrix.shape[0]
+        if node_num == 1:
+            random_ans = random.randint(0, data_matrix.shape[0])
+            now_ans = [random_ans]
+            return now_ans, True
+        elif node_num == 3:
+            try_time = 0
+            while try_time < 30:
+                try_time += 1
+                guess_zero = random.randint(0, data_matrix.shape[0])
+                candidate1_set = matrix_pair_filter(0, 1, [guess_zero], sample_matrix, data_matrix)
+                candidate2_set = matrix_pair_filter(0, 2, [guess_zero], sample_matrix, data_matrix)
+                for candidate1 in candidate1_set:
+                    candidate2_by1_set = matrix_pair_filter(1, 2, [candidate1], sample_matrix, data_matrix)
+                    candidate2_refined = candidate2_set.intersection(candidate2_by1_set)
+                    if candidate2_refined:
+                        candidate2 = random.sample(candidate2_refined, 1)[0]
+                        triangle_answer = [guess_zero, candidate1, candidate2]
+                        return triangle_answer, True
+            return None, False
+        else:
+            raise NotImplementedError
+
+
+def matrix_pair_filter(node1, node2, candidate1_list, sample_matrix, data_matrix):
+    candidate2_set = set()
+    for candidate1 in candidate1_list:
+        if sample_matrix[node1, node2] > 0:
+            candidate2_list = np.where(data_matrix[:, candidate1] >= sample_matrix[node1, node2])[0]
+        else:  # sample_matrix[node2, node1] > 0
+            candidate2_list = np.where(data_matrix[candidate1] >= sample_matrix[node2, node1])[0]
+        candidate2_set.update(set(candidate2_list))
+    return candidate2_set
+
+
+def ground_predicate(grounded_entity_list: List, query_kg: KnowledgeGraph, data_kg: KnowledgeGraph):
+    grounded_relation_dict = {}
+    for (head, tail) in query_kg.ht2r:
+        inner_relation_list = list(query_kg.ht2r[(head, tail)])
+        grounded_head, grounded_tail = grounded_entity_list[head], grounded_entity_list[tail]
+        inner_relation_candidate = data_kg.ht2r[(grounded_head, grounded_tail)]
+        inner_relation_choices = random.sample(inner_relation_candidate, len(inner_relation_list))
+        new_grounded_dict = {inner_relation_list[i]: inner_relation_choices[i] for i in range(len(inner_relation_list))}
+        grounded_relation_dict.update(new_grounded_dict)
+    return grounded_relation_dict
+
+
+def get_matrix_leaf_node(matrix):
+    boolean_matrix = (matrix != 0)
+    col_sum, row_sum = np.sum(boolean_matrix, axis=0), np.sum(boolean_matrix, axis=1)
+    edge_sum = col_sum + row_sum
+    leaf_index_list = np.where(edge_sum == 1)[0]
+    if len(leaf_index_list):
+        sorted(leaf_index_list, key=lambda x: (np.sum(matrix[x]) + np.sum(matrix[:, x])))
+        leaf_node = leaf_index_list[0]
+        return leaf_node
+    else:
         return None
 
-    leaf_node = get_leaf_node(sample_matrix)
-    if leaf_node:
-        sub_and = get_leaf_node()
 
+def remove_matrix_node(matrix, node_index):
+    new_matrix = np.delete(matrix, node_index, axis=0)
+    new_matrix = np.delete(new_matrix, node_index, axis=1)
+    return new_matrix
 
 
 def kg2matrix(kg: KnowledgeGraph):
-    all_node_set = kg.node2or.keys().union(kg.node2ir.keys())
-    node_num = len(all_node_set)
+    """
+    The nodes of kg should always be labeled by number first.
+    """
+    all_node_list = list(set(kg.node2or.keys()).union(set(kg.node2ir.keys())))
+    node_num = len(all_node_list)
     kg_matrix = np.zeros((node_num, node_num), dtype=int)
     for triple in kg.triples:
         head, relation, tail = triple
         kg_matrix[head][tail] += 1
     return kg_matrix
+
+
+def labeling_triples(triple_list):
+    labeled_nodes = set()
+    node2index = {}
+    index2node = {}
+    now_index = 0
+    new_triple_list = []
+    for triple in triple_list:
+        head, relation, tail = triple
+        if head not in labeled_nodes:
+            labeled_nodes.add(head)
+            node2index[head] = now_index
+            index2node[now_index] = head
+            now_index += 1
+        if tail not in labeled_nodes:
+            labeled_nodes.add(tail)
+            node2index[tail] = now_index
+            index2node[now_index] = tail
+            now_index += 1
+        translated_triples = (node2index[head], relation, node2index[tail])
+        new_triple_list.append(translated_triples)
+    return new_triple_list, node2index, index2node
+
+
+def label_triples_with_assign(triple_list, node2index):
+    new_triple_list = []
+    for triple in triple_list:
+        head, relation, tail = triple
+        translated_triples = (node2index[head], relation, node2index[tail])
+        new_triple_list.append(translated_triples)
+    return new_triple_list

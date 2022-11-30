@@ -50,6 +50,23 @@ lstr2name = {
     '!(((!(r1(s1,e1)))&(r2(s2,e1)))&(r3(e1,f)))': 'up-dm'
 }
 
+DNF_lstr2name = {
+    'r1(s1,f)': '1p',
+    '(r1(s1,e1))&(r2(e1,f))': '2p',
+    '((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f))': '3p',
+    '(r1(s1,f))&(r2(s2,f))': '2i',
+    '((r1(s1,f))&(r2(s2,f)))&(r3(s3,f))': '3i',
+    '((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f))': 'ip',
+    '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,f))': 'pi',
+    '(r1(s1,f))&(!(r2(s2,f)))': '2in',
+    '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))': '3in',
+    '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))': 'inp',
+    '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin',
+    '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
+    '(r1(s1,f))|(r2(s2,f))': '2u',
+    '((r1(s1,e1))|(r2(s2,e1)))&(r3(e1,f))': 'up'
+}
+
 name2lstr = {
     "1p": "r1(s1,f)",
     "2p": "r1(s1,e1)&r2(e1,f)",  # 2p
@@ -77,6 +94,21 @@ negation_query = [
     "r1(s1,e1)&r2(e1,f)&!r3(s2,f)",  # pin
     "r1(s1,e1)&!r2(e1,f)&r3(s2,f)",  # pni
 ]
+
+newlstr2name = {  # new naming convention: m for multi edge, a for anchor node, c for circle
+    '(r1(s1,e1))&(r2(e1,f))&(r3(e1,f))': '2m',
+    '(r1(s1,e1))&(r2(e1,f))&(!r3(e1,f))': '2nm',
+    '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e1,e2))': '3mp',
+    '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e2,f))': '3pm',
+    '(((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f)))&(r4(e1,f))': 'im',
+    '((r1(s1,e1))&(r2(e1,f))&(r4(e1,f)))&(r3(s2,f))': 'mi',
+    '(r1(s1,f))&(r2(e1,f))': '2ia',
+    '(r1(e1,f))&(!(r2(s1,f)))': '2an',
+    '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))': '3ia',
+    '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2))&(r4(e2,f))&(r5(e1,e2))': '3pc',
+    '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2))&(r4(e2,f))&(!r5(e1,e2))': '3pnc',
+    '((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2))&(r4(e2,f))&(r5(e1,e2))&(r6(s3,f))': '3ipc',
+}
 
 
 parser = argparse.ArgumentParser()
