@@ -17,7 +17,7 @@ from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
-from lifted_embedding_estimation_with_truth_value import name2lstr
+from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, lstr2name, DNF_lstr2name
 from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, DNF_Transformation, concate_iu_chains
 from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
@@ -57,19 +57,6 @@ for name, lstr in name2lstr.items():
 print(lstr2name)
 """
 
-train_dataloader = QueryAnsweringSeqDataLoader_v2(
-    osp.join(data_folder, 'train-qaa.json'),
-    # size_limit=args.batch_size * 1,
-    target_lstr=['r1(s1,e1)&!r2(e1,f)&r3(s2,f)'],
-    batch_size=batch_size,
-    shuffle=False,
-    num_workers=0)
-kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
-train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'train_kg.tsv'),
-        kgindex=kgidx)
-
-
 
 def test_deterministic_query(data_loader, kg: KnowledgeGraph):
     fofs = data_loader.get_fof_list_no_shuffle()
@@ -83,7 +70,7 @@ def test_deterministic_query(data_loader, kg: KnowledgeGraph):
             print(f'batch formula of {fof.lstr} verified')
 
 
-def test_sample_query(given_lstr):
+def test_sample_query(given_lstr, kg: KnowledgeGraph):
     lformula = parse_lstr_to_lformula_v2(given_lstr)
     lformula = concate_iu_chains(lformula)
     if isinstance(lformula, Disjunction):
@@ -92,11 +79,33 @@ def test_sample_query(given_lstr):
         formula_list = [lformula]
     conjunctive_formulas_list = [ConjunctiveFormula(formula) for formula in formula_list]
     fof = DisjunctiveFormula(conjunctive_formulas_list)
-    qa_dict = fof.sample_query()
+    qa_dict = fof.sample_query(kg)
+    print(qa_dict)
+    fof.append_qa_instances(qa_dict)
+    print(fof.deterministic_query(0, kg))
 
 
+if __name__ == "__main__":
+
+    kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
+    train_kg = KnowledgeGraph.create(
+        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        kgindex=kgidx)
+    """
+    for lstr in DNF_lstr2name:
+        test_sample_query(lstr, train_kg)
+    """
+    for lstr in newlstr2name:
+        test_sample_query(lstr, train_kg)
 
 '''
+train_dataloader = QueryAnsweringSeqDataLoader_v2(
+        osp.join(data_folder, 'train-qaa.json'),
+        # size_limit=args.batch_size * 1,
+        target_lstr=['r1(s1,e1)&!r2(e1,f)&r3(s2,f)'],
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0)
 train_dataloader = QueryAnsweringSeqDataLoader(
     osp.join(data_folder, 'valid-qaa.json'),
     # size_limit=args.batch_size * 1,
