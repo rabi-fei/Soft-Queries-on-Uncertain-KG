@@ -15,7 +15,8 @@ Term = e[number]
 """
 from typing import Union
 
-from .fof import Conjunction, Disjunction, Formula, Lobject, Negation, BinaryPredicate, Term
+from .fof import Conjunction, Disjunction, Formula, Lobject, Negation, BinaryPredicate, Term, DisjunctiveFormula, \
+    ConjunctiveFormula
 
 
 def remove_outmost_backets(lstr: str):
@@ -190,7 +191,16 @@ def parse_lstr_to_lformula_v2(lstr: str) -> Formula:
             return Disjunction(formulas=[left_formula, right_formula])
 
 
-
+def parse_lstr_to_disjunctive_formula(lstr: str) -> DisjunctiveFormula:
+    lformula = parse_lstr_to_lformula_v2(lstr)
+    DNF_formula = DNF_Transformation(lformula)
+    if isinstance(DNF_formula, Disjunction):
+        formula_list = DNF_formula.formulas
+    else:
+        formula_list = [DNF_formula]
+    conjunctive_formulas_list = [ConjunctiveFormula(formula) for formula in formula_list]
+    fof = DisjunctiveFormula(conjunctive_formulas_list)
+    return fof
 
 
 def find_bracket(string, start_index):
