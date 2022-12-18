@@ -352,19 +352,23 @@ def node_filter(sub_graph, now_candidate_set, data_graph):  # negation is useles
     for node in sub_graph.node2or:
         for out_edge in sub_graph.node2or[node]:
             now_candidate_set[node] = now_candidate_set[node].intersection(data_graph.r2h[out_edge])
+            '''
             if sub_graph.node2or[node][out_edge] > 1:
                 for data_node in data_graph.r2h[out_edge]:
                     if data_node in now_candidate_set[node] and data_graph.node2or[data_node][out_edge] < \
                             sub_graph.node2or[node][out_edge]:
                         now_candidate_set[node].remove(data_node)
+            '''
     for node in sub_graph.node2ir:
         for in_edge in sub_graph.node2ir[node]:
             now_candidate_set[node] = now_candidate_set[node].intersection(data_graph.r2t[in_edge])
+            '''
             if sub_graph.node2ir[node][in_edge] > 1:
                 for data_node in data_graph.r2h[in_edge]:
                     if data_node in now_candidate_set[node] and data_graph.node2ir[data_node][in_edge] < \
                             sub_graph.node2ir[node][in_edge]:
                         now_candidate_set[node].remove(data_node)
+            '''
     return now_candidate_set
 
 

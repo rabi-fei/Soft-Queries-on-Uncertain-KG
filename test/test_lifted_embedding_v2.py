@@ -67,6 +67,18 @@ name2lstr = {
     "up": "(r1(s1,e1)|r2(s2,e1))&r3(e1,f)",  # up
     "2u-dm": "!(!r1(s1,f)&!r2(s2,f))",  # 2u-dm
     "up-dm": "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",  # up-dm
+    '2m': '((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f))',
+    '2nm': '((r1(s1,e1))&(r2(e1,f)))&(!(r3(e1,f)))',
+    '3mp': '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e1,e2))',
+    '3pm': '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e2,f))',
+    'im': '(((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f)))&(r4(e1,f))',
+    'mi': '(((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f)))&(r4(s2,f))',
+    '2ia': '(r1(s1,f))&(r2(e1,f))',
+    '2an': '(r1(e1,f))&(!(r2(s1,f)))',
+    '3ia': '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))',
+    '3pc': '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))',
+    '3pnc': '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(!(r5(e1,e2)))',
+    '3ipc': '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(s3,f))'
 }
 
 negation_query = [
@@ -84,7 +96,7 @@ parser.add_argument("--device", type=str, default="cuda:0")
 parser.add_argument("--output_dir", type=str, default='log/noisy_lr_1e-4_bs_1024')
 
 # input task folder, defines knowledge graph, index, and formulas
-parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--task_folder", type=str, default='data/FB15k-237-EFO1')
 parser.add_argument("--train_queries", action='append')
 parser.add_argument("--eval_queries", action='append')
 
@@ -898,8 +910,6 @@ if __name__ == "__main__":
         )
         exit()
     for e in range(args.epoch):
-        evaluate_by_nearest_search_v2(e, f"NN evaluate test set epoch {e + 1}",
-                                   test_dataloader, nbp, reasoner)
         train_lifted_estimator_v3(f"epoch {e}",
                                   train_dataloader, nbp, reasoner, optimizer_estimator, args)
         scheduler.step()
