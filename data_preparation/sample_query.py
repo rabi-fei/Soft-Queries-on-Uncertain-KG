@@ -30,8 +30,8 @@ query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 parser.add_argument("--output_folder", type=str, default='data')
-parser.add_argument("--sample_num", type=int, default=3)
-parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='train')
+parser.add_argument("--sample_num", type=int, default=5000)
+parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
 
 
@@ -75,8 +75,12 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
     elif given_lstr == lstr_mi:
         e1_candidate = kg.hr2t[(fof_qa_dict['s1'], fof_qa_dict['r1'])]
         f_candidate = kg.hr2t[(fof_qa_dict['s2'], fof_qa_dict['r4'])]
-        f_candidate2 = set.union(*[kg.hr2t[(e1_c, fof_qa_dict['r2'])].intersection(kg.hr2t[(e1_c, fof_qa_dict['r3'])])
-                                   for e1_c in e1_candidate])
+        if e1_candidate:
+            f_candidate2 = set.union(
+                *[kg.hr2t[(e1_c, fof_qa_dict['r2'])].intersection(kg.hr2t[(e1_c, fof_qa_dict['r3'])])
+                  for e1_c in e1_candidate])
+        else:
+            f_candidate2 = {}
         return f_candidate.intersection(f_candidate2)
     elif given_lstr == lstr_2an:
         f_candidate = kg.r2t[fof_qa_dict['r1']]
@@ -88,34 +92,35 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
 
 def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: KnowledgeGraph, sample_num, sample_mode,
                              meaningful_negation):
+    print(f'sampling query of {given_lstr}')
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
-    now_sample_num = 0
     all_qa_dict = set()
     all_query_list = []
-    while now_sample_num < sample_num:
-        qa_dict = fof.sample_query(hard_kg, meaningful_negation)
-        if qa_dict and str(qa_dict) not in all_qa_dict:  # We notice sampling may fail and return None
-            all_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
-            fof.append_qa_instances(qa_dict)
-            if sample_mode == 'train':
-                hard_answer = fof.deterministic_query(now_sample_num, hard_kg)
-                easy_answer = set()
-            else:
-                hard_answer = fof.deterministic_query(now_sample_num, hard_kg)
-                easy_answer = fof.deterministic_query(now_sample_num, easy_kg)
-            check_easy_ans, check_hard_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
-                double_checking_answer(given_lstr, qa_dict, hard_kg)
-            if check_hard_ans is not None:
-                assert hard_answer == check_hard_ans
-            if check_easy_ans is not None:
-                assert easy_answer == check_easy_ans
-            if hard_answer - easy_answer is not None:
+    with tqdm.tqdm(total=sample_num) as pbar:
+        while pbar.n < sample_num:
+            qa_dict = fof.sample_query(hard_kg, meaningful_negation)
+            if qa_dict and str(qa_dict) not in all_qa_dict:  # We notice sampling may fail and return None
+                all_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
+                fof.append_qa_instances(qa_dict)
                 if sample_mode == 'train':
-                    new_query = [qa_dict, {'f': list(hard_answer)}, []]
+                    hard_answer = fof.deterministic_query(pbar.n, hard_kg)
+                    easy_answer = set()
                 else:
-                    new_query = [qa_dict, {'f': list(easy_answer)}, {'f': list(hard_answer)}]
-                all_query_list.append(new_query)
-                now_sample_num += 1
+                    hard_answer = fof.deterministic_query(pbar.n, hard_kg)
+                    easy_answer = fof.deterministic_query(pbar.n, easy_kg)
+                check_easy_ans, check_hard_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
+                                                 double_checking_answer(given_lstr, qa_dict, hard_kg)
+                if check_hard_ans is not None:
+                    assert hard_answer == check_hard_ans
+                if check_easy_ans is not None:
+                    assert easy_answer == check_easy_ans
+                if hard_answer - easy_answer is not None:
+                    if sample_mode == 'train':
+                        new_query = [qa_dict, {'f': list(hard_answer)}, []]
+                    else:
+                        new_query = [qa_dict, {'f': list(easy_answer)}, {'f': list(hard_answer - easy_answer)}]
+                    all_query_list.append(new_query)
+                    pbar.update(1)
     return all_query_list
 
 
@@ -136,20 +141,30 @@ if __name__ == "__main__":
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
     """
-    all_query_dict = {}
-    for lstr in newlstr2name:
-        if args.mode == 'train':
-            all_query = sample_one_formula_query(lstr, None, train_kg, args.sample_num, args.mode,
-                                                 args.meaningful_negation)
-        elif args.mode == 'valid':
-            all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.sample_num, args.mode,
-                                                 args.meaningful_negation)
-        elif args.mode == 'test':
-            all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.sample_num, args.mode,
-                                                 args.meaningful_negation)
+
+    for index, lstr in enumerate(newlstr2name):
+        now_data = {}
+        output_file_name = osp.join(args.output_folder, f'{args.mode}_{index}_real_EFO1_qaa.json')
+        if os.path.exists(output_file_name):
+            with open(output_file_name, 'rt') as f:
+                old_data = json.load(f)
         else:
-            raise NotImplementedError
-        all_query_dict[lstr] = all_query
-    with open(osp.join(args.output_folder, f'{args.mode}_real_EFO1_qaa.json'), 'wt') as f:
-        print([k for k in all_query_dict])
-        json.dump(all_query_dict, f)
+            old_data = {}
+        if lstr in old_data and len(old_data[lstr]) == args.sample_num:
+            now_data[lstr] = old_data[lstr]
+        else:
+            if args.mode == 'train':
+                all_query = sample_one_formula_query(lstr, None, train_kg, args.sample_num, args.mode,
+                                                     args.meaningful_negation)
+            elif args.mode == 'valid':
+                all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.sample_num, args.mode,
+                                                     args.meaningful_negation)
+            elif args.mode == 'test':
+                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.sample_num, args.mode,
+                                                     args.meaningful_negation)
+            else:
+                raise NotImplementedError
+            now_data[lstr] = all_query
+        with open(output_file_name, 'wt') as f:
+            json.dump(now_data, f)
+

@@ -423,6 +423,9 @@ def node_pair_filtering(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
 
 def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate):
+    """
+    Find a leaf node with least possible candidate.
+    """
     return_candidate = [None, None, 0]
     for node in now_candidate:
         adjacency_node_set = set.union(
@@ -528,7 +531,7 @@ def ground_variable(sample_matrix, data_matrix):
             try_time = 0
             while try_time < 30:
                 try_time += 1
-                guess_zero = random.randint(0, data_matrix.shape[0])
+                guess_zero = random.randint(0, data_matrix.shape[0] - 1)
                 candidate1_set = matrix_pair_filter(0, 1, [guess_zero], sample_matrix, data_matrix)
                 candidate2_set = matrix_pair_filter(0, 2, [guess_zero], sample_matrix, data_matrix)
                 for candidate1 in candidate1_set:

@@ -76,7 +76,7 @@ def test_deterministic_query(data_loader, kg: KnowledgeGraph):
             print(f'batch formula of {fof.lstr} verified')
 
 
-def test_sample_query(given_lstr, kg: KnowledgeGraph, meaningful_neagation):
+def test_sample_query(given_lstr, kg: KnowledgeGraph, meaningful_negation):
     lformula = parse_lstr_to_lformula_v2(given_lstr)
     lformula = concate_iu_chains(lformula)
     if isinstance(lformula, Disjunction):
@@ -85,7 +85,7 @@ def test_sample_query(given_lstr, kg: KnowledgeGraph, meaningful_neagation):
         formula_list = [lformula]
     conjunctive_formulas_list = [ConjunctiveFormula(formula) for formula in formula_list]
     fof = DisjunctiveFormula(conjunctive_formulas_list)
-    qa_dict = fof.sample_query(kg, meaningful_neagation)
+    qa_dict = fof.sample_query(kg, meaningful_negation)
     print(qa_dict)
     fof.append_qa_instances(qa_dict)
     print(fof.deterministic_query(0, kg))
@@ -111,12 +111,9 @@ if __name__ == "__main__":
         formula_lstr, disjunctive_lstr = test_parse_formula(lstr)
         print(lstr, formula_lstr, disjunctive_lstr, lstr == formula_lstr, formula_lstr == disjunctive_lstr)
     """
-    given_lstr = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(!(r5(e1,e2)))'
-    lformula = parse_lstr_to_disjunctive_formula(given_lstr)
-    qa_dict = {'r1': 174, 'r2': 116, 'r3': 309, 'r4': 116, 's1': 32, 's2': 2438, 'r5': 222}
-    lformula.append_qa_instances(qa_dict)
-    ans = lformula.deterministic_query(0, train_kg)
-    print(ans)
+    for lstr in newlstr2name:
+        formula_lstr, disjunctive_lstr = test_parse_formula(lstr)
+        print(lstr, formula_lstr, disjunctive_lstr, lstr == formula_lstr, formula_lstr == disjunctive_lstr)
 
 '''
 train_dataloader = QueryAnsweringSeqDataLoader_v2(
