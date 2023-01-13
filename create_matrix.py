@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import List
 
 import torch
-import scipy.sparse
+from scipy.sparse import csr_matrix
 import pickle
 
 from src.structure.knowledge_graph import KnowledgeGraph
@@ -17,6 +17,7 @@ from src.structure.knowledge_graph_index import KGIndex
 parser = argparse.ArgumentParser()
 parser.add_argument("--ckpt", type=str, default='../cqd/models')
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--action", choices=['prob', 'sparse', 'change'], default='prob')
 
 
 def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent_kg: KnowledgeGraph):
@@ -43,13 +44,13 @@ def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent
     return only_hard_ans, easy_hard_ans, non_ans
 
 
-def create_matrix_from_ckpt(scoring_matrix, observed_kg: KnowledgeGraph, threshold=0.01, epsilon=0.01):
+def create_matrix_from_ckpt(scoring_matrix, observed_kg: KnowledgeGraph, real_starting_r, threshold=0.01, epsilon=0.01):
     n_rel, n_entity = scoring_matrix.shape[0], scoring_matrix.shape[1]
     full_tail_prob = torch.softmax(scoring_matrix, dim=2)
     for rel_id in range(n_rel):
         for h_id in range(n_entity):
             tail_prob = full_tail_prob[rel_id][h_id]
-            tail_set = observed_kg.hr2t[(h_id, rel_id)]
+            tail_set = observed_kg.hr2t[(h_id, rel_id + real_starting_r)]
             observed_t_num = len(tail_set)
             scailing = observed_t_num/torch.sum(tail_prob[list(tail_set)]) if observed_t_num else 1
             full_tail_prob[rel_id][h_id] *= scailing
@@ -64,9 +65,16 @@ def collect_matrix_scipy_sparse(matrix_path):
     dense_matrix = torch.load(matrix_path)
     matrix_list = []
     for i in range(dense_matrix.shape[0]):
-        sparse_matrix = scipy.sparse.csr_matrix(dense_matrix[i])
+        sparse_matrix = csr_matrix(dense_matrix[i])
         matrix_list.append(sparse_matrix)
     return matrix_list
+
+
+def change_matrix_format(matrix_list):
+    new_matrix_list = []
+    for matrix in matrix_list:
+        new_matrix_list.append(matrix.tocsc())
+    return new_matrix_list
 
 
 if __name__ == "__main__":
@@ -81,22 +89,30 @@ if __name__ == "__main__":
         triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
     '''
-    threshold, epsilon = 0.01, 0.01
+    threshold, epsilon = 0.05, 0.01
     split_num = int(79)
     split_each_num = int(train_kg.num_relations / split_num)
     all_matrix_list = []
     for split_id in range(split_num):
-        #whole_prob_matrix = torch.zeros(split_each_num, train_kg.num_entities, train_kg.num_entities)
+        # whole_prob_matrix = torch.zeros(split_each_num, train_kg.num_entities, train_kg.num_entities)
         matrix_path = f'matrix/matrix_{split_id}_{threshold}_{epsilon}.ckpt'
-        if osp.exists(matrix_path):
-            part_matrix_list = collect_matrix_scipy_sparse(matrix_path)
-            all_matrix_list.extend(part_matrix_list)
-            continue
-        score_matrix = torch.load(osp.join(args.ckpt, f'matrix_{split_id}.ckpt'), map_location=None)
-        prob_matrix = create_matrix_from_ckpt(score_matrix, train_kg, threshold, epsilon)
-        #whole_prob_matrix[int(split_id * split_each_num): int(split_id * split_each_num + split_each_num)] = prob_matrix
-        torch.save(prob_matrix, matrix_path)
-    with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'wb') as handle:
-        pickle.dump(all_matrix_list)
-
+        if args.action == 'sparse':
+            if osp.exists(matrix_path):
+                part_matrix_list = collect_matrix_scipy_sparse(matrix_path)
+                all_matrix_list.extend(part_matrix_list)
+                continue
+        elif args.action == 'prob':
+            score_matrix = torch.load(osp.join(args.ckpt, f'matrix_{split_id}.ckpt'), map_location=None)
+            real_starting_r = int(split_id * split_each_num)
+            prob_matrix = create_matrix_from_ckpt(score_matrix, train_kg, real_starting_r, threshold, epsilon)
+            torch.save(prob_matrix, matrix_path)
+    if args.action == 'sparse':
+        with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'wb') as data:
+            pickle.dump(all_matrix_list, data)
+    if args.action == 'change':
+        with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'rb') as data:
+            r_matrix_list = pickle.load(data)
+        with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'wb') as data:
+            new_r_matrix_list = change_matrix_format(r_matrix_list)
+            pickle.dump(new_r_matrix_list, data)
 

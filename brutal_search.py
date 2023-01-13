@@ -9,12 +9,13 @@ from typing import List
 import copy
 
 import numpy as np
+import scipy.sparse
 import torch
 import torch.nn.functional as F
 import tqdm
 import pickle
 from torch import nn
-from scipy.sparse import csc_matrix, diags
+from scipy.sparse import csc_matrix, diags, issparse
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.language.fof import ConjunctiveFormula, DisjunctiveFormula
@@ -23,6 +24,7 @@ from src.structure.knowledge_graph import KnowledgeGraph, kg_remove_node
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.utils.data import QueryAnsweringSeqDataLoader_v2
+from src.utils.class_util import Writer
 from src.utils.data_util import RaggedBatch
 from lifted_embedding_estimation_with_truth_value import compute_evaluation_scores
 
@@ -32,12 +34,12 @@ torch.autograd.set_detect_anomaly(True)
 parser = argparse.ArgumentParser()
 parser.add_argument("--pkl", type=str, default='sparse/scipy_0.01_0.01.pickle')
 parser.add_argument("--batch_size", type=int, default=3)
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--data_folder", type=str, default='data')
 
 
 def solve_conjunctive(positive_graph: KnowledgeGraph, negative_graph: KnowledgeGraph, relation_matrix,
-                      now_candidate_set: dict, conjunctive_tnorm, existential_tnorm, now_variable):
-
+                      now_candidate_set: dict, conjunctive_tnorm, existential_tnorm, now_variable, max_enumeration=None):
+    n_entity = relation_matrix[0].shape[0]
     if not positive_graph.triples and not negative_graph.triples:
         return now_candidate_set[now_variable]
     if len(now_candidate_set) == 1:
@@ -53,47 +55,43 @@ def solve_conjunctive(positive_graph: KnowledgeGraph, negative_graph: KnowledgeG
             sub_ans = solve_conjunctive(sub_pos_g, sub_neg_g, relation_matrix, now_candidate_set,
                                         conjunctive_tnorm, existential_tnorm, next_variable)
             final_ans = extend_ans(now_leaf_node, adjacency_node, positive_graph, negative_graph, relation_matrix,
-                                   now_candidate_set[now_leaf_node], conjunctive_tnorm, existential_tnorm, sub_ans)
+                                   now_candidate_set[now_leaf_node], sub_ans, conjunctive_tnorm, existential_tnorm)
             return final_ans
         else:
-            answer = cut_node_sub_problem(
-                now_leaf_node, adjacency_node_list, positive_graph, negative_graph, relation_matrix, now_candidate_set,
-                conjunctive_tnorm, existential_tnorm, now_variable)
+            answer = cut_node_sub_problem(now_leaf_node, adjacency_node_list, positive_graph, negative_graph,
+                                          relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
+                                          now_variable)
             return answer
     else:
-        '''
-                before_topology_set = node_filter(sub_graph, now_candidate_set, data_graph)
-        topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
-        while before_topology_set != topology_filtered_set:
-            before_topology_set = topology_filtered_set
-            topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
-        fixed_node, exist_answer = check_candidate_set(topology_filtered_set)
-        if not exist_answer:
-            return None, False
-        if fixed_node:
-            adjacency_node_set = set.union(*[sub_graph.h2t[fixed_node], sub_graph.t2h[fixed_node],
-                                             neg_sub_graph.h2t[fixed_node], neg_sub_graph.t2h[fixed_node]])
-            answer, exist_answer = cut_node_sub_problem(fixed_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                        now_candidate_set, data_graph)
-            return answer, exist_answer
-        else:  # Has to take a guess here.
-            
-            guess_node = min(now_candidate_set.items(), key=lambda x: len(x[1]))[0]
-            collect_guess_ans = defaultdict(set)
-            for candidate in now_candidate_set[guess_node]:
-                new_candidate_set = deepcopy(now_candidate_set)
-                new_candidate_set[guess_node] = {candidate}
-                adjacency_node_set = set.union(*[sub_graph.h2t[guess_node], sub_graph.t2h[guess_node],
-                                                 neg_sub_graph.h2t[guess_node], neg_sub_graph.t2h[guess_node]])
-                answer, exist_answer = cut_node_sub_problem(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                            new_candidate_set, data_graph)
-                if exist_answer:
-                    collect_guess_ans[guess_node].add(candidate)
-                    for sub_node in answer:
-                        collect_guess_ans[sub_node].update(answer[sub_node])
-            exist_final_answer = bool(collect_guess_ans[guess_node])
-            '''
-        return None
+        to_enumerate_node, adjacency_node_list = find_enumerate_node(positive_graph, negative_graph, now_candidate_set,
+                                                                     now_variable)
+        if max_enumeration:
+            easy_candidate = np.count_nonzero(now_candidate_set[to_enumerate_node] == 1)
+            max_enumeration_here = max_enumeration + easy_candidate
+            to_enumerate_candidates = np.argsort(now_candidate_set[to_enumerate_node][::-1])[max_enumeration_here]
+        else:
+            to_enumerate_candidates = now_candidate_set[to_enumerate_node].nonzero()[0]
+        all_enumerate_ans = np.zeros((len(to_enumerate_candidates), n_entity))
+        for i, enumerate_candidate in enumerate(to_enumerate_candidates):
+            single_candidate = np.zeros_like(now_candidate_set[to_enumerate_node])
+            candidate_truth_value = now_candidate_set[to_enumerate_node][enumerate_candidate]
+            single_candidate[enumerate_candidate] = 1
+            now_candidate_set[to_enumerate_node] = single_candidate
+            answer = cut_node_sub_problem(to_enumerate_node, adjacency_node_list, positive_graph, negative_graph,
+                                          relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
+                                          now_variable)
+            if conjunctive_tnorm == 'product':
+                enumerate_ans = candidate_truth_value * answer
+            elif conjunctive_tnorm == 'Godel':
+                enumerate_ans = np.minimum(candidate_truth_value, answer)
+            else:
+                raise NotImplementedError
+            all_enumerate_ans[i] = enumerate_ans
+        if existential_tnorm == 'Godel':
+            final_ans = np.amax(all_enumerate_ans, axis=-2)
+        else:
+            raise NotImplementedError
+        return final_ans
 
 
 def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate, now_variable):
@@ -108,103 +106,101 @@ def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now
         if len(adjacency_node_set) == 1:
             if node == now_variable:
                 return node, list(adjacency_node_set)[0], True
-            if not return_candidate[0] or np.count_nonzero(now_candidate[node]) < return_candidate[2]:
-                return_candidate = [node, list(adjacency_node_set)[0], np.count_nonzero(now_candidate[node])]
+            candidate_num = np.count_nonzero(now_candidate[node])
+            if not return_candidate[0] or candidate_num < return_candidate[2]:
+                return_candidate = [node, list(adjacency_node_set)[0], candidate_num]
     return return_candidate[0], return_candidate[1], False
 
 
-def cut_node_sub_problem(to_cut_node, adjacency_node_list, sub_graph: KnowledgeGraph,
-                         neg_sub_graph: KnowledgeGraph, now_candidate_set, data_graph: KnowledgeGraph):
+def find_enumerate_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate, now_variable):
+    return_candidate = [None, 100, 100000]
+    for node in now_candidate:
+        if node == now_variable:
+            continue
+        adjacency_node_list = list(set.union(*[sub_graph.h2t[node], sub_graph.t2h[node], neg_sub_graph.h2t[node],
+                                               neg_sub_graph.t2h[node]]))
+        adjacency_node_num = len(adjacency_node_list)
+        candidate_num = np.count_nonzero(now_candidate[node])
+        if not return_candidate[0] or adjacency_node_num < len(return_candidate[1]) or \
+                (adjacency_node_num == len(return_candidate[1]) and candidate_num < return_candidate[2]):
+            return_candidate = node, adjacency_node_list, candidate_num
+    return return_candidate[0], return_candidate[1]
+
+
+def cut_node_sub_problem(to_cut_node, adjacency_node_list, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
+                         r_matrix_list, now_candidate_set, conj_tnorm, exist_tnorm, now_variable):
     new_candidate_set = copy.deepcopy(now_candidate_set)
     for adjacency_node in adjacency_node_list:
-        new_candidate_set, adj_exist_ans = node_pair_filtering(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
-                                                               new_candidate_set, data_graph)
-        all_adj_exist_ans = adj_exist_ans and all_adj_exist_ans
+        adj_candidate_vec = existential_update(to_cut_node, adjacency_node, sub_graph, neg_sub_graph, r_matrix_list,
+                                               new_candidate_set[to_cut_node], new_candidate_set[adjacency_node],
+                                               conj_tnorm, exist_tnorm)
+        new_candidate_set[adjacency_node] = adj_candidate_vec
     new_sub_graph, new_sub_neg_graph = kg_remove_node(sub_graph, to_cut_node), \
                                        kg_remove_node(neg_sub_graph, to_cut_node)
     cut_node_candidate_set = new_candidate_set.pop(to_cut_node)
-    sub_answer, sub_exist_answer = solve_conjunctive(new_sub_graph, new_sub_neg_graph, new_candidate_set,
-                                                     data_graph)
-    if sub_exist_answer:
-        sub_answer[to_cut_node] = cut_node_candidate_set
-        if len(cut_node_candidate_set) != 1:  # In this case, the reason to cut is leaf node, we double check the ans.
-            assert len(adjacency_node_list) == 1
-            adjacency_node = list(adjacency_node_list)[0]
-            extended_answer, exist_answer = node_pair_filtering(adjacency_node, to_cut_node, sub_graph, neg_sub_graph,
-                                                                sub_answer, data_graph)
-            return extended_answer, exist_answer
-        else:
-            return sub_answer, True
-    else:
-        return None, False
+    sub_answer = solve_conjunctive(new_sub_graph, new_sub_neg_graph, r_matrix_list, new_candidate_set, conj_tnorm,
+                                   exist_tnorm, now_variable)
+    return sub_answer
 
 
-def node_pair_filtering(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
-                        relation_matrix, adj_candidate_set, conj_tnorm, exist_tnorm, leaf_candidate_set) -> dict:
-    node_pair, reverse_node_pair = (leaf_node, adjacency_node), (adjacency_node, leaf_node)
-    h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
-    h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
-    matrix_list = []
-    for r in h2t_relation:
-        matrix_list.append(relation_matrix[r])
-    for r in t2h_relation:
-        matrix_list.append(relation_matrix[r].transpose())
-    for r in h2t_negation:
-        matrix_list.append(1 - relation_matrix[r])
-    for r in t2h_negation:
-        matrix_list.append(1 - relation_matrix[r].transpose())
-    if conj_tnorm == 'product':
-        all_prob_matrix = matrix_list[0]
-        for i in matrix_list[1:]:
-            all_prob_matrix = all_prob_matrix * matrix_list[i]
-        all_prob_matrix = all_prob_matrix * leaf_candidate_set
+def existential_update(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
+                       r_matrix_list, leaf_candidates, adj_candidates, conj_tnorm, exist_tnorm) -> dict:
+    all_prob_matrix = construct_matrix_list(leaf_node, adjacency_node, sub_graph, neg_sub_graph, r_matrix_list,
+                                            conj_tnorm)
+    transit_matrix = np.multiply(all_prob_matrix, np.expand_dims(adj_candidates, axis=-2))
+    transit_matrix = np.multiply(transit_matrix, np.expand_dims(leaf_candidates, axis=-1))
+    if exist_tnorm == 'Godel':
+        prob_vec = np.asarray(np.amax(transit_matrix, axis=-2)).squeeze()
     else:
         raise NotImplementedError
+    return prob_vec
+
+
+def extend_ans(ans_node, sub_ans_node, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, relation_matrix,
+               leaf_candidate, sub_ans, conj_tnorm, exist_tnorm):
+    all_prob_matrix = construct_matrix_list(sub_ans_node, ans_node, sub_graph, neg_sub_graph, relation_matrix,
+                                            conj_tnorm)
+    all_prob_matrix = np.multiply(all_prob_matrix, np.expand_dims(sub_ans, axis=-1))
     if exist_tnorm == 'Godel':
-        prob_vec = all_prob_matrix.max(dim=0)
-        if conj_tnorm == 'product':
-            final_ans = leaf_candidate_set * prob_vec
-        else:
-            raise NotImplementedError
+        prob_vec = np.asarray((np.amax(all_prob_matrix, axis=-2))).squeeze()  # prob*vec is 1*n  matrix
+    else:
+        raise NotImplementedError
+    if conj_tnorm == 'product':
+        final_ans = leaf_candidate * prob_vec
+    elif conj_tnorm == 'Godel':
+        final_ans = np.minimum(leaf_candidate, prob_vec)
     else:
         raise NotImplementedError
     return final_ans
 
 
-def extend_ans(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
-                        relation_matrix, leaf_candidate, conj_tnorm, exist_tnorm, sub_ans):
-    node_pair, reverse_node_pair = (adjacency_node, leaf_node), (leaf_node, adjacency_node)
+def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relation_matrix_list, conj_tnorm):
+    node_pair, reverse_node_pair = (head_node, tail_node), (tail_node, head_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
-    matrix_list = []
+    transit_matrix_list = []
     for r in h2t_relation:
-        matrix_list.append(relation_matrix[r])
+        transit_matrix_list.append(relation_matrix_list[r])
     for r in t2h_relation:
-        matrix_list.append(relation_matrix[r].transpose())
+        transit_matrix_list.append(relation_matrix_list[r].transpose())
     for r in h2t_negation:
-        matrix_list.append(1 - relation_matrix[r])
+        transit_matrix_list.append(1 - relation_matrix_list[r].toarray())
     for r in t2h_negation:
-        matrix_list.append(1 - relation_matrix[r].transpose())
+        transit_matrix_list.append(1 - relation_matrix_list[r].transpose().toarray())
     if conj_tnorm == 'product':
-        all_prob_matrix = matrix_list[0]
-        for i in matrix_list[1:]:
-            all_prob_matrix = all_prob_matrix.multipliy(matrix_list[i])
-        all_prob_matrix = np.multiply(all_prob_matrix.todense(), np.expand_dims(sub_ans, axis=1))
+        all_prob_matrix = transit_matrix_list[0]
+        for i in range(1, len(transit_matrix_list)):
+            all_prob_matrix = all_prob_matrix.multiply(transit_matrix_list[i])
+    elif conj_tnorm == 'Godel':
+        all_prob_matrix = transit_matrix_list[0]
+        for i in range(1, len(transit_matrix_list)):
+            all_prob_matrix = all_prob_matrix.minimum(transit_matrix_list[i])
     else:
         raise NotImplementedError
-    if exist_tnorm == 'Godel':
-        prob_vec = np.amax(all_prob_matrix, axis=0)  # prob*vec is 1*n  matrix
+    if issparse(all_prob_matrix):  # n*n sparse matrix or dense matrix (when only one negation edges)
+        return all_prob_matrix.toarray()
     else:
-        raise NotImplementedError
-    if conj_tnorm == 'product':
-        final_ans = leaf_candidate * np.asarray(prob_vec).squeeze()
-    else:
-        raise NotImplementedError
-    return final_ans
-
-
-def construct_matrix_list():
-    pass
+        return all_prob_matrix
 
 
 def solve_EFO1(DNF_formula:DisjunctiveFormula, relation_matrix, conjunctive_tnorm, existential_tnorm, index):
@@ -243,7 +239,9 @@ def solve_EFO1(DNF_formula:DisjunctiveFormula, relation_matrix, conjunctive_tnor
                 not_ans = not_ans * (1 - sub_ans_list[i])
             return 1 - not_ans
         if conjunctive_tnorm == 'Godel':
-            return None
+            final_ans = sub_ans_list[0]
+            for i in range(1, len(sub_ans_list)):
+                final_ans = np.maximum(final_ans, sub_ans_list[i])
         else:
             raise NotImplementedError
 
@@ -272,8 +270,6 @@ def compute_single_evaluation(fof, batch_ans, n_entity):
         h3 = torch.mean((cur_ranking <= 3).to(torch.float)).item()
         h10 = torch.mean(
             (cur_ranking <= 10).to(torch.float)).item()
-        add_hard_list = torch.arange(num_hard).to(torch.float)
-        hard_ranking = cur_ranking + add_hard_list  # for all hard answer, consider other hard answer
         metrics['mrr'] += mrr
         metrics['hit1'] += h1
         metrics['hit3'] += h3
@@ -282,26 +278,26 @@ def compute_single_evaluation(fof, batch_ans, n_entity):
     return metrics
 
 
-
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     with open(f'{args.pkl}', 'rb') as data:
-        r_matrix_list = pickle.load(data)
+        relation_matrix_list = pickle.load(data)
     train_dataloader = QueryAnsweringSeqDataLoader_v2(
-        osp.join(args.data_folder, 'test-qaa.json'),
+        osp.join(args.data_folder, 'test_8_real_EFO1_qaa.json'),
         # size_limit=args.batch_size * 1,
-        target_lstr=['r1(s1,f)'],
+        target_lstr=None,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=0)
-    fof_list = train_dataloader.get_fof_list()
+    writer = Writer(case_name=args.pkl, config=args, log_path='results/log')
+    fof_list = train_dataloader.get_fof_list_no_shuffle()
     t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
     all_metrics = defaultdict(dict)
     for ifof, fof in t:
         batch_ans_list, metric = [], {}
         for query_index in range(args.batch_size):
-            ans = solve_EFO1(fof, r_matrix_list, 'product', 'Godel', query_index)
+            ans = solve_EFO1(fof, relation_matrix_list, 'product', 'Godel', query_index)
             batch_ans_list.append(ans)
         batch_score = compute_single_evaluation(fof, batch_ans_list, 14505)
         for metric in batch_score:
@@ -313,3 +309,4 @@ if __name__ == "__main__":
             if log_metric != 'num_queries':
                 all_metrics[full_formula][log_metric] /= all_metrics[full_formula]['num_queries']
     print(all_metrics)
+    writer.save_pickle(all_metrics, f"all_metrics.pickle")
