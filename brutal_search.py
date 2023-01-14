@@ -147,8 +147,14 @@ def existential_update(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, neg
                        r_matrix_list, leaf_candidates, adj_candidates, conj_tnorm, exist_tnorm) -> dict:
     all_prob_matrix = construct_matrix_list(leaf_node, adjacency_node, sub_graph, neg_sub_graph, r_matrix_list,
                                             conj_tnorm)
-    transit_matrix = np.multiply(all_prob_matrix, np.expand_dims(adj_candidates, axis=-2))
-    transit_matrix = np.multiply(transit_matrix, np.expand_dims(leaf_candidates, axis=-1))
+    if conj_tnorm == 'product':
+        transit_matrix = np.multiply(all_prob_matrix, np.expand_dims(leaf_candidates, axis=-1))
+        transit_matrix = np.multiply(transit_matrix, np.expand_dims(adj_candidates, axis=-2))
+    elif conj_tnorm == 'Godel':
+        transit_matrix = np.maximum(all_prob_matrix, np.expand_dims(leaf_candidates, axis=-1))
+        transit_matrix = np.maximum(transit_matrix, np.expand_dims(adj_candidates, axis=-2))
+    else:
+        raise NotImplementedError
     if exist_tnorm == 'Godel':
         prob_vec = np.asarray(np.amax(transit_matrix, axis=-2)).squeeze()
     else:
@@ -274,7 +280,7 @@ def compute_single_evaluation(fof, batch_ans, n_entity):
         metrics['hit1'] += h1
         metrics['hit3'] += h3
         metrics['hit10'] += h10
-    metrics['num_query'] += len(batch_ans)
+    metrics['num_queries'] += len(batch_ans)
     return metrics
 
 
@@ -296,7 +302,7 @@ if __name__ == "__main__":
     all_metrics = defaultdict(dict)
     for ifof, fof in t:
         batch_ans_list, metric = [], {}
-        for query_index in range(args.batch_size):
+        for query_index in range(len(fof.easy_answer_list)):
             ans = solve_EFO1(fof, relation_matrix_list, 'product', 'Godel', query_index)
             batch_ans_list.append(ans)
         batch_score = compute_single_evaluation(fof, batch_ans_list, 14505)
