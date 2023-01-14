@@ -5,7 +5,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.language.fof import ConjunctiveFormula, DisjunctiveFormula, Disjunction
-from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, concate_iu_chains
+from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, concate_iu_chains, \
+    parse_lstr_to_disjunctive_formula
 
 
 class QAACollatorWithNoisySentencePair:
@@ -83,14 +84,7 @@ class QAACollator_v2:
         self.lstr = lstr
 
     def __call__(self, batch_input):
-        lformula = parse_lstr_to_lformula_v2(self.lstr)
-        lformula = concate_iu_chains(lformula)
-        if isinstance(lformula, Disjunction):
-            formula_list = lformula.formulas
-        else:
-            formula_list = [lformula]
-        conjunctive_formulas_list = [ConjunctiveFormula(formula) for formula in formula_list]
-        fof = DisjunctiveFormula(conjunctive_formulas_list)
+        fof = parse_lstr_to_disjunctive_formula(self.lstr)
         for rsdict, easy_ans, hard_ans in batch_input:
             fof.append_qa_instances(rsdict, easy_ans, hard_ans)
         return fof
@@ -125,7 +119,7 @@ class QueryAnsweringSeqDataLoader:
 
 
 class QueryAnsweringSeqDataLoader_v2:
-    def __init__(self, qaafile, target_lstr=None, size_limit=-1, **dataloader_kwargs) -> None:
+    def __init__(self, qaafile, target_lstr=None, size_limit=None, **dataloader_kwargs) -> None:
         self.dataloader_kwargs = dataloader_kwargs
 
         with open(qaafile, 'rt') as f:
@@ -139,9 +133,12 @@ class QueryAnsweringSeqDataLoader_v2:
             if not qaa:
                 print(lstr, "query type is empty, continue")
                 continue
-            self.lstr_iterator[lstr] = DataLoader(qaa[:size_limit],
-                collate_fn=QAACollator_v2(lstr),
-                **self.dataloader_kwargs)
+            if size_limit:
+                self.lstr_iterator[lstr] = DataLoader(qaa[:size_limit], collate_fn=QAACollator_v2(lstr),
+                                                      **self.dataloader_kwargs)
+            else:
+                self.lstr_iterator[lstr] = DataLoader(qaa, collate_fn=QAACollator_v2(lstr),
+                                                      **self.dataloader_kwargs)
 
 
     def get_fof_list(self):
