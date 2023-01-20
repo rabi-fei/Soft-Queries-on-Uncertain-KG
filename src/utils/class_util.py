@@ -104,6 +104,11 @@ class Writer:
         df = pd.DataFrame.from_dict(data=obj)
         df.to_csv(join(self.case_dir, name))
 
+    def save_torch(self, obj, name):
+        if not name.endswith('ckpt'):
+            name += '.ckpt'
+        torch.save(obj, join(self.case_dir, name))
+
     def save_model(self, model: torch.nn.Module, opt, step, warm_up_step, lr):
         print("saving model : ", step)
         device = model.device

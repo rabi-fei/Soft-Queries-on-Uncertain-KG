@@ -170,7 +170,8 @@ def pickle_select_form(pickle_path, test_step, meta_key_list, fixed_dict, normal
     output_data.to_csv(os.path.join(pickle_path, f'chose_form_{normal_form}.csv'))
 
 
-def process_output_whole_folder(whole_folder, use_MAML, auto_delete, percentage=False, transpose=False):
+def process_output_whole_folder(whole_folder, use_MAML, auto_delete, mode, fixed_dict, percentage=False,
+                                transpose=False):
     output_dict = {}
     exist_sub_dir = False
     delete_folder = False
@@ -178,32 +179,34 @@ def process_output_whole_folder(whole_folder, use_MAML, auto_delete, percentage=
         full_sub_path = os.path.join(whole_folder, sub_file)
         if os.path.isdir(full_sub_path) and sub_file != '.ipynb_checkpoints':
             exist_sub_dir = True
-            sub_output_dict = process_output_whole_folder(full_sub_path, use_MAML, auto_delete)
+            sub_output_dict = process_output_whole_folder(full_sub_path, use_MAML, auto_delete, mode, fixed_dict,
+                                                          percentage, transpose)
             output_dict.update(sub_output_dict)
     if not exist_sub_dir:  # The final dir that contains output
         now_model_name = whole_folder.split('/')[-1].split('_')[0]
         file_list = os.listdir(whole_folder)
-        ckpt_step_list = [int(ckpt_file.split('.')[0]) for ckpt_file in file_list if ckpt_file.endswith('.ckpt')]
-        logging_test_step = [int(logging_file.split('.')[0].split('_')[-1])
+        ckpt_step_list = [int(ckpt_file.split('.')[0]) for ckpt_file in file_list if ckpt_file.endswith('.ckpt')
+                          and ckpt_file.split('.')[0].isdigit()]
+        logging_mode_step = [int(logging_file.split('.')[0].split('_')[-1])
                              for logging_file in file_list if logging_file.endswith('.pickle')
-                             and logging_file.split('.')[0].split('_')[2] == 'test']
+                             and logging_file.split('.')[0].split('_')[2] == mode]
         largest_ckpt_step = max(ckpt_step_list) if ckpt_step_list else 0
-        print(f'processing folder {whole_folder}， {len(logging_test_step)}')
-        if len(logging_test_step):
+        print(f'processing folder {whole_folder}， {len(logging_mode_step)}')
+        if len(logging_mode_step):
             if use_MAML:
-                new_merge_pickle(whole_folder, sorted(logging_test_step),
-                                 ["step", "adaptation_step", "formula", "metric"], 'test')
-                new_read_merge_pickle(whole_folder, {'metric': 'MRR', 'adaptation_step': 5}, mode='test',
+                new_merge_pickle(whole_folder, sorted(logging_mode_step),
+                                 ["step", "adaptation_step", "formula", "metric"], mode)
+                new_read_merge_pickle(whole_folder, {'metric': 'MRR', 'adaptation_step': 5}, mode=mode,
                                       percentage=percentage, transpose=transpose)
-                new_read_merge_pickle(whole_folder, {'metric': 'MRR', 'step': max(logging_test_step)}, mode='test',
+                new_read_merge_pickle(whole_folder, {'metric': 'MRR', 'step': max(logging_mode_step)}, mode=mode,
                                       percentage=percentage, transpose=transpose)
             else:
-                new_merge_pickle(whole_folder, sorted(logging_test_step),
-                                 ["step", "formula", "metric"], 'test')
-                new_read_merge_pickle(whole_folder, {'metric': 'MRR'}, mode='test', percentage=percentage,
+                new_merge_pickle(whole_folder, sorted(logging_mode_step),
+                                 ["step", "formula", "metric"], mode)
+                new_read_merge_pickle(whole_folder, fixed_dict, mode=mode, percentage=percentage,
                                       transpose=transpose)
         output_dict[whole_folder] = largest_ckpt_step
-        if largest_ckpt_step == 0 and len(logging_test_step) == 0:
+        if largest_ckpt_step == 0 and len(logging_mode_step) == 0:
             delete_folder = True
     # if delete_folder and not exist_sub_dir and auto_delete:
         # shutil.rmtree(whole_folder)
@@ -235,4 +238,8 @@ def aggregate_test(folder_path, prefix, delete_segmented):
 # aggregate_test('EFO-1_log/test_urgent', 'LogicE_0001_eval_False_lr_0.004', True)
 # remove_checkpoint('EFO-1_log/operator_MAML_LogicE/11_9', [], True)
 # remove_checkpoint('EFO-1_log/operator_MAML_LogicE/11_6', [], True)
-process_output_whole_folder('/home/hyin/Truth-Value-Reasoning-on-Knowledge-Graphs/results/log/sparse/torch_0.01_0.01.ckpt230114.16:54:270877dbf3', False, False, True, True)
+fb237_result = {
+    'valid_faithful': 'results/sparse/torch_0.01_0.01.ckpt230118.14:34:56ed0b73c5'
+}
+
+process_output_whole_folder('results/sparse/FB15k', False, False, 'test', {'step': 0}, True, False)

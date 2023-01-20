@@ -111,7 +111,7 @@ if __name__ == "__main__":
         formula_lstr, disjunctive_lstr = test_parse_formula(lstr)
         print(lstr, formula_lstr, disjunctive_lstr, lstr == formula_lstr, formula_lstr == disjunctive_lstr)
     """
-    for lstr in newlstr2name:
+    for lstr in DNF_lstr2name:
         formula_lstr, disjunctive_lstr = test_parse_formula(lstr)
         print(lstr, formula_lstr, disjunctive_lstr, lstr == formula_lstr, formula_lstr == disjunctive_lstr)
 

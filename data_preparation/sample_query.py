@@ -17,22 +17,24 @@ from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
-from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, lstr2name, DNF_lstr2name
+from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, index2newlstr
 from src.language.grammar import parse_lstr_to_disjunctive_formula
 from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
                             QueryAnsweringSeqDataLoader_v2,
                             TrainRandomSentencePairDataLoader)
-data_folder = 'data/FB15k-237-betae'
+
 train_queries = list(name2lstr.values())
 query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--output_folder", type=str, default='data')
+parser.add_argument("--output_folder", type=str, default='data/NELL-EFO1')
+parser.add_argument("--data_folder", type=str, default='data/NELL-betae')
 parser.add_argument("--sample_num", type=int, default=5000)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
+parser.add_argument("--sample_formula_list", type=list, default=[10])
 
 
 lstr_3pc = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
@@ -147,24 +149,25 @@ def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: Knowl
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
+    kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     valid_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'valid_kg.tsv'),
+        triple_files=osp.join(args.data_folder, 'valid_kg.tsv'),
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'test_kg.tsv'),
+        triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
     """
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
     """
 
-    for index, lstr in enumerate(newlstr2name):
+    for index, lstr_index in enumerate(args.sample_formula_list):
+        lstr = index2newlstr[lstr_index]
         now_data = {lstr: []}
-        output_file_name = osp.join(args.output_folder, f'{args.mode}_{index}_real_EFO1_qaa.json')
+        output_file_name = osp.join(args.output_folder, f'{args.mode}_{lstr_index}_real_EFO1_qaa.json')
         if os.path.exists(output_file_name):
             with open(output_file_name, 'rt') as f:
                 old_data = json.load(f)

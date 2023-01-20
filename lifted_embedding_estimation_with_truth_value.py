@@ -64,7 +64,7 @@ DNF_lstr2name = {
     '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))': 'pin',
     '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))': 'pni',
     '(r1(s1,f))|(r2(s2,f))': '2u',
-    '((r1(s1,e1))|(r2(s2,e1)))&(r3(e1,f))': 'up'
+    '((r1(s1,e1))&(r3(e1,f)))|((r2(s2,e1))&(r3(e1,f)))': 'up'
 }
 
 name2lstr = {
@@ -86,7 +86,6 @@ name2lstr = {
     "up-dm": "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",  # up-dm
 }
 
-
 negation_query = [
     "r1(s1,f)&!r2(s2,f)",  # 2in
     "r1(s1,f)&r2(s2,f)&!r3(s3,f)",  # 3in
@@ -106,11 +105,24 @@ newlstr2name = {  # new naming convention: m for multi edge, a for anchor node, 
     '(r1(e1,f))&(!(r2(s1,f)))': '2an',
     '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))': '3ia',
     '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))': '3c',
-    # '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))': '3cm',
+    '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))': '3cm',
     # '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,e2))': '3mc',
     '(((((r1(s1,e1))&(r2(e1,e3)))&(r3(s2,e2)))&(r4(e2,e3)))&(r5(e1,e2)))&(r6(e3,f))': '3pcp'
 }
 
+index2newlstr = {
+    0: '((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f))',
+    1: '((r1(s1,e1))&(r2(e1,f)))&(!(r3(e1,f)))',
+    2: '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e1,e2))',
+    3: '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e2,f))',
+    4: '(((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f)))&(r4(e1,f))',
+    5: '(r1(s1,f))&(r2(e1,f))',
+    6: '(r1(e1,f))&(!(r2(s1,f)))',
+    7: '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))',
+    8: '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))',
+    9: '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))',
+    10: '(((((r1(s1,e1))&(r2(e1,e3)))&(r3(s2,e2)))&(r4(e2,e3)))&(r5(e1,e2)))&(r6(e3,f))'
+}
 
 parser = argparse.ArgumentParser()
 
@@ -177,6 +189,7 @@ parser.add_argument("--agg_func", type=str, default='sum')
 parser.add_argument("--score", type=str, default='cos', choices=['cos', 'dist'])
 parser.add_argument("--gamma", type=float, default=9)
 
+
 def train_neural_binary_predicate(
         desc: str,
         train_dataloader: QueryAnsweringSeqDataLoader,
@@ -184,7 +197,6 @@ def train_neural_binary_predicate(
         reasoner: Reasoner,
         optimizer: torch.optim.Optimizer,
         args):
-
     trajectory = defaultdict(list)
 
     fof_list = train_dataloader.get_fof_list()
@@ -233,7 +245,7 @@ def train_neural_binary_predicate(
         ####################
         metric_step['loss'] = loss.item()
 
-        postfix = {'step': ifof+1}
+        postfix = {'step': ifof + 1}
         for k in metric_step:
             postfix[k] = np.mean(metric_step[k])
             trajectory[k].append(postfix[k])
@@ -260,7 +272,6 @@ def train_lifted_estimator_v1(
         reasoner: Reasoner,
         optimizer: torch.optim.Optimizer,
         args):
-
     T = args.temp
     trajectory = defaultdict(list)
 
@@ -330,9 +341,9 @@ def train_lifted_estimator_v1(
 
         if args.neg_sample_dist_coef > 0 and 'neg_sample_dist' in args.objective:
             pos_sample_score = torch.sigmoid(
-                args.dist_margin - torch.sum((batch_pos_emb-batch_fvar_emb)**2, dim=-1) / T)
+                args.dist_margin - torch.sum((batch_pos_emb - batch_fvar_emb) ** 2, dim=-1) / T)
             neg_sample_score = torch.sigmoid(
-                args.dist_margin - torch.sum((batch_neg_emb-batch_fvar_emb)**2, dim=-1) / T)
+                args.dist_margin - torch.sum((batch_neg_emb - batch_fvar_emb) ** 2, dim=-1) / T)
 
             neg_sample_nll = - torch.log(pos_sample_score + 1e-10).mean() \
                              - torch.log(1 - neg_sample_score + 1e-10).mean()
@@ -349,7 +360,7 @@ def train_lifted_estimator_v1(
         ####################
         metric_step['loss'] = loss.item()
 
-        postfix = {'step': ifof+1}
+        postfix = {'step': ifof + 1}
         for k in metric_step:
             postfix[k] = np.mean(metric_step[k])
             trajectory[k].append(postfix[k])
@@ -376,7 +387,6 @@ def train_lifted_estimator_v2(
         reasoner: Reasoner,
         optimizer: torch.optim.Optimizer,
         args):
-
     T = args.temp
     trajectory = defaultdict(list)
 
@@ -399,7 +409,6 @@ def train_lifted_estimator_v2(
         pos_1answer_list = []
         neg_answers_list = []
 
-        
         for i, pos_answer_dict in enumerate(fof.easy_answer_list):
             # this iteration is somehow redundant since there is only one free
             # variable in current case, i.e., fname='f'
@@ -412,7 +421,7 @@ def train_lifted_estimator_v2(
         batch_neg_emb = nbp.get_entity_emb(
             torch.cat(neg_answers_list, dim=1))
 
-        if args.score == 'cos':        
+        if args.score == 'cos':
             contrastive_pos_score = torch.exp(torch.cosine_similarity(
                 batch_pos_emb, batch_fvar_emb, dim=-1) / T)
             contrastive_neg_score = torch.exp(torch.cosine_similarity(
@@ -433,13 +442,12 @@ def train_lifted_estimator_v2(
             metric_step['pos_nll'] = pos_nll.mean().item()
             metric_step['neg_nll'] = neg_nll.mean().item()
             metric_step['neg_sample_nll'] = neg_sample_nll.mean().item()
-            
 
         if 'neg_sample_dist' in args.objective:
             pos_sample_score = torch.sigmoid(
-                args.dist_margin - torch.sum((batch_pos_emb-batch_fvar_emb)**2, dim=-1) / T)
+                args.dist_margin - torch.sum((batch_pos_emb - batch_fvar_emb) ** 2, dim=-1) / T)
             neg_sample_score = torch.sigmoid(
-                args.dist_margin - torch.sum((batch_neg_emb-batch_fvar_emb)**2, dim=-1) / T)
+                args.dist_margin - torch.sum((batch_neg_emb - batch_fvar_emb) ** 2, dim=-1) / T)
 
             neg_sample_nll = - torch.log(pos_sample_score + 1e-10).mean() \
                              - torch.log(1 - neg_sample_score + 1e-10).mean()
@@ -455,7 +463,7 @@ def train_lifted_estimator_v2(
         ####################
         metric_step['loss'] = loss.item()
 
-        postfix = {'step': ifof+1}
+        postfix = {'step': ifof + 1}
         for k in metric_step:
             postfix[k] = np.mean(metric_step[k])
             trajectory[k].append(postfix[k])
@@ -612,7 +620,7 @@ def compute_evaluation_scores(fof, batch_entity_rankings, metric):
         pure_hard_ans_rank -= num_skipped_answers.reshape(
             pure_hard_ans_rank.shape)
 
-        rr = (1 / (1+pure_hard_ans_rank)).detach().cpu().float().numpy()
+        rr = (1 / (1 + pure_hard_ans_rank)).detach().cpu().float().numpy()
         hit1 = (pure_hard_ans_rank < 1).detach().cpu().float().numpy()
         hit3 = (pure_hard_ans_rank < 3).detach().cpu().float().numpy()
         hit10 = (pure_hard_ans_rank < 10).detach().cpu().float().numpy()
@@ -807,7 +815,6 @@ if __name__ == "__main__":
         lr=1e-3,
         weight_decay=args.weight_decay)
 
-
     if args.checkpoint_path:
         nbp.load_state_dict(torch.load(args.checkpoint_path), strict=False)
 
@@ -853,9 +860,9 @@ if __name__ == "__main__":
         if args.finetune_kge:
             optimizer_estimator = getattr(torch.optim, args.optimizer)(
                 list(lgnn_layer.parameters()) + list(nbp.parameters()),
-#                 list(lgnn_layer.parameters()),
+                #                 list(lgnn_layer.parameters()),
                 lr=args.learning_rate,
-                weight_decay=args.weight_decay)        
+                weight_decay=args.weight_decay)
         else:
             optimizer_estimator = getattr(torch.optim, args.optimizer)(
                 # list(lgnn_layer.parameters()) + list(nbp._entity_embedding.parameters()),
@@ -919,24 +926,23 @@ if __name__ == "__main__":
 
     print("dataset prepared")
 
-
     if args.eval_cqd:
         evaluate_by_search_emb_then_rank_truth_value(
             -1, f"CQD evaluate validate set",
             valid_dataloader, nbp,
             reasoner=GradientEFOReasoner(nbp, tnorm,
-                                        reasoning_rate=args.reasoning_rate,
-                                        reasoning_steps=args.reasoning_steps,
-                                        reasoning_optimizer=args.reasoning_optimizer)
-            )
+                                         reasoning_rate=args.reasoning_rate,
+                                         reasoning_steps=args.reasoning_steps,
+                                         reasoning_optimizer=args.reasoning_optimizer)
+        )
         evaluate_by_search_emb_then_rank_truth_value(
             -1, f"CQD evaluate test set",
             test_dataloader, nbp,
             reasoner=GradientEFOReasoner(nbp, tnorm,
-                                        reasoning_rate=args.reasoning_rate,
-                                        reasoning_steps=args.reasoning_steps,
-                                        reasoning_optimizer=args.reasoning_optimizer)
-            )
+                                         reasoning_rate=args.reasoning_rate,
+                                         reasoning_steps=args.reasoning_steps,
+                                         reasoning_optimizer=args.reasoning_optimizer)
+        )
         exit()
     for e in range(args.epoch):
         evaluate_by_nearest_search(e, f"NN evaluate test set epoch {e + 1}",
@@ -944,8 +950,8 @@ if __name__ == "__main__":
         train_lifted_estimator_v2(f"epoch {e}",
                                   train_dataloader, nbp, reasoner, optimizer_estimator, args)
         scheduler.step()
-        if (e+1) % 5 == 0:
-            evaluate_by_nearest_search(e, f"NN evaluate validate set epoch {e+1}",
+        if (e + 1) % 5 == 0:
+            evaluate_by_nearest_search(e, f"NN evaluate validate set epoch {e + 1}",
                                        valid_dataloader, nbp, reasoner)
-            evaluate_by_nearest_search(e, f"NN evaluate test set epoch {e+1}",
+            evaluate_by_nearest_search(e, f"NN evaluate test set epoch {e + 1}",
                                        test_dataloader, nbp, reasoner)

@@ -8,16 +8,16 @@ from collections import defaultdict
 from typing import List
 
 import torch
-from scipy.sparse import csr_matrix
 import pickle
 
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt", type=str, default='../cqd/models')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--ckpt", type=str, default='/home/hyin/cqd/models/FB15k_matrix/')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-betae')
 parser.add_argument("--action", choices=['prob', 'sparse', 'change'], default='prob')
+parser.add_argument("--output_folder", type=str, default='sparse/15k')
 
 
 def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent_kg: KnowledgeGraph):
@@ -47,6 +47,7 @@ def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent
 def create_matrix_from_ckpt(scoring_matrix, observed_kg: KnowledgeGraph, real_starting_r, threshold=0.01, epsilon=0.01):
     n_rel, n_entity = scoring_matrix.shape[0], scoring_matrix.shape[1]
     full_tail_prob = torch.softmax(scoring_matrix, dim=2)
+    sparse_matrix_list = []
     for rel_id in range(n_rel):
         for h_id in range(n_entity):
             tail_prob = full_tail_prob[rel_id][h_id]
@@ -58,14 +59,15 @@ def create_matrix_from_ckpt(scoring_matrix, observed_kg: KnowledgeGraph, real_st
                                                        full_tail_prob[rel_id][h_id], torch.zeros(n_entity))
             full_tail_prob[rel_id][h_id] = full_tail_prob[rel_id][h_id].clamp(0, 1-epsilon)
             full_tail_prob[rel_id][h_id][list(tail_set)] = 1
-    return full_tail_prob
+        sparse_matrix_list.append(full_tail_prob[rel_id].to_sparse())
+    return sparse_matrix_list
 
 
 def collect_matrix_scipy_sparse(matrix_path):
     dense_matrix = torch.load(matrix_path)
     matrix_list = []
     for i in range(dense_matrix.shape[0]):
-        sparse_matrix = csr_matrix(dense_matrix[i])
+        sparse_matrix = dense_matrix[i]
         matrix_list.append(sparse_matrix)
     return matrix_list
 
@@ -89,30 +91,17 @@ if __name__ == "__main__":
         triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
     '''
-    threshold, epsilon = 0.05, 0.01
-    split_num = int(79)
+    threshold, epsilon = 0.001, 0
+    split_num = int(269)
     split_each_num = int(train_kg.num_relations / split_num)
     all_matrix_list = []
-    for split_id in range(split_num):
+    for split_id in range(32, split_num):
+        matrix_path = osp.join(args.output_folder, f'split_{split_id}_matrix_{threshold}_{epsilon}.ckpt')
         # whole_prob_matrix = torch.zeros(split_each_num, train_kg.num_entities, train_kg.num_entities)
-        matrix_path = f'matrix/matrix_{split_id}_{threshold}_{epsilon}.ckpt'
-        if args.action == 'sparse':
-            if osp.exists(matrix_path):
-                part_matrix_list = collect_matrix_scipy_sparse(matrix_path)
-                all_matrix_list.extend(part_matrix_list)
-                continue
-        elif args.action == 'prob':
-            score_matrix = torch.load(osp.join(args.ckpt, f'matrix_{split_id}.ckpt'), map_location=None)
-            real_starting_r = int(split_id * split_each_num)
-            prob_matrix = create_matrix_from_ckpt(score_matrix, train_kg, real_starting_r, threshold, epsilon)
-            torch.save(prob_matrix, matrix_path)
-    if args.action == 'sparse':
-        with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'wb') as data:
-            pickle.dump(all_matrix_list, data)
-    if args.action == 'change':
-        with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'rb') as data:
-            r_matrix_list = pickle.load(data)
-        with open(f'sparse/scipy_{threshold}_{epsilon}.pickle', 'wb') as data:
-            new_r_matrix_list = change_matrix_format(r_matrix_list)
-            pickle.dump(new_r_matrix_list, data)
+        score_matrix = torch.load(osp.join(args.ckpt, f'matrix_{split_id}.ckpt'), map_location=None)
+        real_starting_r = int(split_id * split_each_num)
+        sparse_matrix_list = create_matrix_from_ckpt(score_matrix, train_kg, real_starting_r, threshold, epsilon)
+        torch.save(sparse_matrix_list, matrix_path)
+        print(f'matrix of {split_id} finished')
+    # torch.save(all_matrix_list, matrix_path)
 

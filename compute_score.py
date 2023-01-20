@@ -10,6 +10,10 @@ from math import ceil
 
 import torch
 
+from create_matrix import create_matrix_from_ckpt
+from src.structure.knowledge_graph import KnowledgeGraph
+from src.structure.knowledge_graph_index import KGIndex
+
 
 def compute_batch_score(rel, arg1, arg2, rank):
     rel_real, rel_img = rel[:, :, :rank], rel[:, :, rank:]
@@ -28,19 +32,27 @@ def compute_batch_score(rel, arg1, arg2, rank):
 
 
 if __name__ == "__main__":
-    device = torch.device('cuda:{}'.format(1))
-    cqd_path = '/home/hyin/cqd/models/FB15k.ckpt'
+    device = torch.device('cuda:{}'.format(2))
+    data_folder = 'data/FB15k-237-betae'
+    cqd_path = '/home/hyin/cqd/models/FB15k-237.ckpt'
+    kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
+    train_kg = KnowledgeGraph.create(
+        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        kgindex=kgidx)
+    threshold, epsilon = 0.001, 0
+
     cqd_ckpt = torch.load(cqd_path)
     ent_emb = cqd_ckpt['embeddings.0.weight'].to(device)
     rel_emb = cqd_ckpt['embeddings.1.weight'].to(device)
     n_rel, n_ent = rel_emb.shape[0], ent_emb.shape[0]
-    split_num = 269
+    split_num = 6
     split_each_relation = int(n_rel / split_num)
-    batch_head = 50
+    batch_head = 100
     head_total_batch = ceil(n_ent / batch_head)
-    for split in range(201, split_num):
-        all_matrix = torch.zeros((split_each_relation, n_ent, n_ent), requires_grad=False)
+    for split in range(0, split_num):
+        sparse_list = []
         for relation_id in range(split_each_relation):
+            all_matrix = torch.zeros((1, n_ent, n_ent), requires_grad=False)
             relation_total_id = relation_id + split * split_each_relation
             print('r_id', relation_total_id)
             for head_batch_id in range(head_total_batch):
@@ -50,7 +62,11 @@ if __name__ == "__main__":
                 tail_emb = ent_emb.unsqueeze(0)
                 this_rel_emb = rel_emb[relation_total_id].unsqueeze(0).unsqueeze(0)
                 batch_score = compute_batch_score(this_rel_emb, batch_head_emb, tail_emb, 1000)
-                all_matrix[relation_id, starting_h_id: starting_h_id + batch_head] = batch_score
+                all_matrix[0, starting_h_id: starting_h_id + batch_head] = batch_score
                 del tail_emb, batch_score, batch_head_emb, this_rel_emb
-        torch.save(all_matrix, f'/home/hyin/cqd/models/FB15k_matrix/matrix_{split}.ckpt')
+            sparse_one_list = create_matrix_from_ckpt(all_matrix, train_kg, relation_total_id, threshold,
+                                                      epsilon)
+            del all_matrix
+            sparse_list.extend(sparse_one_list)
+        torch.save(sparse_list, f'matrix/FB15k-237/split_{split}_matrix_{threshold}_{epsilon}.ckpt')
         print(f"split{split} saved")

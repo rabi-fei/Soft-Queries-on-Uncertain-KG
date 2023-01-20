@@ -14,8 +14,12 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--data_folder", type=str, default='data/FB15k-betae')
-parser.add_argument("--output_folder", type=str, default='sparse/15k')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--input_folder", type=str, default='matrix/FB15k-237')
+parser.add_argument("--output_folder", type=str, default='sparse/FB15k-237')
+parser.add_argument("--threshold", type=int, default=0.01)
+parser.add_argument("--epsilon", type=int, default=0.001)
+parser.add_argument("--split", type=int, default=6)
 
 
 def create_matrix_from_ckpt(scoring_matrix_list, observed_kg: KnowledgeGraph, real_starting_r, threshold, epsilon):
@@ -41,16 +45,15 @@ if __name__ == "__main__":
         triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
 
-    threshold, epsilon = 0.01, 0
     old_threshold, old_epsilon = 0.001, 0
-    split_num = int(269)
-    split_each_num = int(train_kg.num_relations / split_num)
+    split_each_num = int(train_kg.num_relations / args.split)
     all_matrix_list = []
-    for split_id in range(0, split_num):
-        matrix_path = osp.join(args.output_folder, f'split_{split_id}_matrix_{old_threshold}_{old_epsilon}.ckpt')
+    for split_id in range(0, args.split):
+        matrix_path = osp.join(args.input_folder, f'split_{split_id}_matrix_{old_threshold}_{old_epsilon}.ckpt')
         sparse_matrix_part = torch.load(matrix_path)
         real_starting_r = int(split_id * split_each_num)
-        filtered_m_list = create_matrix_from_ckpt(sparse_matrix_part, train_kg, real_starting_r, threshold, epsilon)
+        filtered_m_list = create_matrix_from_ckpt(sparse_matrix_part, train_kg, real_starting_r, args.threshold,
+                                                  args.epsilon)
         all_matrix_list.extend(filtered_m_list)
         print(f'matrix of {split_id} finished')
-    torch.save(all_matrix_list, osp.join(args.output_folder, f'torch_matrix_{threshold}_{epsilon}.ckpt'))
+    torch.save(all_matrix_list, osp.join(args.output_folder, f'torch_{args.threshold}_{args.epsilon}.ckpt'))

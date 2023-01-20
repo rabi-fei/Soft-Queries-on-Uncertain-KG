@@ -22,15 +22,17 @@ false_name2lstr = {
 }
 
 if __name__ == "__main__":
-    original_folder = 'FB15k-237-betae'
-    output_folder = 'FB15k-237-EFO1'
+    original_folder = 'data/NELL-betae'
+    output_folder = 'data/NELL-EFO1'
 
-    f_old = open(osp.join(original_folder, 'valid-qaa.json'))
+    f_old = open(osp.join(original_folder, 'test-qaa.json'))
     old_data = json.load(f_old)
     new_data = {}
     for DNF_lstr in DNF_lstr2name:
         beta_name = DNF_lstr2name[DNF_lstr]
         old_lstr = false_name2lstr[beta_name]
         new_data[DNF_lstr] = old_data[old_lstr]
-    g = open(osp.join(output_folder, 'valid-qaa.json'))
-    g.write(new_data)
+    print(len(new_data))
+    with open(osp.join(output_folder, 'test-qaa.json'), 'w') as output_file:
+        json.dump(new_data, output_file)
+
