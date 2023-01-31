@@ -31,14 +31,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
 parser.add_argument("--ckpt", type=str, default='sparse/NELL/torch_0.001_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=1)
-parser.add_argument("--cuda", type=int, default=1)
+parser.add_argument("--cuda", type=int, default=0)
 parser.add_argument("--data_folder", type=str, default='data/NELL-EFO1')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
 parser.add_argument("--max", type=int, default=100)
 parser.add_argument("--data_type", type=str, default='EFO1_l', choices=['BetaE', 'EFO1', 'EFO1_l'])
-parser.add_argument("--formula", type=list, default=['(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))'])
+parser.add_argument("--formula", type=list, default=['(r1(s1,f))&(r2(e1,f))', '(r1(e1,f))&(!(r2(s1,f)))', '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))'])
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))',
                  '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))',
                  '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
@@ -203,62 +203,15 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
     node_pair, reverse_node_pair = (head_node, tail_node), (tail_node, head_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
-    all_prob_matrix = None
+    transit_matrix_list = []
     for r in h2t_relation:
-        if conj_tnorm == 'product':
-            if all_prob_matrix is not None:
-                all_prob_matrix.mul_(relation_matrix_list[r])
-            else:
-                all_prob_matrix = relation_matrix_list[r]
-        elif conj_tnorm == 'Godel':
-            if all_prob_matrix is not None:
-                all_prob_matrix = torch.minimum(all_prob_matrix, relation_matrix_list[r].to_dense())
-            else:
-                all_prob_matrix = relation_matrix_list[r]
-        else:
-            raise NotImplementedError
+        transit_matrix_list.append(relation_matrix_list[r])
     for r in t2h_relation:
-        if conj_tnorm == 'product':
-            if all_prob_matrix is not None:
-                all_prob_matrix.mul_(relation_matrix_list[r].transpose(-2, -1))
-            else:
-                all_prob_matrix = relation_matrix_list[r].transpose(-2, -1)
-        elif conj_tnorm == 'Godel':
-            if all_prob_matrix  is not None:
-                all_prob_matrix = torch.minimum(all_prob_matrix, relation_matrix_list[r].transpose(-2, -1).to_dense())
-            else:
-                all_prob_matrix = relation_matrix_list[r].transpose(-2, -1)
-        else:
-            raise NotImplementedError
+        transit_matrix_list.append(relation_matrix_list[r].transpose(-2, -1))
     for r in h2t_negation:
-        if conj_tnorm == 'product':
-            if all_prob_matrix is not None:
-                all_prob_matrix.mul_(1 - relation_matrix_list[r].to_dense())
-            else:
-                all_prob_matrix = 1 - relation_matrix_list[r].to_dense()
-        elif conj_tnorm == 'Godel':
-            if all_prob_matrix is not None:
-                all_prob_matrix = torch.minimum(all_prob_matrix, 1 - relation_matrix_list[r].to_dense())
-            else:
-                all_prob_matrix = 1 - relation_matrix_list[r].to_dense()
-        else:
-            raise NotImplementedError
+        transit_matrix_list.append(1 - relation_matrix_list[r].to_dense())
     for r in t2h_negation:
-        if conj_tnorm == 'product':
-            if all_prob_matrix is not None:
-                all_prob_matrix.mul_(1 - relation_matrix_list[r].transpose(-2, -1).to_dense())
-            else:
-                all_prob_matrix = 1 - relation_matrix_list[r].transpose(-2, -1).to_dense()
-        elif conj_tnorm == 'Godel':
-            if all_prob_matrix is not None:
-                all_prob_matrix = torch.minimum(all_prob_matrix,
-                                                1 - relation_matrix_list[r].transpose(-2, -1).to_dense())
-            else:
-                all_prob_matrix = 1 - relation_matrix_list[r].transpose(-2, -1).to_dense()
-        else:
-            raise NotImplementedError
-    '''
-
+        transit_matrix_list.append(1 - relation_matrix_list[r].transpose(-2, -1).to_dense())
     if conj_tnorm == 'product':
         all_prob_matrix = transit_matrix_list[0]
         for i in range(1, len(transit_matrix_list)):
@@ -272,7 +225,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
             all_prob_matrix = torch.minimum(all_prob_matrix, transit_matrix_list[i].to_dense())
     else:
         raise NotImplementedError
-    '''
+
     if all_prob_matrix.is_sparse:  # n*n sparse matrix or dense matrix (when only one negation edges)
         return all_prob_matrix.to_dense()
     else:

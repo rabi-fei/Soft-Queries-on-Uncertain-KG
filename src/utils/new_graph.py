@@ -242,4 +242,4 @@ fb237_result = {
     'valid_faithful': 'results/sparse/torch_0.01_0.01.ckpt230118.14:34:56ed0b73c5'
 }
 
-process_output_whole_folder('results/sparse/FB15k', False, False, 'test', {'step': 0}, True, False)
+process_output_whole_folder('results/sparse', False, False, 'test', {'step': 0}, True, False)

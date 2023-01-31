@@ -7,9 +7,9 @@ from src.structure.knowledge_graph_index import KGIndex
 from src.language.grammar import parse_lstr_to_disjunctive_formula
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFO1')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1')
-parser.add_argument("--mode", type=str, default='valid')
+parser.add_argument("--output_folder", type=str, default='data/NELL-EFO1')
+parser.add_argument("--data_folder", type=str, default='data/NELL-betae')
+parser.add_argument("--mode", type=str, default='test')
 
 
 if __name__ == "__main__":
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     test_kg = KnowledgeGraph.create(
         triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
-    f_old = open(osp.join(args.data_folder, f'{args.mode}-qaa.json'))
+    f_old = open(osp.join(args.output_folder, f'{args.mode}-qaa.json'))
     old_data = json.load(f_old)
     pni_data = old_data.pop('((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))')
     pni_instance = parse_lstr_to_disjunctive_formula('((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))')
@@ -45,6 +45,8 @@ if __name__ == "__main__":
             easy_answer = pni_instance.deterministic_query(now_index, valid_kg)
         correct_query = [qa_dict, {'f': list(easy_answer)}, {'f': list(hard_answer - easy_answer)}]
         pni_data[i] = correct_query
+        if i % 100 == 0:
+            print(f'{i} has been finished.')
     new_data = json.load(open(osp.join(args.output_folder, f'{args.mode}-qaa.json')))
     new_data['((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))'] = pni_data
     with open(osp.join(args.output_folder, f'{args.mode}-qaa.json'), 'wt') as f:

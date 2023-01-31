@@ -9,13 +9,11 @@ from typing import List
 import copy
 
 import numpy as np
-import scipy.sparse
 import torch
 import torch.nn.functional as F
 import tqdm
 import pickle
 from torch import nn
-from scipy.sparse import csc_matrix, diags, issparse
 
 from src.language.fof import ConjunctiveFormula, DisjunctiveFormula
 from src.structure.knowledge_graph import KnowledgeGraph, kg_remove_node
@@ -29,16 +27,16 @@ torch.autograd.set_detect_anomaly(True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
-parser.add_argument("--ckpt", type=str, default='sparse/NELL/torch_0.001_0.001.ckpt')
-parser.add_argument("--batch_size", type=int, default=1)
-parser.add_argument("--cuda", type=int, default=0)
-parser.add_argument("--data_folder", type=str, default='data/NELL-EFO1')
+parser.add_argument("--ckpt", type=str, default='sparse/237/torch_0.005_0.001.ckpt')
+parser.add_argument("--batch_size", type=int, default=10)
+parser.add_argument("--cuda", type=int, default=1)
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
-parser.add_argument("--max", type=int, default=100)
-parser.add_argument("--data_type", type=str, default='EFO1_l', choices=['BetaE', 'EFO1', 'EFO1_l'])
-parser.add_argument("--formula", type=list, default=['((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'])
+parser.add_argument("--max", type=int, default=20)
+parser.add_argument("--data_type", type=str, default='EFO1', choices=['BetaE', 'EFO1', 'EFO1_l'])
+parser.add_argument("--formula", type=list, default=['((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))', '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))'])
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
 
 
@@ -181,10 +179,17 @@ def extend_ans(ans_node, sub_ans_node, sub_graph: KnowledgeGraph, neg_sub_graph:
                leaf_candidate, sub_ans, conj_tnorm, exist_tnorm):
     all_prob_matrix = construct_matrix_list(sub_ans_node, ans_node, sub_graph, neg_sub_graph, relation_matrix,
                                             conj_tnorm)
-    all_prob_matrix.mul_(sub_ans.unsqueeze(-1))
+    if conj_tnorm == 'product':
+        all_prob_matrix.mul_(sub_ans.unsqueeze(-1))
+    elif conj_tnorm == 'Godel':
+        all_prob_matrix = torch.minimum(all_prob_matrix, sub_ans.unsqueeze(-1))
+    else:
+        raise NotImplementedError
     if exist_tnorm == 'Godel':
         prob_vec = (torch.amax(all_prob_matrix, dim=-2)).squeeze()  # prob*vec is 1*n  matrix
         del all_prob_matrix
+    elif exist_tnorm == 'product':
+        prob_vec = 1 - torch.prod(1 - all_prob_matrix, dim=-2)
     else:
         raise NotImplementedError
     if conj_tnorm == 'product':
@@ -220,7 +225,10 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
     elif conj_tnorm == 'Godel':
         all_prob_matrix = transit_matrix_list[0].to_dense()
         for i in range(1, len(transit_matrix_list)):
-            all_prob_matrix = torch.minimum(all_prob_matrix, transit_matrix_list[i].to_dense())
+            if transit_matrix_list[i].is_sparse:
+                all_prob_matrix = torch.minimum(all_prob_matrix, transit_matrix_list[i].to_dense())
+            else:
+                all_prob_matrix = torch.minimum(all_prob_matrix, transit_matrix_list[i])
     else:
         raise NotImplementedError
 

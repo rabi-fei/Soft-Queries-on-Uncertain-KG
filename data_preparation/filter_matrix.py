@@ -15,9 +15,9 @@ from src.structure.knowledge_graph_index import KGIndex
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
-parser.add_argument("--input_folder", type=str, default='matrix/FB15k-237')
-parser.add_argument("--output_folder", type=str, default='sparse/FB15k-237')
-parser.add_argument("--threshold", type=int, default=0.01)
+parser.add_argument("--input_folder", type=str, default='matrix/FB15k-237-Distmult')
+parser.add_argument("--output_folder", type=str, default='sparse/FB15k-237-Distmult')
+parser.add_argument("--threshold", type=int, default=0.05)
 parser.add_argument("--epsilon", type=int, default=0.001)
 parser.add_argument("--split", type=int, default=6)
 
@@ -45,15 +45,18 @@ if __name__ == "__main__":
         triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
 
-    old_threshold, old_epsilon = 0.001, 0
+    old_threshold, old_epsilon = 0.005, 0.001
     split_each_num = int(train_kg.num_relations / args.split)
     all_matrix_list = []
     for split_id in range(0, args.split):
         matrix_path = osp.join(args.input_folder, f'split_{split_id}_matrix_{old_threshold}_{old_epsilon}.ckpt')
         sparse_matrix_part = torch.load(matrix_path)
         real_starting_r = int(split_id * split_each_num)
-        filtered_m_list = create_matrix_from_ckpt(sparse_matrix_part, train_kg, real_starting_r, args.threshold,
-                                                  args.epsilon)
+        if old_threshold == args.threshold and old_epsilon == args.epsilon:
+            filtered_m_list = sparse_matrix_part
+        else:
+            filtered_m_list = create_matrix_from_ckpt(sparse_matrix_part, train_kg, real_starting_r, args.threshold,
+                                                      args.epsilon)
         all_matrix_list.extend(filtered_m_list)
         print(f'matrix of {split_id} finished')
     torch.save(all_matrix_list, osp.join(args.output_folder, f'torch_{args.threshold}_{args.epsilon}.ckpt'))
