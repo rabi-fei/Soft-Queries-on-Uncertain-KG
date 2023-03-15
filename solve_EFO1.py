@@ -34,7 +34,7 @@ parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
-parser.add_argument("--max", type=int, default=20)
+parser.add_argument("--max", type=int, default=10)
 parser.add_argument("--data_type", type=str, default='EFO1', choices=['BetaE', 'EFO1', 'EFO1_l'])
 parser.add_argument("--formula", type=list, default=['((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))', '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))'])
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
@@ -78,12 +78,13 @@ def solve_conjunctive(positive_graph: KnowledgeGraph, negative_graph: KnowledgeG
                                                     descending=True)[:min(max_enumeration_here, enumeration_num)]
         else:
             to_enumerate_candidates = now_candidate_set[to_enumerate_node].nonzero()
+        this_node_candidates = copy.deepcopy(now_candidate_set[to_enumerate_node])
         all_enumerate_ans = torch.zeros((to_enumerate_candidates.shape[0], n_entity)).to(device)
         if to_enumerate_candidates.shape[0] == 0:
             return torch.zeros(n_entity).to(device)
         for i, enumerate_candidate in enumerate(to_enumerate_candidates):
             single_candidate = torch.zeros_like(now_candidate_set[to_enumerate_node]).to(device)
-            candidate_truth_value = now_candidate_set[to_enumerate_node][enumerate_candidate]
+            candidate_truth_value = this_node_candidates[enumerate_candidate]
             single_candidate[enumerate_candidate] = 1
             now_candidate_set[to_enumerate_node] = single_candidate
             answer = cut_node_sub_problem(to_enumerate_node, adjacency_node_list, positive_graph, negative_graph,
