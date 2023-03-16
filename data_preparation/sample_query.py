@@ -29,15 +29,15 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--output_folder", type=str, default='data/NELL-EFO1')
-parser.add_argument("--data_folder", type=str, default='data/NELL-betae')
-parser.add_argument("--sample_num", type=int, default=5000)
+parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFO1-10000')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--sample_num", type=int, default=10000)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
-parser.add_argument("--sample_formula_list", type=list, default=[10])
+parser.add_argument("--sample_formula_list", type=list, default=[8])
 
 
-lstr_3pc = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
+lstr_3c = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
 lstr_3pnc = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(!(r5(e1,e2)))'
 lstr_mi = '(((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f)))&(r4(s2,f))'
 lstr_2an = '(r1(e1,f))&(!(r2(s1,f)))'
@@ -47,7 +47,7 @@ lstr_3pcp = '(((((r1(s1,e1))&(r2(e1,e3)))&(r3(s2,e2)))&(r4(e2,e3)))&(r5(e1,e2)))
 def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
     if kg is None:
         return None
-    if given_lstr == lstr_3pc:
+    if given_lstr == lstr_3c:
         e1_candidate = kg.hr2t[(fof_qa_dict['s1'], fof_qa_dict['r1'])]
         e2_candidate = kg.hr2t[(fof_qa_dict['s2'], fof_qa_dict['r3'])]
         all_ans = set()
@@ -111,7 +111,7 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
 
 
 def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: KnowledgeGraph, sample_num, sample_mode,
-                             meaningful_negation, existing_all_qa_dict=None):
+                             meaningful_negation, double_checking, existing_all_qa_dict=None):
     print(f'sampling query of {given_lstr}')
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
     all_qa_dict = existing_all_qa_dict if existing_all_qa_dict else set()
@@ -130,8 +130,11 @@ def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: Knowl
                 else:
                     hard_answer = fof.deterministic_query(now_index, hard_kg)
                     easy_answer = fof.deterministic_query(now_index, easy_kg)
-                check_easy_ans, check_hard_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
-                                                 double_checking_answer(given_lstr, qa_dict, hard_kg)
+                if double_checking:
+                    check_easy_ans, check_hard_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
+                        double_checking_answer(given_lstr, qa_dict, hard_kg)
+                else:
+                    check_easy_ans, check_hard_ans = None, None
                 if check_hard_ans is not None:
                     assert hard_answer == check_hard_ans
                 if check_easy_ans is not None:
@@ -185,14 +188,14 @@ if __name__ == "__main__":
             continue
         else:
             if args.mode == 'train':
-                all_query = sample_one_formula_query(lstr, None, train_kg, args.sample_num, args.mode,
-                                                     args.meaningful_negation)
+                all_query = sample_one_formula_query(lstr, None, train_kg, args.sample_num - useful_num, args.mode,
+                                                     args.meaningful_negation, True, all_qa_dict)
             elif args.mode == 'valid':
-                all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.sample_num, args.mode,
-                                                     args.meaningful_negation)
+                all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.sample_num - useful_num, args.mode,
+                                                     args.meaningful_negation, True, all_qa_dict)
             elif args.mode == 'test':
                 all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.sample_num - useful_num, args.mode,
-                                                     args.meaningful_negation, all_qa_dict)
+                                                     args.meaningful_negation, False, all_qa_dict)
             else:
                 raise NotImplementedError
             now_data[lstr].extend(all_query)
