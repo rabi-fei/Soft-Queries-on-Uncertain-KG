@@ -189,7 +189,8 @@ def process_output_whole_folder(whole_folder, use_MAML, auto_delete, mode, fixed
                           and ckpt_file.split('.')[0].isdigit()]
         logging_mode_step = [int(logging_file.split('.')[0].split('_')[-1])
                              for logging_file in file_list if logging_file.endswith('.pickle')
-                             and logging_file.split('.')[0].split('_')[2] == mode]
+                             and logging_file.split('.')[0].split('_')[-2] == mode and
+                             logging_file.split('.')[0].split('_')[-1].isdigit()]
         largest_ckpt_step = max(ckpt_step_list) if ckpt_step_list else 0
         print(f'processing folder {whole_folder}， {len(logging_mode_step)}')
         if len(logging_mode_step):
@@ -203,13 +204,17 @@ def process_output_whole_folder(whole_folder, use_MAML, auto_delete, mode, fixed
             else:
                 new_merge_pickle(whole_folder, sorted(logging_mode_step),
                                  ["step", "formula", "metric"], mode)
-                new_read_merge_pickle(whole_folder, fixed_dict, mode=mode, percentage=percentage,
+                new_fixed_dict = copy.deepcopy(fixed_dict)
+                if 'step' in fixed_dict and fixed_dict['step'] == 'last':
+                    new_fixed_dict['step'] = max(logging_mode_step)
+                new_read_merge_pickle(whole_folder, new_fixed_dict, mode=mode, percentage=percentage,
                                       transpose=transpose)
         output_dict[whole_folder] = largest_ckpt_step
-        if largest_ckpt_step == 0 and len(logging_mode_step) == 0:
+        logging_file_num = len([log_name for log_name in file_list if log_name.endswith('pickle')])
+        if largest_ckpt_step == 0 and logging_file_num == 0:
             delete_folder = True
-    # if delete_folder and not exist_sub_dir and auto_delete:
-        # shutil.rmtree(whole_folder)
+    if delete_folder and not exist_sub_dir and auto_delete:
+        shutil.rmtree(whole_folder)
     return output_dict
 
 
