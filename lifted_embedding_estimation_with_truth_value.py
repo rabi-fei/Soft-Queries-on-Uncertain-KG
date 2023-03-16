@@ -101,9 +101,9 @@ newlstr2name = {  # new naming convention: m for multi edge, a for anchor node, 
     '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e2,f))': '3pm',
     '(((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f)))&(r4(e1,f))': 'im',
     # '(((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f)))&(r4(s2,f))': 'mi',
-    '(r1(s1,f))&(r2(e1,f))': '2ia',
-    '(r1(e1,f))&(!(r2(s1,f)))': '2an',
-    '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))': '3ia',
+    '(r1(s1,f))&(r2(e1,f))': '2il',
+    # '(r1(e1,f))&(!(r2(s1,f)))': '2ln',
+    '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))': '3il',
     '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))': '3c',
     '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))': '3cm',
     # '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,e2))': '3mc',
@@ -127,11 +127,11 @@ index2newlstr = {
 parser = argparse.ArgumentParser()
 
 # base environment
-parser.add_argument("--device", type=str, default="cpu")
+parser.add_argument("--device", type=str, default="cuda:1")
 parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
-parser.add_argument("--task_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--task_folder", type=str, default='data/FB15k-237-EFO1')
 parser.add_argument("--train_queries", action='append')
 parser.add_argument("--eval_queries", action='append')
 
@@ -149,7 +149,7 @@ parser.add_argument("--checkpoint_path")
 
 # optimization for the entire process
 parser.add_argument("--optimizer", type=str, default='AdamW')
-parser.add_argument("--epoch", type=int, default=100)
+parser.add_argument("--epoch", type=int, default=1)
 parser.add_argument("--pretrain_epoch", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=1024)
 parser.add_argument("--batch_size_eval", type=int, default=64)
@@ -172,7 +172,7 @@ parser.add_argument("--lift_coef", type=float, default=1.0)
 parser.add_argument("--tv_coef", type=float, default=1.0)
 parser.add_argument("--neg_sample_dist_coef", type=float, default=1.0)
 # reasoning machine
-parser.add_argument("--reasoner", type=str, default='gnn', choices=['gnn', 'deepset', 'gradient'])
+parser.add_argument("--reasoner", type=str, default='gradient', choices=['gnn', 'deepset', 'gradient'])
 parser.add_argument("--tnorm", type=str, default='product', choices=['product', 'godel'])
 # reasoner = gradient
 parser.add_argument("--reasoning_rate", type=float, default=1e-1)
