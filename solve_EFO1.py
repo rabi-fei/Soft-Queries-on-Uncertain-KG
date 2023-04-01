@@ -29,14 +29,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
 parser.add_argument("--ckpt", type=str, default='sparse/237/torch_0.005_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=10)
-parser.add_argument("--cuda", type=int, default=1)
+parser.add_argument("--cuda", type=int, default=0)
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
 parser.add_argument("--max", type=int, default=10)
 parser.add_argument("--data_type", type=str, default='EFO1', choices=['BetaE', 'EFO1', 'EFO1_l'])
-parser.add_argument("--formula", type=list, default=['((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))', '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))'])
+parser.add_argument("--formula", type=list, default=None)
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
 
 
@@ -70,7 +70,7 @@ def solve_conjunctive(positive_graph: KnowledgeGraph, negative_graph: KnowledgeG
     else:
         to_enumerate_node, adjacency_node_list = find_enumerate_node(positive_graph, negative_graph, now_candidate_set,
                                                                      now_variable)
-        if max_enumeration:
+        if max_enumeration:  # TODO: can not be set to 0, need to update
             easy_candidate = torch.count_nonzero(now_candidate_set[to_enumerate_node] == 1)
             enumeration_num = torch.count_nonzero(now_candidate_set[to_enumerate_node])
             max_enumeration_here = max_enumeration + easy_candidate

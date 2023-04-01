@@ -7,8 +7,8 @@ from src.structure.knowledge_graph_index import KGIndex
 from src.language.grammar import parse_lstr_to_disjunctive_formula
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--output_folder", type=str, default='data/NELL-EFO1')
-parser.add_argument("--data_folder", type=str, default='data/NELL-betae')
+parser.add_argument("--output_folder", type=str, default='data/FB15k-EFO1')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-betae')
 parser.add_argument("--mode", type=str, default='test')
 
 
@@ -47,9 +47,9 @@ if __name__ == "__main__":
         pni_data[i] = correct_query
         if i % 100 == 0:
             print(f'{i} has been finished.')
-    new_data = json.load(open(osp.join(args.output_folder, f'{args.mode}-qaa.json')))
+    new_data = json.load(open(osp.join(args.output_folder, f'{args.mode}_real_EFO1_qaa.json')))
     new_data['((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))'] = pni_data
-    with open(osp.join(args.output_folder, f'{args.mode}-qaa.json'), 'wt') as f:
+    with open(osp.join(args.output_folder, f'{args.mode}_real_EFO1_qaa.json'), 'wt') as f:
         json.dump(new_data, f)
 
 
