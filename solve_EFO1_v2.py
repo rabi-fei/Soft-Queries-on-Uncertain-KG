@@ -168,8 +168,8 @@ def existential_update(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, neg
         all_prob_matrix.mul_(leaf_candidates.unsqueeze(-1))
         all_prob_matrix.mul_(adj_candidates.unsqueeze(-2))
     elif conj_tnorm == 'Godel':
-        all_prob_matrix = torch.maximum(all_prob_matrix, leaf_candidates.unsqueeze(-1))
-        all_prob_matrix = torch.maximum(all_prob_matrix, adj_candidates.unsqueeze(-2))
+        all_prob_matrix = torch.minimum(all_prob_matrix, leaf_candidates.unsqueeze(-1))
+        all_prob_matrix = torch.minimum(all_prob_matrix, adj_candidates.unsqueeze(-2))
     else:
         raise NotImplementedError
     if exist_tnorm == 'Godel':
@@ -221,7 +221,8 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
             else:
                 all_prob_matrix = all_prob_matrix.multiply(transit_matrix_list[i])
     elif conj_tnorm == 'Godel':
-        all_prob_matrix = transit_matrix_list[0].to_dense()
+        all_prob_matrix = transit_matrix_list[0].to_dense() \
+            if transit_matrix_list[0].is_sparse else transit_matrix_list[0]
         for i in range(1, len(transit_matrix_list)):
             all_prob_matrix = torch.minimum(all_prob_matrix, transit_matrix_list[i].to_dense())
     else:
@@ -277,6 +278,7 @@ def solve_EFO1(DNF_formula: DisjunctiveFormula, relation_matrix, conjunctive_tno
                 final_ans = sub_ans_list[0]
                 for i in range(1, len(sub_ans_list)):
                     final_ans = torch.maximum(final_ans, sub_ans_list[i])
+                return final_ans
             else:
                 raise NotImplementedError
 
