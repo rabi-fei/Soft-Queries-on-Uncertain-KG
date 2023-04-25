@@ -17,7 +17,7 @@ from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
-from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, index2newlstr
+from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, index2newlstr, index2EFOX_minimal
 from src.language.grammar import parse_lstr_to_disjunctive_formula
 from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
@@ -29,12 +29,14 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFO1-10000')
+parser.add_argument("--double_check", type=float, default=1)
+parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX')
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
-parser.add_argument("--sample_num", type=int, default=10000)
+parser.add_argument("--sample_num", type=int, default=100)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
-parser.add_argument("--sample_formula_list", type=list, default=[8])
+parser.add_argument("--sample_formula_scope", type=str, default='EFOX_minimal', choices=['real_EFO1', 'EFOX_minimal'])
+parser.add_argument("--sample_formula_list", type=list, default=[0, 1])
 
 
 lstr_3c = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
@@ -114,36 +116,43 @@ def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: Knowl
                              meaningful_negation, double_checking, existing_all_qa_dict=None):
     print(f'sampling query of {given_lstr}')
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
-    all_qa_dict = existing_all_qa_dict if existing_all_qa_dict else set()
+    free_variable_list = list(fof.free_term_dict.keys())
+    f_str = '_'.join(free_variable_list)
+
+    stored_qa_dict = existing_all_qa_dict if existing_all_qa_dict else set()
     all_query_list = []
     now_index = -1
     with tqdm.tqdm(total=sample_num) as pbar:
         while pbar.n < sample_num:
             qa_dict = fof.sample_query(hard_kg, meaningful_negation)
-            if qa_dict and str(qa_dict) not in all_qa_dict:  # We notice sampling may fail and return None
-                all_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
+            if qa_dict and str(qa_dict) not in stored_qa_dict:  # We notice sampling may fail and return None
+                stored_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
                 fof.append_qa_instances(qa_dict)
                 now_index += 1
                 if sample_mode == 'train':
-                    hard_answer = fof.deterministic_query(now_index, hard_kg)
+                    full_answer = fof.deterministic_query(now_index, hard_kg)
                     easy_answer = set()
                 else:
-                    hard_answer = fof.deterministic_query(now_index, hard_kg)
+                    full_answer = fof.deterministic_query(now_index, hard_kg)
                     easy_answer = fof.deterministic_query(now_index, easy_kg)
-                if double_checking:
-                    check_easy_ans, check_hard_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
+                if random.random() < double_checking:
+                    if len(fof.free_term_dict) == 1:
+                        check_easy_ans, check_full_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
                         double_checking_answer(given_lstr, qa_dict, hard_kg)
+                    else:
+                        check_easy_ans = fof.deterministic_query(now_index, easy_kg, 'brutal_set')
+                        check_full_ans = fof.deterministic_query(now_index, hard_kg, 'brutal_set')
                 else:
-                    check_easy_ans, check_hard_ans = None, None
-                if check_hard_ans is not None:
-                    assert hard_answer == check_hard_ans
+                    check_easy_ans, check_full_ans = None, None
+                if check_full_ans is not None:
+                    assert full_answer == check_full_ans
                 if check_easy_ans is not None:
                     assert easy_answer == check_easy_ans
-                if hard_answer - easy_answer:
+                if full_answer - easy_answer:
                     if sample_mode == 'train':
-                        new_query = [qa_dict, {'f': list(hard_answer)}, []]
+                        new_query = [qa_dict, {f_str: list(full_answer)}, []]
                     else:
-                        new_query = [qa_dict, {'f': list(easy_answer)}, {'f': list(hard_answer - easy_answer)}]
+                        new_query = [qa_dict, {f_str: list(easy_answer)}, {f_str: list(full_answer - easy_answer)}]
                     all_query_list.append(new_query)
                     pbar.update(1)
     return all_query_list
@@ -166,11 +175,18 @@ if __name__ == "__main__":
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
     """
+    if args.sample_formula_scope == 'EFOX_minimal':
+        formula_scope = index2EFOX_minimal
+    elif args.sample_formula_scope == 'real_EFO1':
+        formula_scope = index2newlstr
+    else:
+        raise NotImplementedError
 
     for index, lstr_index in enumerate(args.sample_formula_list):
-        lstr = index2newlstr[lstr_index]
+        lstr = formula_scope[lstr_index]
         now_data = {lstr: []}
-        output_file_name = osp.join(args.output_folder, f'{args.mode}_{lstr_index}_real_EFO1_qaa.json')
+        output_file_name = osp.join(args.output_folder,
+                                    f'{args.mode}_{lstr_index}_{args.sample_formula_scope}_qaa.json')
         if os.path.exists(output_file_name):
             with open(output_file_name, 'rt') as f:
                 old_data = json.load(f)
@@ -189,13 +205,13 @@ if __name__ == "__main__":
         else:
             if args.mode == 'train':
                 all_query = sample_one_formula_query(lstr, None, train_kg, args.sample_num - useful_num, args.mode,
-                                                     args.meaningful_negation, True, all_qa_dict)
+                                                     args.meaningful_negation, args.double_check, all_qa_dict)
             elif args.mode == 'valid':
                 all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.sample_num - useful_num, args.mode,
-                                                     args.meaningful_negation, True, all_qa_dict)
+                                                     args.meaningful_negation, args.double_check, all_qa_dict)
             elif args.mode == 'test':
                 all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.sample_num - useful_num, args.mode,
-                                                     args.meaningful_negation, False, all_qa_dict)
+                                                     args.meaningful_negation, args.double_check, all_qa_dict)
             else:
                 raise NotImplementedError
             now_data[lstr].extend(all_query)

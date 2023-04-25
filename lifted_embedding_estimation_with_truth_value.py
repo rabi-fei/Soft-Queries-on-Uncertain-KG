@@ -110,6 +110,15 @@ newlstr2name = {  # new naming convention: m for multi edge, a for anchor node, 
     '(((((r1(s1,e1))&(r2(e1,e3)))&(r3(s2,e2)))&(r4(e2,e3)))&(r5(e1,e2)))&(r6(e3,f))': '3pcp'
 }
 
+EFOXlstr = {
+    '((r1(s1,f1))&(r2(s2,f2)))&(r3(f1,f2))': 'efo2m',
+    '((r1(s1,e1))&(r2(e1,f1)))&(r3(e1,f2))': 'efo2y'
+}
+index2EFOX_minimal = {
+    0: '((r1(s1,f1))&(r2(s2,f2)))&(r3(f1,f2))',
+    1: '((r1(s1,e1))&(r2(e1,f1)))&(r3(e1,f2))'
+}
+
 index2newlstr = {
     0: '((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f))',
     1: '((r1(s1,e1))&(r2(e1,f)))&(!(r3(e1,f)))',
