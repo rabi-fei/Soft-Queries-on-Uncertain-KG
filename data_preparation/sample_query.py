@@ -7,6 +7,7 @@ import random
 from collections import defaultdict
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
 import tqdm
@@ -35,7 +36,7 @@ parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
 parser.add_argument("--sample_num", type=int, default=100)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
-parser.add_argument("--sample_formula_scope", type=str, default='EFOX_minimal', choices=['real_EFO1', 'EFOX_minimal'])
+parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal'])
 parser.add_argument("--sample_formula_list", type=list, default=[0, 1])
 
 
@@ -114,6 +115,9 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
 
 def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: KnowledgeGraph, sample_num, sample_mode,
                              meaningful_negation, double_checking, existing_all_qa_dict=None):
+    """
+    The double-checking have two probabilities: 1. Use Manually write code, 2. use the solver to check.
+    """
     print(f'sampling query of {given_lstr}')
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
     free_variable_list = list(fof.free_term_dict.keys())
@@ -140,8 +144,8 @@ def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: Knowl
                         check_easy_ans, check_full_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
                         double_checking_answer(given_lstr, qa_dict, hard_kg)
                     else:
-                        check_easy_ans = fof.deterministic_query(now_index, easy_kg, 'brutal_set')
-                        check_full_ans = fof.deterministic_query(now_index, hard_kg, 'brutal_set')
+                        check_easy_ans = fof.deterministic_query(now_index, easy_kg, 'solver')
+                        check_full_ans = fof.deterministic_query(now_index, hard_kg, 'solver')
                 else:
                     check_easy_ans, check_full_ans = None, None
                 if check_full_ans is not None:
@@ -174,9 +178,12 @@ if __name__ == "__main__":
     """
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
+
     """
     if args.sample_formula_scope == 'EFOX_minimal':
         formula_scope = index2EFOX_minimal
+    elif args.sample_formula_scope == 'EFOX':
+        formula_scope = pd.read_csv(osp.join('data', 'EFO2_23_41231.csv'), index_col=0).to_dict()['lstr']
     elif args.sample_formula_scope == 'real_EFO1':
         formula_scope = index2newlstr
     else:
@@ -217,4 +224,5 @@ if __name__ == "__main__":
             now_data[lstr].extend(all_query)
         with open(output_file_name, 'wt') as f:
             json.dump(now_data, f)
+
 

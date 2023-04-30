@@ -1,16 +1,10 @@
 import argparse
-import json
-import logging
-import os
 import os.path as osp
-import random
-from collections import defaultdict
-from typing import List
 from math import ceil
 
 import torch
 
-from create_matrix import create_matrix_from_ckpt
+from data_preparation.create_matrix import create_matrix_from_ckpt
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 
