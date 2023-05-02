@@ -15,7 +15,7 @@ from torch import nn
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.structure import get_nbp_class
-from src.structure.knowledge_graph import KnowledgeGraph
+from src.structure.knowledge_graph import KnowledgeGraph, kg2matrix
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
 from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, index2newlstr, index2EFOX_minimal
@@ -30,14 +30,15 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--double_check", type=float, default=1)
+parser.add_argument("--double_check", type=float, default=0.1)
 parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX')
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
-parser.add_argument("--sample_num", type=int, default=100)
+parser.add_argument("--num_samples", type=int, default=1000)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal'])
 parser.add_argument("--sample_formula_list", type=list, default=[0, 1])
+parser.add_argument("--max_ans", type=int, default=100)
 
 
 lstr_3c = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
@@ -113,52 +114,57 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
         return None
 
 
-def sample_one_formula_query(given_lstr, easy_kg: KnowledgeGraph, hard_kg: KnowledgeGraph, sample_num, sample_mode,
-                             meaningful_negation, double_checking, existing_all_qa_dict=None):
+def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: KnowledgeGraph, num_samples, sample_mode,
+                             meaningful_negation, double_checking, max_ans=None, existing_all_qa_dict=None):
     """
     The double-checking have two probabilities: 1. Use Manually write code, 2. use the solver to check.
+    2. The
     """
     print(f'sampling query of {given_lstr}')
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
     free_variable_list = list(fof.free_term_dict.keys())
     f_str = '_'.join(free_variable_list)
-
     stored_qa_dict = existing_all_qa_dict if existing_all_qa_dict else set()
     all_query_list = []
     now_index = -1
-    with tqdm.tqdm(total=sample_num) as pbar:
-        while pbar.n < sample_num:
-            qa_dict = fof.sample_query(hard_kg, meaningful_negation)
+    part_matrix = kg2matrix(part_kg)
+    full_matrix = kg2matrix(full_kg)
+    with tqdm.tqdm(total=num_samples) as pbar:
+        while pbar.n < num_samples:
+            qa_dict = fof.sample_query(full_kg, meaningful_negation, full_matrix)
             if qa_dict and str(qa_dict) not in stored_qa_dict:  # We notice sampling may fail and return None
                 stored_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
                 fof.append_qa_instances(qa_dict)
                 now_index += 1
                 if sample_mode == 'train':
-                    full_answer = fof.deterministic_query(now_index, hard_kg)
+                    full_answer = fof.deterministic_query(now_index, full_kg)
                     easy_answer = set()
                 else:
-                    full_answer = fof.deterministic_query(now_index, hard_kg)
-                    easy_answer = fof.deterministic_query(now_index, easy_kg)
+                    full_answer = fof.deterministic_query(now_index, full_kg)
+                    easy_answer = fof.deterministic_query(now_index, part_kg)
                 if random.random() < double_checking:
                     if len(fof.free_term_dict) == 1:
-                        check_easy_ans, check_full_ans = double_checking_answer(given_lstr, qa_dict, easy_kg), \
-                        double_checking_answer(given_lstr, qa_dict, hard_kg)
+                        check_easy_ans, check_full_ans = double_checking_answer(given_lstr, qa_dict, part_kg), \
+                        double_checking_answer(given_lstr, qa_dict, full_kg)
                     else:
-                        check_easy_ans = fof.deterministic_query(now_index, easy_kg, 'solver')
-                        check_full_ans = fof.deterministic_query(now_index, hard_kg, 'solver')
+                        check_easy_ans = fof.deterministic_query(now_index, part_kg, 'solver')
+                        check_full_ans = fof.deterministic_query(now_index, full_kg, 'solver')
                 else:
                     check_easy_ans, check_full_ans = None, None
                 if check_full_ans is not None:
-                    assert full_answer == check_full_ans
+                    assert full_answer == check_full_ans, \
+                        f"In {sample_mode}, the full {fof.lstr, qa_dict, full_answer}, solver ans is {check_full_ans}"
                 if check_easy_ans is not None:
-                    assert easy_answer == check_easy_ans
+                    assert easy_answer == check_easy_ans, \
+                        f"In {sample_mode}, the easy {fof.lstr, qa_dict, full_answer}, solver ans is {check_full_ans}"
                 if full_answer - easy_answer:
-                    if sample_mode == 'train':
-                        new_query = [qa_dict, {f_str: list(full_answer)}, []]
-                    else:
-                        new_query = [qa_dict, {f_str: list(easy_answer)}, {f_str: list(full_answer - easy_answer)}]
-                    all_query_list.append(new_query)
-                    pbar.update(1)
+                    if max_ans and len(full_answer - easy_answer) <= max_ans:
+                        if sample_mode == 'train':
+                            new_query = [qa_dict, {f_str: list(full_answer)}, []]
+                        else:
+                            new_query = [qa_dict, {f_str: list(easy_answer)}, {f_str: list(full_answer - easy_answer)}]
+                        all_query_list.append(new_query)
+                        pbar.update(1)
     return all_query_list
 
 
@@ -183,12 +189,12 @@ if __name__ == "__main__":
     if args.sample_formula_scope == 'EFOX_minimal':
         formula_scope = index2EFOX_minimal
     elif args.sample_formula_scope == 'EFOX':
-        formula_scope = pd.read_csv(osp.join('data', 'EFO2_23_41231.csv'), index_col=0).to_dict()['lstr']
+        formula_scope = pd.read_csv(osp.join('data', 'EFO2_23_41231.csv'))
     elif args.sample_formula_scope == 'real_EFO1':
         formula_scope = index2newlstr
     else:
         raise NotImplementedError
-
+    '''
     for index, lstr_index in enumerate(args.sample_formula_list):
         lstr = formula_scope[lstr_index]
         now_data = {lstr: []}
@@ -207,22 +213,64 @@ if __name__ == "__main__":
                     now_data[lstr].append(old_data[lstr][i])
                     useful_num += 1
                 all_qa_dict.add(str(old_data[lstr][i][0]))
-        if useful_num == args.sample_num:
+        if useful_num == args.num_samples:
             continue
         else:
             if args.mode == 'train':
-                all_query = sample_one_formula_query(lstr, None, train_kg, args.sample_num - useful_num, args.mode,
+                all_query = sample_one_formula_query(lstr, None, train_kg, args.num_samples - useful_num, args.mode,
                                                      args.meaningful_negation, args.double_check, all_qa_dict)
             elif args.mode == 'valid':
-                all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.sample_num - useful_num, args.mode,
+                all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_samples - useful_num, args.mode,
                                                      args.meaningful_negation, args.double_check, all_qa_dict)
             elif args.mode == 'test':
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.sample_num - useful_num, args.mode,
+                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_samples - useful_num, args.mode,
                                                      args.meaningful_negation, args.double_check, all_qa_dict)
             else:
                 raise NotImplementedError
             now_data[lstr].extend(all_query)
         with open(output_file_name, 'wt') as f:
             json.dump(now_data, f)
+    '''
+    all_data = {}
+    for i, row in tqdm.tqdm(formula_scope.iterrows(), total=len(formula_scope)):
+        lstr = row.formula
+        fid = row.formula_id
+        output_file_name = osp.join(args.output_folder,
+                                    f'{args.mode}_{fid}_{args.sample_formula_scope}_qaa.json')
+        if os.path.exists(output_file_name):
+            with open(output_file_name, 'rt') as f:
+                old_data = json.load(f)
+        else:
+            old_data = {}
+        useful_num = 0
+        all_qa_dict = set()
+        now_data = {lstr: []}
+        if lstr in old_data:
+            for i in range(len(old_data[lstr])):
+                if str(old_data[lstr][i][0]) not in all_qa_dict:
+                    now_data[lstr].append(old_data[lstr][i])
+                    useful_num += 1
+                all_qa_dict.add(str(old_data[lstr][i][0]))
+        data = defaultdict(list)
+        generated = set()
+        sampled_query = 0
+        if args.mode == 'easy':
+            all_query = sample_one_formula_query(lstr, None, train_kg, args.num_samples - useful_num, args.mode,
+                                                 args.meaningful_negation, args.double_check, args.max_ans, all_qa_dict)
+        elif args.mode == 'valid':
+            all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_samples - useful_num, args.mode,
+                                                 args.meaningful_negation, args.double_check, args.max_ans, all_qa_dict)
+        elif args.mode == 'test':
+            all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_samples - useful_num, args.mode,
+                                                 args.meaningful_negation, args.double_check, args.max_ans, all_qa_dict)
+        else:
+            raise NotImplementedError
+        now_data[lstr].extend(all_query)
+        all_data[lstr] = now_data[lstr]
+        with open(output_file_name, 'wt') as f:
+            json.dump(now_data, f)
+    with open(osp.join(args.output_folder, f'{args.mode}_{args.sample_formula_scope}_qaa.json'), 'wt') as f:
+        json.dump(all_data, f)
+
 
 
