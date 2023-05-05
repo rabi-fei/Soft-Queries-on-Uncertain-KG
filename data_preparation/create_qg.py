@@ -20,10 +20,8 @@ import networkx.algorithms.isomorphism as iso
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-import torch.nn.functional as F
-import tqdm
-from torch import nn
+
+from src.language.grammar import parse_lstr_to_disjunctive_formula
 
 
 parser = argparse.ArgumentParser()
@@ -322,12 +320,17 @@ def qg2lstr(query_graph: nx.MultiGraph):
         edge_num += 1
         edge2name[edge] = f'r{edge_num}'
         if 'type' in query_graph.edges[edge] and query_graph.edges[edge]['type'] == 'negative':
-            atomic = f'!{edge2name[edge]}({node2name[start_point]},{node2name[end_point]})'
+            atomic = f'(!{edge2name[edge]}({node2name[start_point]},{node2name[end_point]}))'
         else:
-            atomic = f'{edge2name[edge]}({node2name[start_point]},{node2name[end_point]})'
+            atomic = f'({edge2name[edge]}({node2name[start_point]},{node2name[end_point]}))'
         atomic_list.append(atomic)
     final_lstr = '&'.join(atomic_list)
-    return final_lstr
+    DNF_instance = parse_lstr_to_disjunctive_formula(final_lstr)
+    DNF_lstr = DNF_instance.lstr
+    recursive_lstr = parse_lstr_to_disjunctive_formula(DNF_lstr).lstr
+    assert recursive_lstr == DNF_lstr
+    assert len(DNF_instance.formula_list) == 1
+    return DNF_lstr
 
 
 if __name__ == "__main__":
@@ -352,7 +355,7 @@ if __name__ == "__main__":
             data_dict['cyclic'].append(being_cyclic)
             data_dict['multi'].append(being_multiple)
     pd.DataFrame(data_dict).to_csv(
-        osp.join(args.output_dir, f"EFO{args.max_f}_{args.max_e}{args.max_c}_{args.max_edge}{args.max_surpass}{args.max_pair}{args.max_distance}{args.max_negation}.csv"))
+        osp.join(args.output_dir, f"DNF_EFO{args.max_f}_{args.max_e}{args.max_c}_{args.max_edge}{args.max_surpass}{args.max_pair}{args.max_distance}{args.max_negation}.csv"))
 
 
 
