@@ -461,74 +461,102 @@ class ConjunctiveFormula:
     def get_pred_grounded_relation_id_list(self, key):
         return self.pred_grounded_relation_id_dict[key]
 
-    def sample_query(self, data_kg: KnowledgeGraph, strict_meaningful_negation: bool, original_kg_matrix=None):
+    def sample_query(self, data_kg: KnowledgeGraph, strict_meaningful_negation: bool, original_kg_matrix=None,
+                     max_answer_size: int = None):
         """
-        Same relation should not exist multiple times!
+        Same relation should not exist multiple times! Which means that multiple 'r1' is not allowed.
         Very important so that we can ground entity then predicate, separately.
+
+        We return two things, 1.the grounding dict, 2. the list of answer tuple
         """
         grounded_dict = {}
-        sub_graph_edge, sub_graph_negation_edge = [], []
-        free_variable_list = sorted(list(self.free_variable_dict.keys()))
+        sub_graph_edge, sub_graph_negation_edge, pos_graph_nodes, pos_graph_edge = [], [], set(), set()
+        free_variable_list = list(self.free_variable_dict.keys())
         for pred in self.predicate_dict.values():
             pred_triples = (pred.head.name, pred.name, pred.tail.name)
             if pred.skolem_negation:
                 sub_graph_negation_edge.append(pred_triples)
             else:
                 sub_graph_edge.append(pred_triples)
+                pos_graph_nodes.add(pred.head.name)
+                pos_graph_nodes.add(pred.tail.name)
+                pos_graph_edge.add((pred.head.name, pred.tail.name))
         sub_kg_index = KGIndex()
         sub_kg_index.map_entity_name_to_id = {term: 0 for term in self.term_dict}
         sub_kg_index.map_relation_name_to_id = {predicate: 0 for predicate in self.predicate_dict}
-        labeled_pos_triples, node2index, index2node = labeling_triples(sub_graph_edge)
-        sub_kg = KnowledgeGraph(labeled_pos_triples, sub_kg_index)
-        sub_kg_matrix = kg2matrix(sub_kg)
+        connected_sub_graph_edge = deepcopy(sub_graph_edge)  # Connect kg ensures meaningful negation.
+        for negative_triples in sub_graph_negation_edge:
+            neg_head, neg_rel, neg_tail = negative_triples  # Find edge that is not seen but both nodes have.
+            if neg_head in pos_graph_nodes and neg_tail in pos_graph_nodes and \
+                    (neg_head, neg_tail) not in pos_graph_edge and (neg_tail, neg_head) not in pos_graph_edge:
+                connected_sub_graph_edge.append(negative_triples)
+        labeled_connected_triples, node2index, index2node = labeling_triples(connected_sub_graph_edge)
+        labeled_sub_graph_edge, _, _ = labeling_triples(sub_graph_edge)
+        connected_kg = KnowledgeGraph(labeled_connected_triples, sub_kg_index)
+        sub_kg = KnowledgeGraph(labeled_sub_graph_edge, sub_kg_index)
+        connect_kg_matrix = kg2matrix(connected_kg)
         if original_kg_matrix is None:
             original_kg_matrix = kg2matrix(data_kg)
         node_be_anchor = [True if 's' in index2node[index] else False for index in index2node]
-        grounded_entity_list, exist_grounding = ground_variable(sub_kg_matrix, original_kg_matrix)
-        while not exist_grounding:
-            grounded_entity_list, exist_grounding = ground_variable(sub_kg_matrix, original_kg_matrix)
-        grounded_relation_dict = ground_predicate(grounded_entity_list, sub_kg, data_kg)
-        grounded_entity_dict = {index2node[index]: int(grounded_entity_list[index])
-                                for index in range(len(grounded_entity_list)) if node_be_anchor[index]}
-        grounded_dict.update(grounded_relation_dict)
-        grounded_dict.update(grounded_entity_dict)
-        self.append_relation_and_symbols(grounded_dict)
-        now_index = max([len(grounded) for grounded in self.term_grounded_entity_id_dict.values()]) - 1
-        negation_pred_list = [negation_edge[1] for negation_edge in sub_graph_negation_edge]
-        full_answer = self.deterministic_query_set(now_index, data_kg, negation_pred_list, True)
-        self.pop_relation_and_symbols(now_index, grounded_dict)
-        if not full_answer:
-            return None
-        if sub_graph_negation_edge:
+        proper_answer_got = False
+        while not proper_answer_got:
+            grounded_entity_list, exist_grounding = ground_variable(connect_kg_matrix, original_kg_matrix)
+            while not exist_grounding:
+                grounded_entity_list, exist_grounding = ground_variable(connect_kg_matrix, original_kg_matrix)
+            grounded_relation_dict = ground_predicate(grounded_entity_list, sub_kg, data_kg)
+            grounded_entity_dict = {index2node[index]: int(grounded_entity_list[index])
+                                    for index in range(len(grounded_entity_list)) if node_be_anchor[index]}
+            grounded_dict.update(grounded_relation_dict)
+            grounded_dict.update(grounded_entity_dict)
+            self.append_relation_and_symbols(grounded_dict)
+            now_index = max([len(grounded) for grounded in self.term_grounded_entity_id_dict.values()]) - 1
+            negation_pred_list = [negation_edge[1] for negation_edge in sub_graph_negation_edge]
+            full_answer = self.deterministic_query_set(now_index, data_kg, negation_pred_list, True)
+            if len(free_variable_list) == 1:
+                free_variable = free_variable_list[0]
+                epfo_answer_tuple = set()
+                for ans in full_answer[free_variable]:
+                    epfo_answer_tuple.add((ans,))
+            else:
+                epfo_answer_tuple = self.deterministic_query_set(now_index, data_kg, negation_pred_list, False)
+            self.pop_relation_and_symbols(now_index, grounded_dict)
+            if full_answer and (max_answer_size is None or len(epfo_answer_tuple) <= max_answer_size):
+                proper_answer_got = True
+        final_answer_tuple = deepcopy(epfo_answer_tuple)
+        answer_has_changed = False
+        if sub_graph_negation_edge:  # Actually, we only consider the case of only one negation edge.
             neg_edges = [[head, rel, tail, int(head not in node2index) + int(tail not in node2index)]
                          for head, rel, tail in sub_graph_negation_edge]
             grounded_neg_pred = {rel: False for head, rel, tail in sub_graph_negation_edge}
-            free_ans_list = [deepcopy(full_answer[free_variable]) for free_variable in free_variable_list]
             # The answer list of free variables, however, not true answer, but the candidate list of each variable.
-            sorted(neg_edges, key=lambda x: x[3])
+            # sorted(neg_edges, key=lambda x: x[3])
             now_head, now_predicate, now_tail, not_in_node_num = neg_edges.pop(0)
             if not_in_node_num == 0:  # Both head and tail has already been grounded, find an edge for restriction.
+                head_entity, tail_entity = grounded_entity_list[node2index[now_head]], \
+                    grounded_entity_list[node2index[now_tail]]
+                neg_try_rel_set = data_kg.ht2r[(head_entity, tail_entity)]
                 head_candidate, tail_candidate = full_answer[now_head], full_answer[now_tail]
                 head_constraint = set.union(*[set(data_kg.node2or[head].keys()) for head in head_candidate])
                 tail_constraint = set.union(*[set(data_kg.node2ir[tail].keys()) for tail in tail_candidate])
-                neg_candidate_list = list(head_constraint.intersection(tail_constraint))
-                random.shuffle(neg_candidate_list)
-                for i in range(min(len(neg_candidate_list), 10)):
+                neg_candidate_set = head_constraint.intersection(tail_constraint)
+                other_to_try = neg_candidate_set.difference(neg_try_rel_set)
+                neg_candidate_list = list(neg_try_rel_set) + list(other_to_try)
+                for i in range(min(len(neg_candidate_list), len(neg_try_rel_set) + 10)):
                     guess_predicate = neg_candidate_list[i]
                     grounded_dict[now_predicate] = guess_predicate
                     self.append_relation_and_symbols(grounded_dict)
-                    full_answer = self.deterministic_query_set(
-                        now_index, data_kg, [neg_edge[1] for neg_edge in neg_edges], True)
+                    final_answer_tuple = self.deterministic_query_set(
+                        now_index, data_kg, [neg_edge[1] for neg_edge in neg_edges], False)
                     self.pop_relation_and_symbols(now_index, grounded_dict)
-                    if full_answer:
-                        new_free_ans_list = [deepcopy(full_answer[free_v]) for free_v in free_variable_list]
-                        if new_free_ans_list != free_ans_list:
-                            grounded_neg_pred[now_predicate] = True
-                            break
+                    if final_answer_tuple and final_answer_tuple != epfo_answer_tuple:
+                        grounded_neg_pred[now_predicate] = True
+                        break
                 else:
-                    guess_predicate = random.randint(0, data_kg.num_relations)
+                    guess_predicate = random.randint(0, data_kg.num_relations - 1)
                     grounded_dict[now_predicate] = guess_predicate
+                    answer_has_changed = True
             elif not_in_node_num == 1:  # Need to ground an edge along with new node.
+                answer_has_changed = True
                 if now_head in node2index:  # Tail is ungrounded anchor node
                     head_candidate = full_answer[now_head]
                     for now_try_time in range(10):
@@ -537,7 +565,7 @@ class ConjunctiveFormula:
                             guess_predicate = random.sample(data_kg.node2or[to_delete_head].keys(), 1)[0]
                             guess_tail = random.sample(data_kg.hr2t[(to_delete_head, guess_predicate)], 1)[0]
                         else:
-                            guess_tail = random.randint(0, data_kg.num_entities)
+                            guess_tail = random.randint(0, data_kg.num_entities - 1)
                             guess_predicate = random.sample(data_kg.node2ir[guess_tail].keys(), 1)[0]
                         if len(head_candidate - data_kg.tr2h[(guess_tail, guess_predicate)]) > 0:
                             grounded_dict[now_tail] = guess_tail
@@ -546,7 +574,7 @@ class ConjunctiveFormula:
                             node2index[now_tail] = len(node2index)
                             break
                     else:
-                        guess_tail = random.randint(0, data_kg.num_entities)
+                        guess_tail = random.randint(0, data_kg.num_entities - 1)
                         guess_predicate = random.sample(data_kg.node2ir[guess_tail].keys(), 1)[0]
                         grounded_dict[now_tail] = guess_tail
                         grounded_dict[now_predicate] = guess_predicate
@@ -559,7 +587,7 @@ class ConjunctiveFormula:
                             guess_predicate = random.sample(data_kg.node2ir[to_delete_tail].keys(), 1)[0]
                             guess_head = random.sample(data_kg.tr2h[(to_delete_tail, guess_predicate)], 1)[0]
                         else:
-                            guess_head = random.randint(0, data_kg.num_entities)
+                            guess_head = random.randint(0, data_kg.num_entities - 1)
                             guess_predicate = random.sample(data_kg.node2or[guess_head].keys(), 1)[0]
                         if len(tail_candidate - data_kg.hr2t[(guess_head, guess_predicate)]) > 0:
                             grounded_dict[now_head] = guess_head
@@ -568,7 +596,7 @@ class ConjunctiveFormula:
                             node2index[now_tail] = len(node2index)
                             break
                     else:
-                        guess_head = random.randint(0, data_kg.num_entities)
+                        guess_head = random.randint(0, data_kg.num_entities - 1)
                         guess_predicate = random.sample(data_kg.node2or[guess_head].keys(), 1)[0]
                         grounded_dict[now_head] = guess_head
                         grounded_dict[now_predicate] = guess_predicate
@@ -576,8 +604,11 @@ class ConjunctiveFormula:
             else:
                 assert False, "There should not be an existential node that only connected to negation edge"
         if strict_meaningful_negation and sub_graph_negation_edge and False in grounded_neg_pred.values():
-            return None
-        return grounded_dict
+            return None, None
+        if answer_has_changed:
+            return grounded_dict, None
+        else:
+            return grounded_dict, final_answer_tuple
 
     def sample_other_query(self, data_kg: KnowledgeGraph, existing_grounded_dict):
         """
@@ -616,7 +647,8 @@ class ConjunctiveFormula:
         now_term_candidate = defaultdict(set)
         free_variable_list = []
         for term_name in self.term_dict:
-            if self.has_term_grounded_entity_id_list(term_name):
+            if self.has_term_grounded_entity_id_list(term_name) and \
+                    len(self.term_grounded_entity_id_dict[term_name]) > index:
                 now_term_candidate[term_name] = {self.term_grounded_entity_id_dict[term_name][index]}
             else:
                 now_term_candidate[term_name] = set(range(kg_graph.num_entities))
@@ -650,35 +682,31 @@ class ConjunctiveFormula:
                                 return_full_match: bool = False):
         """
         The skip predicate is used in grounding the predicate, it can avoid creating new instance of Formula.
-        The return full match is used in query sampling, if it is set to True, we solve_EFO1 as the CSP problem.
+        The return full match is used in query sampling, if it is set to True, we use solve_EFO1 as the CSP problem.
         """
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
-            free_variable = free_variable_list[0]
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
             if return_full_match:
-                to_return_ans = answer_dict if exist_answer else defaultdict(set)
-                return to_return_ans
-            else:
-                tuple_set_ans = set()
+                to_return_dict = answer_dict if exist_answer else defaultdict(set)
+                return to_return_dict
+            else:  # We know the free variable has only one element.
+                tuple_answer_set = set()
                 if exist_answer:
-                    for ans in answer_dict[free_variable]:
-                        tuple_set_ans.add((ans,))
-                    return tuple_set_ans
-                else:
-                    return {}
-
+                    for ans in answer_dict[free_variable_list[0]]:
+                        tuple_answer_set.add((ans,))
+                return tuple_answer_set
         else:
             answer_dict_list, exist_answer = csp_efox(sub_kg, neg_kg, now_term_candidate, kg_graph, free_variable_list)
-            answer_set = set()
+            tuple_answer_set = set()
             if exist_answer:
                 for ans in answer_dict_list:
                     new_ans = []
                     for free_variable in free_variable_list:
                         new_ans.append(ans[free_variable])
-                    answer_set.add(tuple(new_ans))
-            return answer_set
+                    tuple_answer_set.add(tuple(new_ans))
+            return tuple_answer_set
 
     def deterministic_query_vec(self, index, relation_matrix_list: List, device, skip_predicate: List = None,
                                 return_full_match: bool = False):
@@ -948,16 +976,20 @@ class DisjunctiveFormula:
         self.hard_answer_list.append(hard_answers)
         self.noisy_answer_list.append(noisy_answer)
 
-    def sample_query(self, kg: KnowledgeGraph, strict_meaningful_negation: bool, kg_matrix=None):
+    def sample_query(self, kg: KnowledgeGraph, strict_meaningful_negation: bool, kg_matrix=None, max_ans: int = None):
         selected_sub_formula_index = random.randint(0, len(self.formula_list) - 1)
         selected_sub_formula = self.formula_list[selected_sub_formula_index]
-        grounded_dict = selected_sub_formula.sample_query(kg, strict_meaningful_negation, kg_matrix)
+        grounded_dict, sub_answer = selected_sub_formula.sample_query(kg,
+                                                                      strict_meaningful_negation, kg_matrix, max_ans)
         if not grounded_dict:
-            return None
+            return None, None
         for index in range(len(self.formula_list)):
             if index != selected_sub_formula_index:
                 grounded_dict = self.formula_list[index].sample_other_query(kg, grounded_dict)
-        return grounded_dict
+        if len(self.formula_list) == 1:
+            return grounded_dict, sub_answer
+        else:
+            return grounded_dict, None
 
     def deterministic_query(self, index, kg: Union[KnowledgeGraph, List], method: str = 'set', device='cpu'):
         if method == 'vec':

@@ -84,7 +84,8 @@ def create_qg(e_num, f_num, c_num, additional_edge_num, pair_limit, max_f_distan
     2. create ef multi graph
     3. create efc graph
     4. Check the distance condition.
-    4. create the final graph with negation
+    5. Check the existential leaf condition.
+    6. create the final graph with negation
     """
     all_graph_list = []
     for multi_edge_num in range(additional_edge_num + 1):
@@ -100,7 +101,7 @@ def create_qg(e_num, f_num, c_num, additional_edge_num, pair_limit, max_f_distan
                 epfo_qg_list = add_constants(multi_qg_ef, c_num)
                 for k, epfo_qg in enumerate(epfo_qg_list):
                     all_graph_list.append(epfo_qg)
-                    if distance_condition(epfo_qg, max_f_distance):
+                    if distance_condition(epfo_qg, max_f_distance) and existential_leaf_condition(epfo_qg):
                         negative_qg_list = replace_negation(epfo_qg, max_negation_num)
                         all_graph_list.extend(negative_qg_list)
     return all_graph_list
@@ -167,6 +168,36 @@ def distance_condition(graph: nx.MultiGraph, max_f_distance) -> bool:
         return False
     else:
         return True
+
+
+def existential_leaf_condition(graph: nx.MultiGraph) -> bool:
+    """
+    We omit those query graphs that have existential leaves that are more than depth of 1.
+    For example, we omit the following query graph:
+    (c1) --[f1]-- (e1) --[e2] since e2 is an existential leaf of depth 2.
+    Mathematically speaking, every path from e to an constant must come across a free variable first +
+    is only connects to existential nodes.
+    """
+    copy_graph = deepcopy(graph)
+    for node in graph.nodes():
+        if graph.nodes[node]['type'] == 'free':
+            copy_graph.remove_node(node)
+    connected_components = nx.connected_components(copy_graph)
+    to_check_list = []
+    for component in connected_components:
+        for node in component:
+            if graph.nodes[node]['type'] == 'constant':
+                break
+        else:  # In this case, a cluster of existential nodes is ''leaves''.
+            for node in component:
+                to_check_list.append(node)
+    for node in to_check_list:
+        for adj_node in graph.adj[node]:
+            if graph.nodes[adj_node]['type'] != 'existential':
+                break
+        else:
+            return False
+    return True
 
 
 def add_constants(graph: nx.MultiGraph, c_num):

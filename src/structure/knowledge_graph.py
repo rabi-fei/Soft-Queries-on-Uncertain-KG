@@ -25,8 +25,8 @@ class KnowledgeGraph:
     def __init__(self, triples: List[Triple], kgindex: KGIndex, device='cpu', tensorize=False, **kwargs):
         self.triples = triples
         self.kgindex = kgindex
-        self.num_entities = kgindex.num_entities
-        self.num_relations = kgindex.num_relations
+        self.num_entities: int = kgindex.num_entities
+        self.num_relations: int = kgindex.num_relations
         self.device = device
 
         self.hr2t = defaultdict(set)
@@ -350,8 +350,26 @@ def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
 
 def csp_efox(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
              data_graph: KnowledgeGraph, free_variable_list: List):
+    """
+    Returns a list of dict, example:
+    [{'f1': 13536, 'f2': 11440}, {'f1': 11441, 'f2': 11440}, {'f1': 7000, 'f2': 11440}]
+    """
     if not sub_graph.triples and not neg_sub_graph.triples:
-        answer_list = candidate_set_to_ans(now_candidate_set)
+        copy_candidate_set = deepcopy(now_candidate_set)
+        for variable_name in now_candidate_set:
+            if variable_name not in free_variable_list:
+                copy_candidate_set.pop(variable_name)
+        if len(copy_candidate_set.keys()) == 0:
+            exist_existential_ans = True
+            for variable_name in now_candidate_set:
+                if not now_candidate_set[variable_name]:
+                    exist_existential_ans = False
+                    break
+            if exist_existential_ans:
+                return [{}], True
+            else:
+                return None, False
+        answer_list = candidate_set_to_ans(copy_candidate_set)
         return answer_list, bool(answer_list)
     if len(now_candidate_set) == 1:
         answer_list = candidate_set_to_ans(now_candidate_set)
@@ -360,7 +378,7 @@ def csp_efox(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
     if now_leaf_node:  # If there exists leaf node in the query graph, always possible to shrink into a sub_problem.
         adjacency_node_set = {adjacency_node}
         answer, exist_answer = cut_node_sub_problem_x(now_leaf_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                    now_candidate_set, data_graph, free_variable_list)
+                                                      now_candidate_set, data_graph, free_variable_list)
         return answer, exist_answer
     else:
         before_topology_set = node_filter(sub_graph, now_candidate_set, data_graph)
@@ -368,31 +386,33 @@ def csp_efox(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
         while before_topology_set != topology_filtered_set:
             before_topology_set = topology_filtered_set
             topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
-        fixed_node, exist_answer = check_candidate_set(topology_filtered_set)
-        if not exist_answer:
-            return None, False
-        if fixed_node:
-            adjacency_node_set = set.union(*[sub_graph.h2t[fixed_node], sub_graph.t2h[fixed_node],
-                                             neg_sub_graph.h2t[fixed_node], neg_sub_graph.t2h[fixed_node]])
-            answer, exist_answer = cut_node_sub_problem_x(fixed_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                        now_candidate_set, data_graph, free_variable_list)
-            return answer, exist_answer
-        else:  # Has to take a guess here.
-            guess_node = min(now_candidate_set.items(), key=lambda x: len(x[1]))[0]
-            collect_guess_ans = defaultdict(set)
-            for candidate in now_candidate_set[guess_node]:
-                new_candidate_set = deepcopy(now_candidate_set)
-                new_candidate_set[guess_node] = {candidate}
-                adjacency_node_set = set.union(*[sub_graph.h2t[guess_node], sub_graph.t2h[guess_node],
-                                                 neg_sub_graph.h2t[guess_node], neg_sub_graph.t2h[guess_node]])
-                answer, exist_answer = cut_node_sub_problem_x(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                            new_candidate_set, data_graph, free_variable_list)
-                if exist_answer:
-                    collect_guess_ans[guess_node].add(candidate)
-                    for sub_node in answer:
-                        collect_guess_ans[sub_node].update(answer[sub_node])
-            exist_final_answer = bool(collect_guess_ans[guess_node])
-            return list(collect_guess_ans), exist_final_answer
+        guess_node = min(now_candidate_set.items(), key=lambda x: len(x[1]))[0]   # Has to take a guess here.
+        collect_guess_ans = []
+        for candidate in now_candidate_set[guess_node]:
+            new_candidate_set = deepcopy(now_candidate_set)
+            new_candidate_set[guess_node] = {candidate}
+            adjacency_node_set = set.union(*[sub_graph.h2t[guess_node], sub_graph.t2h[guess_node],
+                                             neg_sub_graph.h2t[guess_node], neg_sub_graph.t2h[guess_node]])
+            if guess_node in free_variable_list:
+                new_free_variable_list = deepcopy(free_variable_list)
+                new_free_variable_list.remove(guess_node)
+                answer, exist_answer = cut_node_sub_problem_x(guess_node, adjacency_node_set, sub_graph,
+                                                              neg_sub_graph,
+                                                              new_candidate_set, data_graph, new_free_variable_list)
+            else:
+                answer, exist_answer = cut_node_sub_problem_x(guess_node, adjacency_node_set, sub_graph,
+                                                              neg_sub_graph,
+                                                              new_candidate_set, data_graph, free_variable_list)
+            if exist_answer:
+                for answer_instance in answer:
+                    if guess_node in free_variable_list:
+                        copy_instance = deepcopy(answer_instance)
+                        copy_instance[guess_node] = candidate
+                        collect_guess_ans.append(copy_instance)
+                    else:
+                        collect_guess_ans.append(answer_instance)
+        exist_final_answer = bool(collect_guess_ans)
+        return collect_guess_ans, exist_final_answer
 
 
 def candidate_set_to_ans(now_candidate_set):
@@ -656,16 +676,17 @@ def cut_node_sub_problem_x(to_cut_node, adjacency_node_set, sub_graph: Knowledge
             cut_node_type = 'cut_free_f'
     else:
         cut_node_type = 'cut_existential_or_constant'
+    another_candidate_set = deepcopy(new_candidate_set)
     sub_answer, sub_exist_answer = csp_efox(new_sub_graph, new_sub_neg_graph, new_candidate_set,
                                             data_graph, new_free_variable_list)
     if sub_exist_answer:
         if cut_node_type == 'cut_existential_or_constant':
             return sub_answer, sub_exist_answer
         else:
-            assert len(adjacency_node_set) == 1
+            assert len(adjacency_node_set) == 1  # This may not right because of fixed point (only one candidate).
             adjacency_node = list(adjacency_node_set)[0]
             correspond_dict = node_pair_correspondence(
-                adjacency_node, to_cut_node, sub_graph, neg_sub_graph, new_candidate_set, data_graph)
+                adjacency_node, to_cut_node, sub_graph, neg_sub_graph, another_candidate_set, data_graph)
             new_answer_list = []
             for answer_instance in sub_answer:
                 adj_ans = answer_instance[adjacency_node]
@@ -726,7 +747,7 @@ def ground_variable(sample_matrix, data_matrix):
     else:
         node_num = sample_matrix.shape[0]
         if node_num == 1:
-            random_ans = random.randint(0, data_matrix.shape[0])
+            random_ans = random.randint(0, data_matrix.shape[0] - 1)
             now_ans = [random_ans]
             return now_ans, True
         elif node_num == 3:
