@@ -46,7 +46,7 @@ def solve_EFO1(DNF_formula, relation_matrix, conjunctive_tnorm, existential_tnor
                 for i in range(1, len(sub_ans_list)):
                     not_ans = not_ans * (1 - sub_ans_list[i])
                 return 1 - not_ans
-            if conjunctive_tnorm == 'Godel':
+            elif conjunctive_tnorm == 'Godel':
                 final_ans = sub_ans_list[0]
                 for i in range(1, len(sub_ans_list)):
                     final_ans = torch.maximum(final_ans, sub_ans_list[i])

@@ -41,8 +41,8 @@ parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=140)
-parser.add_argument("--end_index", type=int, default=160)
+parser.add_argument("--start_index", type=int, default=0)
+parser.add_argument("--end_index", type=int, default=19)
 parser.add_argument("--max_ans", type=int, default=100)
 
 

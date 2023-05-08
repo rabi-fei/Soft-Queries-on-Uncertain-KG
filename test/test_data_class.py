@@ -139,10 +139,14 @@ if __name__ == "__main__":
         test_sample_query(lstr, train_kg, True)
     
     """
-    qa_dict = {'r1': 13, 'r2': 154, 's1': 135, 's2': 8594}
-    lstr = '(r1(s1,f))&(!(r2(s2,f)))'
-    test_deterministic_query_instance(lstr, qa_dict, train_kg)
-    train_dataloader = QueryAnsweringSeqDataLoader_v2(
+    qa_dict = {'r1': 132, 'r2': 30, 's1': 8254, 'r3': 389}
+    lstr = '(r1(s1,f1))&((r2(f1,f2))&(!(r3(f1,f2))))'
+    test_deterministic_query_instance(lstr, qa_dict, test_kg)
+
+
+
+"""
+train_dataloader = QueryAnsweringSeqDataLoader_v2(
         osp.join(data_folder, 'train-qaa.json'),
         size_limit=20,
         target_lstr=None,
@@ -161,9 +165,7 @@ if __name__ == "__main__":
     test_deterministic_query(train_dataloader, train_kg, 'solver', None, ['((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))'])
     time4 = time.time()
     print(f"set time: {time2-time1}, FIT time: {time3 - time2}, solver time: {time4 - time3}")
-
-
-
+"""
 
 
 

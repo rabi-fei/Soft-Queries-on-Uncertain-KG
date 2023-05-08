@@ -12,22 +12,22 @@ Please download the data from [here](https) and put it in the `data` folder.
 
 ### 1.2 Matrix Creation
 
-The matrix that has been used in the paper can be downloaded as 
+The matrix that has been used in the paper can be downloaded from here, directly unzip it. 
 
 ## 2. Run the FIT code.
 
-For the reproduction of the experiment in paper, run the following code:
- you can also run the solve_EFO1.v2   for the experiments on the NELL dataset, if you
+For the reproduction of the experiment on FB15k-237 and FB15k in paper, run the following code:
 ```
-## python solve_EFO1.py
-```
-
-In case you have problem with your gpu memory, for example, for the experiments on the NELL dataset, you can run the following code:
-```
-## python solve_EFO1.v2.py --ckpt 'sparse/NELL/torch_0.01_0.001.ckpt'
+## python solve_EFO1.py --ckpt 'sparse/237/torch_0.005_0.001.ckpt' --data_folder data/FB15k-237-EFO1
+## python solve_EFO1.py --ckpt 'sparse/FB15k/torch_0.005_0.001.ckpt' --data_folder data/FB15k-EFO1
 ```
 
-If you want to reproduce the ablation study of the influence of hyperparameter, you can run the following code.
+In case you have problem with your gpu memory, for example, for example, the experiments on the NELL dataset, you can run the following code:
+```
+## python solve_EFO1.v2.py --ckpt 'sparse/NELL/torch_0.001_0.001.ckpt' --data_folder data/NELL-EFO1
+```
+### 2.1 Ablation Study
+If you want to reproduce the ablation study of the influence of hyperparameter, you can make some adjustment as the following.
 For different c_norm:
 ```
 ## python solve_EFO1.py --c_norm Godel

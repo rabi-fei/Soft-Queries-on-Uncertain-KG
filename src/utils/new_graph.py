@@ -170,7 +170,7 @@ def pickle_select_form(pickle_path, test_step, meta_key_list, fixed_dict, normal
     output_data.to_csv(os.path.join(pickle_path, f'chose_form_{normal_form}.csv'))
 
 
-def process_output_whole_folder(whole_folder, use_MAML, auto_delete, mode, fixed_dict, percentage=False,
+def process_output_whole_folder(whole_folder, meta_key_list, auto_delete, mode, fixed_dict, percentage=False,
                                 transpose=False):
     output_dict = {}
     exist_sub_dir = False
@@ -179,7 +179,7 @@ def process_output_whole_folder(whole_folder, use_MAML, auto_delete, mode, fixed
         full_sub_path = os.path.join(whole_folder, sub_file)
         if os.path.isdir(full_sub_path) and sub_file != '.ipynb_checkpoints':
             exist_sub_dir = True
-            sub_output_dict = process_output_whole_folder(full_sub_path, use_MAML, auto_delete, mode, fixed_dict,
+            sub_output_dict = process_output_whole_folder(full_sub_path, meta_key_list, auto_delete, mode, fixed_dict,
                                                           percentage, transpose)
             output_dict.update(sub_output_dict)
     if not exist_sub_dir:  # The final dir that contains output
@@ -194,21 +194,11 @@ def process_output_whole_folder(whole_folder, use_MAML, auto_delete, mode, fixed
         largest_ckpt_step = max(ckpt_step_list) if ckpt_step_list else 0
         print(f'processing folder {whole_folder}， {len(logging_mode_step)}')
         if len(logging_mode_step):
-            if use_MAML:
-                new_merge_pickle(whole_folder, sorted(logging_mode_step),
-                                 ["step", "adaptation_step", "formula", "metric"], mode)
-                new_read_merge_pickle(whole_folder, {'metric': 'MRR', 'adaptation_step': 5}, mode=mode,
-                                      percentage=percentage, transpose=transpose)
-                new_read_merge_pickle(whole_folder, {'metric': 'MRR', 'step': max(logging_mode_step)}, mode=mode,
-                                      percentage=percentage, transpose=transpose)
-            else:
-                new_merge_pickle(whole_folder, sorted(logging_mode_step),
-                                 ["step", "formula", "metric"], mode)
-                new_fixed_dict = copy.deepcopy(fixed_dict)
-                if 'step' in fixed_dict and fixed_dict['step'] == 'last':
-                    new_fixed_dict['step'] = max(logging_mode_step)
-                new_read_merge_pickle(whole_folder, new_fixed_dict, mode=mode, percentage=percentage,
-                                      transpose=transpose)
+            new_merge_pickle(whole_folder, sorted(logging_mode_step), meta_key_list, mode)
+            new_fixed_dict = copy.deepcopy(fixed_dict)
+            if 'step' in fixed_dict and fixed_dict['step'] == 'last':
+                new_fixed_dict['step'] = max(logging_mode_step)
+            new_read_merge_pickle(whole_folder, new_fixed_dict, mode=mode, percentage=percentage, transpose=transpose)
         output_dict[whole_folder] = largest_ckpt_step
         logging_file_num = len([log_name for log_name in file_list if log_name.endswith('pickle')])
         if largest_ckpt_step == 0 and logging_file_num == 0:
@@ -247,4 +237,4 @@ fb237_result = {
     'valid_faithful': 'results/sparse/torch_0.01_0.01.ckpt230118.14:34:56ed0b73c5'
 }
 
-process_output_whole_folder('results/sparse', False, False, 'test', {'step': 0}, True, False)
+process_output_whole_folder('results/sparse', ["step", "formula", "metric"], True, 'test', {'step': 0}, True, False)
