@@ -30,9 +30,9 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--double_check", type=float, default=0.03)
-parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--double_check", type=float, default=0.005)
+parser.add_argument("--output_folder", type=str, default='data/NELL-EFOX')
+parser.add_argument("--data_folder", type=str, default='data/NELL-betae')
 parser.add_argument("--num_samples", type=int, default=1000)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
