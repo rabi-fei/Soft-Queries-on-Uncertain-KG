@@ -9,6 +9,7 @@ parser.add_argument("--each", type=int, default=5)
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    print(args)
     dataset = args.dataset
     each_num = args.each
     for start in range(args.start, args.end, each_num):
