@@ -10,8 +10,8 @@ from src.structure.knowledge_graph_index import KGIndex
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt_path", type=str, default='kge/fb15k-237-distmult.pt')
-parser.add_argument("--ckpt_type", type=str, default='kge', choices=['cqd', 'kge'])
+parser.add_argument("--ckpt_path", type=str, default='cqd_models/FB15k-237.ckpt')
+parser.add_argument("--ckpt_type", type=str, default='cqd', choices=['cqd', 'kge'])
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
 parser.add_argument("--cuda", type=int, default=2)
 parser.add_argument("--split_num", type=int, default=6)

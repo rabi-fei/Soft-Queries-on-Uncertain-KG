@@ -14,10 +14,13 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt", type=str, default='/home/hyin/cqd/models/FB15k_matrix/')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-betae')
+parser.add_argument("--ckpt", type=str, default='cqd_models')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
 parser.add_argument("--action", choices=['prob', 'sparse', 'change'], default='prob')
-parser.add_argument("--output_folder", type=str, default='sparse/15k')
+parser.add_argument("--output_folder", type=str, default='sparse/237')
+parser.add_argument("--threshold", type=float, default=0.05)
+parser.add_argument("--epsilon", type=float, default=0.001)
+parser.add_argument("--split_num", type=int, default=79)
 
 
 def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent_kg: KnowledgeGraph):
@@ -91,17 +94,18 @@ if __name__ == "__main__":
         triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
     '''
-    threshold, epsilon = 0.001, 0
-    split_num = int(269)
+    threshold, epsilon = args.threshold, args.epsilon
+    split_num = args.split_num
     split_each_num = int(train_kg.num_relations / split_num)
     all_matrix_list = []
-    for split_id in range(32, split_num):
+    for split_id in range(0, split_num):
         matrix_path = osp.join(args.output_folder, f'split_{split_id}_matrix_{threshold}_{epsilon}.ckpt')
         # whole_prob_matrix = torch.zeros(split_each_num, train_kg.num_entities, train_kg.num_entities)
         score_matrix = torch.load(osp.join(args.ckpt, f'matrix_{split_id}.ckpt'), map_location=None)
         real_starting_r = int(split_id * split_each_num)
         sparse_matrix_list = create_matrix_from_ckpt(score_matrix, train_kg, real_starting_r, threshold, epsilon)
+        all_matrix_list.extend(sparse_matrix_list)
         torch.save(sparse_matrix_list, matrix_path)
         print(f'matrix of {split_id} finished')
-    # torch.save(all_matrix_list, matrix_path)
+    torch.save(all_matrix_list, osp.join(args.output_folder, f'torch_{args.threshold}_{args.epsilon}.ckpt'))
 
