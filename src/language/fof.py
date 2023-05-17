@@ -541,6 +541,7 @@ class ConjunctiveFormula:
                 neg_candidate_set = head_constraint.intersection(tail_constraint)
                 other_to_try = neg_candidate_set.difference(neg_try_rel_set)
                 neg_candidate_list = list(neg_try_rel_set) + list(other_to_try)
+                not_meaningful_candidate = []
                 for i in range(min(len(neg_candidate_list), len(neg_try_rel_set) + 10)):
                     guess_predicate = neg_candidate_list[i]
                     grounded_dict[now_predicate] = guess_predicate
@@ -551,10 +552,15 @@ class ConjunctiveFormula:
                     if final_answer_tuple and final_answer_tuple != epfo_answer_tuple:
                         grounded_neg_pred[now_predicate] = True
                         break
+                    elif final_answer_tuple:
+                        not_meaningful_candidate.append(guess_predicate)
                 else:
-                    guess_predicate = random.randint(0, data_kg.num_relations - 1)
+                    if not_meaningful_candidate:
+                        guess_predicate = random.choice(not_meaningful_candidate)
+                    else:
+                        guess_predicate = random.randint(0, data_kg.num_relations - 1)
+                        answer_has_changed = True
                     grounded_dict[now_predicate] = guess_predicate
-                    answer_has_changed = True
             elif not_in_node_num == 1:  # Need to ground an edge along with new node.
                 answer_has_changed = True
                 if now_head in node2index:  # Tail is ungrounded anchor node
@@ -830,6 +836,26 @@ class ConjunctiveFormula:
         else:
             raise NotImplementedError
         return answer_set
+
+    def get_query_graph(self):
+        """
+        Return the query graph, which consists of a dict representing entities, and adj matrix representing connections.
+        """
+        entity_dict = {}
+        adj_matrix = np.zeros((len(self.term_dict), len(self.term_dict)))
+        e_num, f_num = len(self.existential_variable_dict), len(self.free_variable_dict)
+        c_num = len(self.term_dict) - e_num - f_num
+
+        for i in range(c_num):
+            entity_dict[i] = 's' + str(i + 1)
+        for j in range(e_num):
+            entity_dict[j] = 'e' + str(j + 1 + c_num)
+        for k in range(f_num):
+            entity_dict[k] = 'f' + str(k + 1 + c_num + e_num)
+        for i, pred in enumerate(self.predicate_dict):
+            head_name, pred_name, tail_name = pred.head_name, pred.pred_name, pred.tail_name
+        return entity_dict, adj_matrix
+
 
     @property
     def free_variable_dict(self):

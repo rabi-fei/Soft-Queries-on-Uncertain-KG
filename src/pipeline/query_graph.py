@@ -8,7 +8,6 @@ from torch_geometric.data import Data
 
 from src.language.fof import ConjunctiveFormula
 from src.structure.knowledge_graph import KnowledgeGraph
-from fol import AppFOQEstimator
 
 
 class QueryGraph(nx.Graph):
@@ -16,7 +15,6 @@ class QueryGraph(nx.Graph):
         name2node, name2edge = OrderedDict(), OrderedDict()
         node_num, edge_num = 0, 0
         all_edges, pos_edge = [], []
-        self.ordering = nx.topological_sort(self)
         for term_name in input_formula.term_dict:
             name2node[term_name] = node_num
             node_num += 1
@@ -38,28 +36,6 @@ class QueryGraph(nx.Graph):
         self.node_grounded_entity_id_dict = input_formula.term_grounded_entity_id_dict
         self.lstr = input_formula.lstr
 
-    def get_node_embedding(self, model: AppFOQEstimator, node_name: str):
-        adj_node_list = self.adj(node_name)
-        previous_node_list = []
-        for adj_node in adj_node_list:
-            if self.ordering(adj_node) < self.ordering(node_name):
-                previous_node_list.append(adj_node)
-
-        previous_embedding_list = []
-        for adj_node in previous_node_list:
-            previous_embedding_list.append(model.get_projection_embedding(proj_ids, adj_emb))
-        if len(previous_node_list) == 0:
-            if node_name:
-                pass
-            else:
-                pass
-        elif len(previous_node_list) == 1:
-            final_emb = previous_embedding_list[0]
-        else:
-            final_emb = model.get_conjunction_embedding(previous_embedding_list)
-        return final_emb
-
-    def get_whole_graph_embedding(self, model: AppFOQEstimator):
-        embedding_dict = {}
-        for order in self.ordering:
-            node_emb = self.get_node_embedding(model, order)
+    def get_node_embedding(self, kg: KnowledgeGraph, node_name: str):
+        previous_node_list = self.adj(node_name)
+        return kg.entity_embedding[kg.entity_name2id[node_name]]
