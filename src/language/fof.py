@@ -557,6 +557,7 @@ class ConjunctiveFormula:
                 else:
                     if not_meaningful_candidate:
                         guess_predicate = random.choice(not_meaningful_candidate)
+                        final_answer_tuple = epfo_answer_tuple
                     else:
                         guess_predicate = random.randint(0, data_kg.num_relations - 1)
                         answer_has_changed = True
