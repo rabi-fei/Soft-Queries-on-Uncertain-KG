@@ -1,6 +1,7 @@
 import random
 from typing import List
 from collections import defaultdict, OrderedDict
+from functools import cmp_to_key
 
 from copy import deepcopy
 import networkx as nx
@@ -100,18 +101,20 @@ class QueryGraph(nx.MultiGraph):
                         return existential_distance_dict[y] - existential_distance_dict[x]  # Choose the farthest one.
                     else:
                         return x < y  # Final method, use string name to compare.
-                choose_node_list.sort(cmp=compare_node)
+                choose_node_list.sort(key=cmp_to_key(compare_node))
             else:  # Because we know the whole graph is connected, to choose free has nodes.
                 choose_node_list = list(to_choose_free)
                 choose_node_list.sort()
             to_choose_node = choose_node_list[0]
             copy_g = deepcopy(g)
             copy_g.remove_node(to_choose_node)
-            for adj_node in g.adj[to_choose_node]:
-                if 'e' in adj_node:
-                    to_chose_existential.add(adj_node)
+            to_chose_existential.discard(to_choose_node)
+            to_choose_free.discard(to_choose_node)
+            for next_choose_node in g.adj[to_choose_node]:
+                if 'e' in next_choose_node:
+                    to_chose_existential.add(next_choose_node)
                 else:
-                    to_choose_free.add(adj_node)
+                    to_choose_free.add(next_choose_node)
             left_ordering = nx_ordering(copy_g, to_chose_existential, to_choose_free, existential_distance_dict)
             final_ordering = [to_choose_node] + left_ordering
             return final_ordering

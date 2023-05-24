@@ -322,6 +322,7 @@ if __name__ == "__main__":
             data_path = osp.join(configure['data']['data_folder'], f'test_{formula_id}_EFOX_qaa.json')
             if not osp.exists(data_path):
                 print(f'Warnings,{data_path} not exists!')
+                continue
             test_dataloader = QueryAnsweringSeqDataLoader_v2(
                 data_path,
                 target_lstr=None,
