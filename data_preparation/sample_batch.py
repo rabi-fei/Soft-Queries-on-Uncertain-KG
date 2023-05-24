@@ -2,8 +2,8 @@ import os
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--start", type=int, default=0)
-parser.add_argument("--end", type=int, default=150)
+parser.add_argument("--start", type=int, default=150)
+parser.add_argument("--end", type=int, default=250)
 parser.add_argument("--dataset", type=str, default='FB15k-237')
 parser.add_argument("--each", type=int, default=5)
 

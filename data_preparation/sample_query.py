@@ -131,6 +131,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     print(f'sampling query of {given_lstr}')
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
     free_variable_list = list(fof.free_term_dict.keys())
+    free_variable_list.sort()
     f_str = '_'.join(free_variable_list)
     stored_qa_dict = existing_all_qa_dict if existing_all_qa_dict else set()
     all_query_list = []
@@ -321,8 +322,8 @@ if __name__ == "__main__":
         all_data[lstr] = now_data[lstr]
         with open(output_file_name, 'wt') as f:
             json.dump(now_data, f)
-    with open(osp.join(args.output_folder, f'{args.mode}_{args.sample_formula_scope}_qaa.json'), 'wt') as f:
-        json.dump(all_data, f)
+    # with open(osp.join(args.output_folder, f'{args.mode}_{args.sample_formula_scope}_qaa.json'), 'wt') as f:
+    #    json.dump(all_data, f)
 
 
 
