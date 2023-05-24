@@ -16,14 +16,14 @@ if __name__ == "__main__":
     output_folder = 'data/' + dataset + '-EFOX'
     each_num = args.each
     for start in range(args.start, args.end, each_num):
-        command = ("pip install python-constraint"
+        command = (
                    "ngc batch run "
                    f"--name ml-model.Truth_value "
                    "--priority NORMAL "
                    "--preempt RUNONCE "
                    "--ace nv-us-west-2 "
                    "--instance cpu.x86.tiny "
-                   f'--commandline "cd /mount/kgtvr/Truth-Value-Reasoning-on-Knowledge-Graphs && python3 data_preparation/sample_query.py --data_folder {datafolder} --output_folder {output_folder} --start_index {start} --end_index {start + each_num - 1}" '
+                   f'--commandline "cd /mount/kgtvr/Truth-Value-Reasoning-on-Knowledge-Graphs && pip install python-constraint && python3 data_preparation/sample_query.py --data_folder {datafolder} --output_folder {output_folder} --start_index {start} --end_index {start + each_num - 1}" '
                    "--result /results "
                    "--image nvidia/pytorch:22.04-py3 "
                    "--org nvidian "
