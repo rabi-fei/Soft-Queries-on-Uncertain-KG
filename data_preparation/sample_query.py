@@ -1,3 +1,4 @@
+import sys
 import argparse
 import json
 import logging
@@ -24,6 +25,8 @@ from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
                             QueryAnsweringSeqDataLoader_v2,
                             TrainRandomSentencePairDataLoader)
+
+sys.path.append('../mount/kgtvr/Truth-Value-Reasoning-on-Knowledge-Graphs')
 
 train_queries = list(name2lstr.values())
 query_2in = 'r1(s1,f)&!r2(s2,f)'
