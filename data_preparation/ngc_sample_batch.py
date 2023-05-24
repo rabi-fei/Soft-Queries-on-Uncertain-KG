@@ -3,7 +3,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--start", type=int, default=0)
-parser.add_argument("--end", type=int, default=250)
+parser.add_argument("--end", type=int, default=5)
 parser.add_argument("--dataset", type=str, default='NELL')
 parser.add_argument("--each", type=int, default=5)
 
@@ -16,7 +16,8 @@ if __name__ == "__main__":
     output_folder = 'data/' + dataset + '-EFOX'
     each_num = args.each
     for start in range(args.start, args.end, each_num):
-        command = ("ngc batch run "
+        command = ("pip install python-constraint"
+                   "ngc batch run "
                    f"--name ml-model.Truth_value "
                    "--priority NORMAL "
                    "--preempt RUNONCE "
