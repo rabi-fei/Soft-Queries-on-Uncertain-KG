@@ -6,7 +6,7 @@ data:
   cpu: 10
 load:
   load_model: True
-  checkpoint_path: ckpt/FB15k-237/LogicE
+  checkpoint_path: ckpt/FB15k-237/LogicE_full
   step: 450000
 output:
   output_path: null
@@ -18,7 +18,7 @@ train:
   negative_sample_size: 128  # for each positive sample
   batch_size: 512
   learning_rate: 0.0001
-  steps: 450000
+  steps: 450001
   log_every_steps: 100
   warm_up_steps: 225000
   evaluate_every_steps: 15000
@@ -30,7 +30,7 @@ train:
   freeze_formula_file: 'data/FB15k-237-betae/freeze_formulas_dumps.csv'
   use_distance: False   #  one of [False, root, leaf]
 evaluate:  # only used when valid/test in action
-  batch_size: 1000
+  batch_size: 250
   print: true
   interested_normal_forms:
     - 'DNF'
