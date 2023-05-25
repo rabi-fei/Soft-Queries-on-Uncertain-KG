@@ -15,7 +15,7 @@ if __name__ == "__main__":
     output_folder = 'data/' + dataset + '-EFOX'
     each_num = args.each
     for start in range(args.start, args.end, each_num):
-        command = ("nohup python data_preparation/sample_query.py "
+        command = ("nohup python sample_query.py "
                    f"--data_folder {datafolder} "
                    f"--output_folder {output_folder} "
                    f"--start_index {start} "
