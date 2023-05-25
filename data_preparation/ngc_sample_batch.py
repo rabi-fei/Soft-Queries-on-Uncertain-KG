@@ -18,7 +18,7 @@ if __name__ == "__main__":
     for start in range(args.start, args.end, each_num):
         command = (
                    "ngc batch run "
-                   f"--name ml-model.Truth_value "
+                   f"--name ml-model.Truth_value_{dataset}_{start} "
                    "--priority NORMAL "
                    "--preempt RUNONCE "
                    "--ace nv-us-west-2 "

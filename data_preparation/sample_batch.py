@@ -11,7 +11,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     dataset = args.dataset
-    datafolder = 'data/' + dataset + '-EFO1'
+    datafolder = 'data/' + dataset + '-EFOX'
     output_folder = 'data/' + dataset + '-EFOX'
     each_num = args.each
     for start in range(args.start, args.end, each_num):
