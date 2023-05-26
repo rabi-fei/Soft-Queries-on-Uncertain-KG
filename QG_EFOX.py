@@ -350,7 +350,7 @@ if __name__ == "__main__":
             print(all_log)
             all_metrics[formula] = all_log
         #  writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-            writer.save_pickle(all_log, f"all_logging_test_0_{formula_id}.pickle")
+            writer.save_pickle({formula: all_log}, f"all_logging_test_0_{formula_id}.pickle")
         writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
 
 

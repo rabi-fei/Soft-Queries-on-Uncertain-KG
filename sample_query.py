@@ -128,6 +128,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     """
     The double-checking have two probabilities: 1. Use Manually write code, 2. use the solver to check.
     Negation tolerance helps to mitigate the requirement of meaningful negation.
+    We note this is only for sample queries that are of conjunctive query.
     """
     if num_samples == 0:
         return []
@@ -149,25 +150,28 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
             while qa_dict is None:
                 if meaningful_negation and negation_tolerance:
                     if now_negation_tolerance >= negation_tolerance:
-                        qa_dict, full_answer = fof.sample_query(full_kg, False, full_matrix, sample_max_ans)
+                        qa_dict, full_answer, epfo_constraint = fof.sample_query(full_kg, False, full_matrix, sample_max_ans)
                         now_negation_tolerance = 0
                     else:
-                        qa_dict, full_answer = fof.sample_query(full_kg, True, full_matrix, sample_max_ans)
+                        qa_dict, full_answer, epfo_constraint = fof.sample_query(full_kg, True, full_matrix, sample_max_ans)
                         now_negation_tolerance += 1
                 else:  # Not meaningful negation or not negation tolerance.
-                    qa_dict, full_answer = fof.sample_query(full_kg, meaningful_negation, full_matrix, sample_max_ans)
+                    qa_dict, full_answer, epfo_constraint = fof.sample_query(full_kg, meaningful_negation, full_matrix, sample_max_ans)
             if qa_dict and str(qa_dict) not in stored_qa_dict:  # We notice sampling may fail and return None
                 stored_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
                 fof.append_qa_instances(qa_dict)
                 now_index += 1
                 if sample_mode == 'train':
                     if full_answer is None:
-                        full_answer = fof.deterministic_query(now_index, full_kg)
+                        full_answer = fof.formula_list[0].deterministic_query_set_with_initialization(
+                            now_index, full_kg, None, False, epfo_constraint)
                     easy_answer = set()
                 else:
                     if full_answer is None:
-                        full_answer = fof.deterministic_query(now_index, full_kg)
-                    easy_answer = fof.deterministic_query(now_index, part_kg)
+                        full_answer = fof.formula_list[0].deterministic_query_set_with_initialization(
+                            now_index, full_kg, None, False, epfo_constraint)
+                    easy_answer = fof.formula_list[0].deterministic_query_set_with_initialization(
+                        now_index, part_kg, None, False, epfo_constraint)
                 if full_answer - easy_answer and (max_ans is None or len(full_answer - easy_answer) <= use_max_ans):
                     if random.random() < double_checking:
                         check_easy_ans = fof.deterministic_query(now_index, part_kg, 'solver')

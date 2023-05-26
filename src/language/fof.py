@@ -518,7 +518,8 @@ class ConjunctiveFormula:
                 for ans in full_answer[free_variable]:
                     epfo_answer_tuple.add((ans,))
             else:
-                epfo_answer_tuple = self.deterministic_query_set(now_index, data_kg, negation_pred_list, False)
+                epfo_answer_tuple = self.deterministic_query_set_with_initialization(
+                    now_index, data_kg, negation_pred_list, False, full_answer)
             self.pop_relation_and_symbols(now_index, grounded_dict)
             if full_answer and (max_answer_size is None or len(epfo_answer_tuple) <= max_answer_size):
                 proper_answer_got = True
@@ -546,8 +547,8 @@ class ConjunctiveFormula:
                     guess_predicate = neg_candidate_list[i]
                     grounded_dict[now_predicate] = guess_predicate
                     self.append_relation_and_symbols(grounded_dict)
-                    final_answer_tuple = self.deterministic_query_set(
-                        now_index, data_kg, [neg_edge[1] for neg_edge in neg_edges], False)
+                    final_answer_tuple = self.deterministic_query_set_with_initialization(
+                        now_index, data_kg, [neg_edge[1] for neg_edge in neg_edges], False, full_answer)
                     self.pop_relation_and_symbols(now_index, grounded_dict)
                     if final_answer_tuple and final_answer_tuple != epfo_answer_tuple:
                         grounded_neg_pred[now_predicate] = True
@@ -559,8 +560,9 @@ class ConjunctiveFormula:
                         guess_predicate = random.choice(not_meaningful_candidate)
                         final_answer_tuple = epfo_answer_tuple
                     else:
-                        guess_predicate = random.randint(0, data_kg.num_relations - 1)
-                        answer_has_changed = True
+                        guess_predicate = random.sample(set(range(0, data_kg.num_relations)) - neg_candidate_set, 1)[0]
+                        #  answer_has_changed = True
+                        #  when guess predicate is not in the candidate set, it does not change final ans
                     grounded_dict[now_predicate] = guess_predicate
             elif not_in_node_num == 1:  # Need to ground an edge along with new node.
                 answer_has_changed = True
@@ -613,9 +615,9 @@ class ConjunctiveFormula:
         if strict_meaningful_negation and sub_graph_negation_edge and False in grounded_neg_pred.values():
             return None, None
         if answer_has_changed:
-            return grounded_dict, None
+            return grounded_dict, None, full_answer
         else:
-            return grounded_dict, final_answer_tuple
+            return grounded_dict, final_answer_tuple, full_answer
 
     def sample_other_query(self, data_kg: KnowledgeGraph, existing_grounded_dict):
         """
@@ -692,6 +694,36 @@ class ConjunctiveFormula:
         The return full match is used in query sampling, if it is set to True, we use solve_EFO1 as the CSP problem.
         """
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
+        sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
+        if len(free_variable_list) == 1 or return_full_match:
+            answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
+            if return_full_match:
+                to_return_dict = answer_dict if exist_answer else defaultdict(set)
+                return to_return_dict
+            else:  # We know the free variable has only one element.
+                tuple_answer_set = set()
+                if exist_answer:
+                    for ans in answer_dict[free_variable_list[0]]:
+                        tuple_answer_set.add((ans,))
+                return tuple_answer_set
+        else:
+            answer_dict_list, exist_answer = csp_efox(sub_kg, neg_kg, now_term_candidate, kg_graph, free_variable_list)
+            tuple_answer_set = set()
+            if exist_answer:
+                for ans in answer_dict_list:
+                    new_ans = []
+                    for free_variable in free_variable_list:
+                        new_ans.append(ans[free_variable])
+                    tuple_answer_set.add(tuple(new_ans))
+            return tuple_answer_set
+
+    def deterministic_query_set_with_initialization(self, index, kg_graph: KnowledgeGraph, skip_predicate: List = None,
+                                return_full_match: bool = False, initialization: Dict = None):
+        """
+        Initialization is used to speed up the query sampling process.
+        """
+        now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
+        now_term_candidate = initialization if initialization else now_term_candidate
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
@@ -1006,17 +1038,17 @@ class DisjunctiveFormula:
     def sample_query(self, kg: KnowledgeGraph, strict_meaningful_negation: bool, kg_matrix=None, max_ans: int = None):
         selected_sub_formula_index = random.randint(0, len(self.formula_list) - 1)
         selected_sub_formula = self.formula_list[selected_sub_formula_index]
-        grounded_dict, sub_answer = selected_sub_formula.sample_query(kg,
-                                                                      strict_meaningful_negation, kg_matrix, max_ans)
+        grounded_dict, sub_answer, epfo_constraint = selected_sub_formula.sample_query(
+            kg, strict_meaningful_negation, kg_matrix, max_ans)
         if not grounded_dict:
             return None, None
         for index in range(len(self.formula_list)):
             if index != selected_sub_formula_index:
                 grounded_dict = self.formula_list[index].sample_other_query(kg, grounded_dict)
         if len(self.formula_list) == 1:
-            return grounded_dict, sub_answer
+            return grounded_dict, sub_answer, epfo_constraint
         else:
-            return grounded_dict, None
+            return grounded_dict, None, epfo_constraint
 
     def deterministic_query(self, index, kg: Union[KnowledgeGraph, List], method: str = 'set', device='cpu'):
         if method == 'vec':
