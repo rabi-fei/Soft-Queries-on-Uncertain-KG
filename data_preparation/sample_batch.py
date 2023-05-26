@@ -17,7 +17,7 @@ if __name__ == "__main__":
     each_num = args.each
     sample_num = args.sample
     if dataset == 'NELL':
-        sample_num = int(sample_num * 0.6)
+        sample_num = int(sample_num * 0.4)
     for start in range(args.start, args.end, each_num):
         command = ("nohup python sample_query.py "
                    f"--data_folder {datafolder} "
