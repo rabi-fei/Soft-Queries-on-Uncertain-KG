@@ -34,9 +34,10 @@ query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 parser.add_argument("--double_check", type=float, default=-1)
-parser.add_argument("--output_folder", type=str, default='data/NELL-EFOX')
-parser.add_argument("--data_folder", type=str, default='data/NELL-EFOX')
-parser.add_argument("--num_samples", type=int, default=1000)
+parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX')
+parser.add_argument("--num_positive", type=int, default=1000)
+parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=False)
 parser.add_argument("--negation_tolerance", type=int, default=1)
@@ -44,8 +45,8 @@ parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=70)
-parser.add_argument("--end_index", type=int, default=70)
+parser.add_argument("--start_index", type=int, default=0)
+parser.add_argument("--end_index", type=int, default=19)
 parser.add_argument("--max_ans", type=int, default=100)
 
 
@@ -312,22 +313,22 @@ if __name__ == "__main__":
             all_qa_dict.add(str(old_data[exist_lstr][i][0]))
         '''
         if args.mode == 'easy':
-            all_query = sample_one_formula_query(lstr, None, train_kg, args.num_samples - useful_num, args.mode,
+            all_query = sample_one_formula_query(lstr, None, train_kg, args.num_positive - useful_num, args.mode,
                                                  args.meaningful_negation, args.double_check, args.negation_tolerance,
                                                  args.ncpus, args.max_ans, all_qa_dict)
         elif args.mode == 'valid':
-            all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_samples - useful_num, args.mode,
+            all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_positive - useful_num, args.mode,
                                                  args.meaningful_negation, args.double_check, args.negation_tolerance,
                                                  args.ncpus, args.max_ans, all_qa_dict)
         elif args.mode == 'test':
             if '!' in lstr:
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_samples/2 - useful_num,
+                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_negative - useful_num,
                                                      args.mode,
                                                      args.meaningful_negation, args.double_check,
                                                      args.negation_tolerance,
                                                      args.ncpus, args.max_ans, all_qa_dict)
             else:
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_samples - useful_num, args.mode,
+                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_positive - useful_num, args.mode,
                                                      args.meaningful_negation, args.double_check,
                                                      args.negation_tolerance,
                                                      args.ncpus, args.max_ans, all_qa_dict)

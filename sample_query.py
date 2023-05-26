@@ -36,7 +36,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--double_check", type=float, default=-1)
 parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX')
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX')
-parser.add_argument("--num_samples", type=int, default=1000)
+parser.add_argument("--num_positive", type=int, default=1000)
+parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=False)
 parser.add_argument("--negation_tolerance", type=int, default=1)
@@ -312,22 +313,22 @@ if __name__ == "__main__":
             all_qa_dict.add(str(old_data[exist_lstr][i][0]))
         '''
         if args.mode == 'easy':
-            all_query = sample_one_formula_query(lstr, None, train_kg, args.num_samples - useful_num, args.mode,
+            all_query = sample_one_formula_query(lstr, None, train_kg, args.num_positive - useful_num, args.mode,
                                                  args.meaningful_negation, args.double_check, args.negation_tolerance,
                                                  args.ncpus, args.max_ans, all_qa_dict)
         elif args.mode == 'valid':
-            all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_samples - useful_num, args.mode,
+            all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_positive - useful_num, args.mode,
                                                  args.meaningful_negation, args.double_check, args.negation_tolerance,
                                                  args.ncpus, args.max_ans, all_qa_dict)
         elif args.mode == 'test':
             if '!' in lstr:
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_samples/2 - useful_num,
+                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_negative - useful_num,
                                                      args.mode,
                                                      args.meaningful_negation, args.double_check,
                                                      args.negation_tolerance,
                                                      args.ncpus, args.max_ans, all_qa_dict)
             else:
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_samples - useful_num, args.mode,
+                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_positive - useful_num, args.mode,
                                                      args.meaningful_negation, args.double_check,
                                                      args.negation_tolerance,
                                                      args.ncpus, args.max_ans, all_qa_dict)
