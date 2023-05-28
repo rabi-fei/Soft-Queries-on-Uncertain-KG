@@ -53,7 +53,7 @@ if __name__ == "__main__":
         lstr = row.formula
         fid = row.formula_id
         output_file_name = osp.join(output_folder,
-                                    f'{args.mode}_{fid}_{args.sample_formula_scope}_qaa.json')
+                                    f'{args.mode}_{fid}_EFOX_qaa.json')
         useful_num = 0
         all_qa_dict = set()
         if os.path.exists(output_file_name):
