@@ -1,12 +1,13 @@
 import argparse
 import os.path as osp
 from collections import defaultdict
+from copy import deepcopy
 
 import torch
 import tqdm
 import pandas as pd
 
-from FIT import solve_conjunctive
+from FIT import extend_ans, existential_update, solve_EFO1_new
 from src.utils.data import QueryAnsweringSeqDataLoader_v2
 from src.utils.class_util import Writer
 from src.structure.knowledge_graph import KnowledgeGraph, kg_remove_node
@@ -21,14 +22,14 @@ parser.add_argument("--sleep", type=int, default=0)
 parser.add_argument("--ckpt", type=str, default='sparse/237/torch_0.005_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=10)
 parser.add_argument("--cuda", type=int, default=0)
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
-parser.add_argument("--max", type=int, default=1)
-parser.add_argument("--data_type", type=str, default='EFOX', choices=['BetaE', 'EFO1', 'EFO1_l, EFOX'])
-parser.add_argument("--formula", type=list, default=None)
+parser.add_argument("--max", type=int, default=0)
+parser.add_argument("--formula", type=str, default="type0020")
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
+
 
 
 @torch.no_grad()
@@ -57,180 +58,164 @@ def solve_EFOX(conj_formula: ConjunctiveFormula, relation_matrix, conjunctive_tn
         sub_kg = KnowledgeGraph(sub_graph_edge, sub_kg_index)
         neg_kg = KnowledgeGraph(sub_graph_negation_edge, sub_kg_index)
         sub_kg_index.map_relation_name_to_id = {predicate: 0 for predicate in conj_formula.predicate_dict}
-        sub_ans = solve_conjunctive(sub_kg, neg_kg, relation_matrix,
+        sub_ans_dict = solve_conjunctive_all(sub_kg, neg_kg, relation_matrix,
                                     all_candidates, conjunctive_tnorm, existential_tnorm, 'f', device,
-                                    max_enumeration)
+                                    max_enumeration, all_candidates)
+        free_variable_list = list(conj_formula.free_variable_dict.keys())
+        free_variable_list.sort()
+        ans_emb_list = [sub_ans_dict[term_name] for term_name in free_variable_list]
+        return torch.stack(ans_emb_list, dim=0)
+
+
+def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate, now_variable_list):
+    """
+    Find a leaf node with least possible candidate. The now-asking variable is first.
+    """
+    return_candidate = [None, None, 0]
+    for node in now_candidate:
+        adjacency_node_set = set.union(
+            *[sub_graph.h2t[node], sub_graph.t2h[node], neg_sub_graph.h2t[node],
+              neg_sub_graph.t2h[node]])
+        if len(adjacency_node_set) == 1:
+            if node in now_variable_list:
+                return node, list(adjacency_node_set)[0], True
+            candidate_num = torch.count_nonzero(now_candidate[node])
+            if not return_candidate[0] or candidate_num < return_candidate[2]:
+                return_candidate = [node, list(adjacency_node_set)[0], candidate_num]
+    return return_candidate[0], return_candidate[1], False
+
+
+def find_enumerate_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate, now_variable_list):
+    return_candidate = [None, 100, 100000]
+    for node in now_candidate:
+        if node in now_variable_list:
+            continue
+        adjacency_node_list = list(set.union(*[sub_graph.h2t[node], sub_graph.t2h[node], neg_sub_graph.h2t[node],
+                                               neg_sub_graph.t2h[node]]))
+        adjacency_node_num = len(adjacency_node_list)
+        candidate_num = torch.count_nonzero(now_candidate[node])
+        if not return_candidate[0] or adjacency_node_num < len(return_candidate[1]) or \
+                (adjacency_node_num == len(return_candidate[1]) and candidate_num < return_candidate[2]):
+            return_candidate = node, adjacency_node_list, candidate_num
+    return return_candidate[0], return_candidate[1]
 
 
 @torch.no_grad()
-def eval_batch_query(model, pred_emb_list, easy_ans_list, hard_ans_list):
-    """
-    eval a batch of query of the same formula, the pred_emb of the query has been given.
-    pred_emb:  batch*emb_dim
-    easy_ans_list: list of easy_ans
-    """
-    device = model.device
-    logs = defaultdict(float)
-    marginal_logs = defaultdict(float)
-    f_str_list = [f'f{i + 1}' for i in range(len(pred_emb_list))]
-    f_str = '_'.join(f_str_list)
-    if len(pred_emb_list) == 1:
-        with torch.no_grad():
-            all_logit = model.compute_all_entity_logit(pred_emb_list[0], union=False)
-            # batch*nentity
-            argsort = torch.argsort(all_logit, dim=1, descending=True)
-            ranking = argsort.clone().to(torch.float)
-            #  create a new torch Tensor for batch_entity_range
-            ranking = ranking.scatter_(1, argsort, torch.arange(model.n_entity).to(torch.float).
-                                       repeat(argsort.shape[0], 1).to(device))
-            # achieve the ranking of all entities
-            for i in range(all_logit.shape[0]):
-                easy_ans = [instance[0] for instance in easy_ans_list[i][f_str]]
-                hard_ans = [instance[0] for instance in hard_ans_list[i][f_str]]
-                num_hard = len(hard_ans)
-                num_easy = len(easy_ans)
-                assert len(set(hard_ans).intersection(set(easy_ans))) == 0
-                # only take those answers' rank
-                cur_ranking = ranking[i, list(easy_ans) + list(hard_ans)]
-                cur_ranking, indices = torch.sort(cur_ranking)
-                masks = indices >= num_easy
-                answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
-                cur_ranking = cur_ranking - answer_list + 1
-                # filtered setting: +1 for start at 0, -answer_list for ignore other answers
-                cur_ranking = cur_ranking[masks]
-                # only take indices that belong to the hard answers
-                mrr = torch.mean(1. / cur_ranking).item()
-                h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()
-                h3 = torch.mean((cur_ranking <= 3).to(torch.float)).item()
-                h10 = torch.mean(
-                    (cur_ranking <= 10).to(torch.float)).item()
-                #add_hard_list = torch.arange(num_hard).to(torch.float).to(device)
-                #hard_ranking = cur_ranking + add_hard_list  # for all hard answer, consider other hard answer
-                #logs['retrieval_accuracy'] += torch.mean((hard_ranking <= num_hard).to(torch.float)).item()
-                logs['MRR'] += mrr
-                logs['HITS1'] += h1
-                logs['HITS3'] += h3
-                logs['HITS10'] += h10
-            num_query = all_logit.shape[0]
-            logs['num_queries'] += num_query
+def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: KnowledgeGraph, relation_matrix,
+                      now_candidate_set: dict, conjunctive_tnorm, existential_tnorm, now_variable_list, device,
+                      max_enumeration, all_candidate_set):
+    n_entity = relation_matrix[0].shape[0]
+    if not positive_graph.triples and not negative_graph.triples:
+        return all_candidate_set
+    if len(now_candidate_set) == 1:
+        return all_candidate_set
+    now_leaf_node, adjacency_node, being_asked_variable = \
+        find_leaf_node(positive_graph, negative_graph, now_candidate_set, now_variable_list)
+    if now_leaf_node:  # If there exists leaf node in the query graph, always possible to shrink into a sub_problem.
+        adjacency_node_list = [adjacency_node]
+        if being_asked_variable:
+            # next_variable = adjacency_node
+            sub_pos_g, sub_neg_g = kg_remove_node(positive_graph, now_leaf_node), \
+                                   kg_remove_node(negative_graph, now_leaf_node)
+            copy_variable_list = deepcopy(now_variable_list)
+            copy_variable_list.remove(now_leaf_node)
+            sub_ans_dict = solve_conjunctive_all(sub_pos_g, sub_neg_g, relation_matrix, now_candidate_set,
+                                                 conjunctive_tnorm, existential_tnorm, copy_variable_list, device,
+                                                 max_enumeration, all_candidate_set)
+            final_ans = extend_ans(now_leaf_node, adjacency_node, positive_graph, negative_graph, relation_matrix,
+                                   now_candidate_set[now_leaf_node], sub_ans_dict[adjacency_node], conjunctive_tnorm,
+                                   existential_tnorm)
+            all_candidate_set[now_leaf_node] = final_ans
+            return all_candidate_set
+        else:
+            sub_candidate_set = cut_node_sub_problem(now_leaf_node, adjacency_node_list, positive_graph, negative_graph,
+                                          relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
+                                          now_variable_list, device, max_enumeration, all_candidate_set)
+            return sub_candidate_set
     else:
-        with torch.no_grad():
-            final_ranking_list = []
-            for pred_emb in pred_emb_list:
-                all_logit = model.compute_all_entity_logit(pred_emb, union=False)
-                argsort = torch.argsort(all_logit, dim=1, descending=True)
-                ranking = argsort.clone().to(torch.float)
-                #  create a new torch Tensor for batch_entity_range
-                ranking = ranking.scatter_(1, argsort, torch.arange(model.n_entity).to(torch.float).
-                                           repeat(argsort.shape[0], 1).to(device))
-                final_ranking_list.append(ranking)
-            final_ranking = torch.stack(final_ranking_list, dim=1).to(device)  # batch * free_num * nentity
-            for i in range(all_logit.shape[0]):
-                easy_ans = easy_ans_list[i][f_str]  # A list of list, each list is an instance.
-                hard_ans = hard_ans_list[i][f_str]
-                num_easy, num_hard = len(easy_ans), len(hard_ans)
-                #  assert len(set(hard_ans).intersection(set(easy_ans))) == 0
-                full_ans = easy_ans + hard_ans
-                full_ans_tensor = torch.tensor(full_ans).to(device).transpose(0, 1)
-                marginal_easy_ans_list, marginal_hard_ans_list = [], []
-                for j in range(len(pred_emb_list)):
-                    marginal_easy_ans, marginal_full_ans = set([easy_instance[j] for easy_instance in easy_ans]), \
-                        set([full_instance[j] for full_instance in full_ans])
-                    marginal_hard_ans = marginal_full_ans - marginal_easy_ans
-                    marginal_easy_ans_list.append(marginal_easy_ans)
-                    marginal_hard_ans_list.append(marginal_hard_ans)
-                    #  Compute the marginal ranking first
-                    if len(marginal_hard_ans) == 0:  # There is really possibility that no marginal hard answer
-                        marginal_logs['num_queries'] -= 1
-                    else:
-                        marginal_metric_metrics = ranking2metrics(final_ranking_list[j][i], marginal_easy_ans,
-                                                                  marginal_hard_ans)
-                        mrr, h1, h3, h10 = marginal_metric_metrics
-                        marginal_logs['MRR'] += mrr / len(pred_emb_list)
-                        marginal_logs['HITS1'] += h1 / len(pred_emb_list)
-                        marginal_logs['HITS3'] += h3 / len(pred_emb_list)
-                        marginal_logs['HITS10'] += h10 / len(pred_emb_list)
-                #  Compute the hard joint ranking
-                couple_ans_ranking = torch.gather(final_ranking[i], dim=1, index=full_ans_tensor)  # free_num * ans
-                add_ans_ranking = torch.sum(couple_ans_ranking, dim=0)  # ans
-                final_ans_ranking = add_ans_ranking * (add_ans_ranking + 1) / 2 + couple_ans_ranking[0]
-                sort_ans_ranking, indices = torch.sort(final_ans_ranking)
-                masks = indices >= num_easy
-                answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
-                filtered_ans_ranking = sort_ans_ranking - answer_list + 1
-                cur_ranking = filtered_ans_ranking[masks]
-                #if math.isinf(mrr):
-                    #print("warning: mrr is inf")
-                mrr = torch.mean(1. / cur_ranking).item()
-                h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()
-                h3 = torch.mean((cur_ranking <= 3).to(torch.float)).item()
-                h10 = torch.mean(
-                    (cur_ranking <= 10).to(torch.float)).item()
-                logs['MRR'] += mrr
-                #if math.isinf(logs['MRR']):
-                    #print("warning: mrr is inf")
-                logs['HITS1'] += h1
-                logs['HITS3'] += h3
-                logs['HITS10'] += h10
-            num_query = all_logit.shape[0]
-            logs['num_queries'] += num_query
-            marginal_logs['num_queries'] += num_query
-    return marginal_logs, logs
+        to_enumerate_node, adjacency_node_list = find_enumerate_node(positive_graph, negative_graph, now_candidate_set,
+                                                                     now_variable_list)
+        if max_enumeration is not None:
+            easy_candidate = torch.count_nonzero(now_candidate_set[to_enumerate_node] == 1)
+            enumeration_num = torch.count_nonzero(now_candidate_set[to_enumerate_node])
+            max_enumeration_here = max_enumeration + easy_candidate
+            to_enumerate_candidates = torch.argsort(now_candidate_set[to_enumerate_node],
+                                                    descending=True)[:min(max_enumeration_here, enumeration_num)]
+        else:
+            to_enumerate_candidates = now_candidate_set[to_enumerate_node].nonzero()
+        this_node_candidates = deepcopy(now_candidate_set[to_enumerate_node])
+        all_enumerate_ans = torch.zeros((to_enumerate_candidates.shape[0], n_entity)).to(device)
+        if to_enumerate_candidates.shape[0] == 0:
+            return torch.zeros(n_entity).to(device)
+        for i, enumerate_candidate in enumerate(to_enumerate_candidates):
+            single_candidate = torch.zeros_like(now_candidate_set[to_enumerate_node]).to(device)
+            candidate_truth_value = this_node_candidates[enumerate_candidate]
+            single_candidate[enumerate_candidate] = 1
+            now_candidate_set[to_enumerate_node] = single_candidate
+            answer_dict = cut_node_sub_problem(to_enumerate_node, adjacency_node_list, positive_graph, negative_graph,
+                                          relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
+                                          now_variable_list, device, max_enumeration, all_candidate_set)
+            for free_variable in now_variable_list:
+                answer = answer_dict[free_variable]
+                if conjunctive_tnorm == 'product':
+                    enumerate_ans = candidate_truth_value * answer
+                elif conjunctive_tnorm == 'Godel':
+                    enumerate_ans = torch.minimum(candidate_truth_value, answer)
+                else:
+                    raise NotImplementedError
+                all_enumerate_ans[i] = enumerate_ans
+                if existential_tnorm == 'Godel':
+                    final_ans = torch.amax(all_enumerate_ans, dim=-2)
+                else:
+                    raise NotImplementedError
+                all_candidate_set[free_variable] = final_ans
+        return all_candidate_set
+
+
+@torch.no_grad()
+def cut_node_sub_problem(to_cut_node, adjacency_node_list, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
+                         r_matrix_list, now_candidate_set, conj_tnorm, exist_tnorm, now_variable, device,
+                         max_enumeration, all_candidate_set):
+    new_candidate_set = deepcopy(now_candidate_set)
+    for adjacency_node in adjacency_node_list:
+        adj_candidate_vec = existential_update(to_cut_node, adjacency_node, sub_graph, neg_sub_graph, r_matrix_list,
+                                               new_candidate_set[to_cut_node], new_candidate_set[adjacency_node],
+                                               conj_tnorm, exist_tnorm)
+        new_candidate_set[adjacency_node] = adj_candidate_vec
+        all_candidate_set[adjacency_node] = adj_candidate_vec
+    new_sub_graph, new_sub_neg_graph = kg_remove_node(sub_graph, to_cut_node), \
+                                       kg_remove_node(neg_sub_graph, to_cut_node)
+    new_candidate_set.pop(to_cut_node)
+    sub_answer = solve_conjunctive_all(new_sub_graph, new_sub_neg_graph, r_matrix_list, new_candidate_set, conj_tnorm,
+                                       exist_tnorm, now_variable, device, max_enumeration, all_candidate_set)
+    return sub_answer
 
 
 def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entity, eval_device):
     metrics = defaultdict(float)
-    argsort = torch.argsort(batch_ans_tensor, dim=1, descending=True)
+    argsort = torch.argsort(batch_ans_tensor, dim=-1, descending=True)
     ranking = argsort.clone().to(torch.float).to(eval_device)
-    ranking = ranking.scatter_(1, argsort, torch.arange(n_entity).to(torch.float).
-                               repeat(argsort.shape[0], 1).to(eval_device))
+    ranking = ranking.scatter_(2, argsort, torch.arange(n_entity).to(torch.float).
+                               repeat(argsort.shape[0], argsort.shape[1], 1).to(eval_device))
     logs = defaultdict(float)
     marginal_logs = defaultdict(float)
+    multipliy_logs = defaultdict(float)
     f_str_list = [f'f{i + 1}' for i in range(len(fof.free_term_dict))]
     f_str = '_'.join(f_str_list)
     if len(fof.free_term_dict) == 1:
         with torch.no_grad():
+            ranking.squeeze_()
             for i in range(batch_ans_tensor.shape[0]):
                 # ranking = ranking.scatter_(0, argsort, torch.arange(n_entity).to(torch.float))
                 hard_ans = fof.hard_answer_list[i][f_str]
                 easy_ans = fof.easy_answer_list[i][f_str]
-                num_hard = len(hard_ans)
-                num_easy = len(easy_ans)
-                real_ans_num = num_easy + num_hard
-                pred_ans_num = torch.sum(batch_ans_tensor[i])
-                cur_ranking = ranking[i, list(easy_ans) + list(hard_ans)]
-                cur_ranking, indices = torch.sort(cur_ranking)
-                masks = indices >= num_easy
-                # easy_masks = indices < num_easy
-                answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(eval_device)
-                cur_ranking = cur_ranking - answer_list + 1
-                # filtered setting: +1 for start at 0, -answer_list for ignore other answers
-                # easy_ranking = cur_ranking[easy_masks]
-                hard_ranking = cur_ranking[masks]
-                # only take indices that belong to the hard answers
-                '''
-                if easy_ans:
-                    easy_mrr = torch.mean(1. / easy_ranking).item()
-                    metrics['easy_queries'] += 1
-                else:
-                    easy_mrr = 0
-                metrics['easy_MRR'] += easy_mrr
-                '''
-                mrr = torch.mean(1. / hard_ranking).item()
-                h1 = torch.mean((hard_ranking <= 1).to(torch.float)).item()
-                h3 = torch.mean((hard_ranking <= 3).to(torch.float)).item()
-                h10 = torch.mean(
-                    (hard_ranking <= 10).to(torch.float)).item()
-                mae = torch.abs(pred_ans_num - real_ans_num).item()
-                mape = mae / real_ans_num
-                metrics['MAE'] += mae
-                metrics['MAPE'] += mape
+                mrr, h1, h3, h10 = ranking2metrics(ranking, easy_ans, hard_ans, eval_device)
                 metrics['MRR'] += mrr
                 metrics['HITS1'] += h1
                 metrics['HITS3'] += h3
                 metrics['HITS10'] += h10
             metrics['num_queries'] += batch_ans_tensor.shape[0]
-            return metrics
+            return metrics, marginal_logs, multipliy_logs
     else:
         with torch.no_grad():
             final_ranking = ranking  # batch * free_num * nentity
@@ -242,6 +227,7 @@ def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entit
                 full_ans = easy_ans + hard_ans
                 full_ans_tensor = torch.tensor(full_ans).to(eval_device).transpose(0, 1)
                 marginal_easy_ans_list, marginal_hard_ans_list = [], []
+                couple_filtered_list = []
                 for j in range(batch_ans_tensor.shape[1]):
                     marginal_easy_ans, marginal_full_ans = set([easy_instance[j] for easy_instance in easy_ans]), \
                         set([full_instance[j] for full_instance in full_ans])
@@ -249,16 +235,44 @@ def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entit
                     marginal_easy_ans_list.append(marginal_easy_ans)
                     marginal_hard_ans_list.append(marginal_hard_ans)
                     #  Compute the marginal ranking first
+                    marginal_ans_ranking = final_ranking[i, j][list(marginal_easy_ans) + list(marginal_hard_ans)]
+                    marginal_num_hard, marginal_num_easy = len(marginal_hard_ans), len(marginal_easy_ans)
+                    sort_marginal_ranking, marginal_indices = torch.sort(marginal_ans_ranking)
+                    marginal_masks = marginal_indices >= marginal_num_easy
+                    marginal_answer_list = torch.arange(
+                        marginal_num_hard + marginal_num_easy).to(torch.float).to(eval_device)
+                    filtered_marginal_ranking = sort_marginal_ranking - marginal_answer_list + 1
+                    # filtered setting: +1 for start at 0, -answer_list for ignore other answers
+                    adjusted_marginal_all_ranking = final_ranking[i, j].clone().to(eval_device)
+                    adjusted_marginal_all_ranking[list(marginal_easy_ans) + list(marginal_hard_ans)] = \
+                        torch.gather(filtered_marginal_ranking, dim=0, index=marginal_indices.argsort())
+                    couple_filtered_list.append(adjusted_marginal_all_ranking)
                     if len(marginal_hard_ans) == 0:  # There is really possibility that no marginal hard answer
                         marginal_logs['num_queries'] -= 1
                     else:
-                        marginal_metric_metrics = ranking2metrics(final_ranking[j][i], marginal_easy_ans,
-                                                                  marginal_hard_ans)
-                        mrr, h1, h3, h10 = marginal_metric_metrics
+                        marginal_hard_ranking = filtered_marginal_ranking[marginal_masks]
+                        # only take indices that belong to the hard answers
+                        mrr = torch.mean(1. / marginal_hard_ranking).item()
+                        h1 = torch.mean((marginal_hard_ranking <= 1).to(torch.float)).item()
+                        h3 = torch.mean((marginal_hard_ranking <= 3).to(torch.float)).item()
+                        h10 = torch.mean(
+                            (marginal_hard_ranking <= 10).to(torch.float)).item()
                         marginal_logs['MRR'] += mrr / batch_ans_tensor.shape[1]
                         marginal_logs['HITS1'] += h1 / batch_ans_tensor.shape[1]
                         marginal_logs['HITS3'] += h3 / batch_ans_tensor.shape[1]
                         marginal_logs['HITS10'] += h10 / batch_ans_tensor.shape[1]
+
+                marginal_filtered_joint_rank = torch.stack(couple_filtered_list, dim=0)  # free_num * nentity
+                m_j_ranking = torch.gather(
+                    marginal_filtered_joint_rank, dim=1, index=torch.tensor(hard_ans).to(eval_device).transpose(0, 1))
+                #  free_num * hard_num
+                couple_h1 = torch.mean(torch.prod((m_j_ranking <= 1).to(torch.float), dim=0)).item()
+                couple_h3 = torch.mean(torch.prod((m_j_ranking <= 3).to(torch.float), dim=0)).item()
+                couple_h10 = torch.mean(torch.prod((m_j_ranking <= 10).to(torch.float), dim=0)).item()
+                multipliy_logs['HITS1*1'] += couple_h1
+                multipliy_logs['HITS3*3'] += couple_h3
+                multipliy_logs['HITS10*10'] += couple_h10
+
                 #  Compute the hard joint ranking
                 couple_ans_ranking = torch.gather(final_ranking[i], dim=1, index=full_ans_tensor)  # free_num * ans
                 add_ans_ranking = torch.sum(couple_ans_ranking, dim=0)  # ans
@@ -284,7 +298,7 @@ def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entit
             num_query = batch_ans_tensor.shape[0]
             logs['num_queries'] += num_query
             marginal_logs['num_queries'] += num_query
-            return logs, marginal_logs
+            return logs, marginal_logs, multipliy_logs
 
 
 if __name__ == "__main__":
@@ -303,6 +317,8 @@ if __name__ == "__main__":
     all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_412316.csv'))
     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
         formula_id = row['formula_id']
+        if args.formula and formula_id != args.formula:
+            continue
         formula = row['formula']
         # data_path = osp.join(configure['data']['data_folder'], f'test_type{i:04d}_EFOX_qaa.json')
         formula_path = osp.join(args.data_folder, f'test_{formula_id}_EFOX_qaa.json')
@@ -312,30 +328,42 @@ if __name__ == "__main__":
         test_dataloader = QueryAnsweringSeqDataLoader_v2(
             formula_path,
             # size_limit=args.batch_size * 1,
-            target_lstr=args.formula,
+            target_lstr=None,
             batch_size=args.batch_size,
             shuffle=False,
             num_workers=0)
         fof_list = test_dataloader.get_fof_list_no_shuffle()
         t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
-        all_log = defaultdict(dict)
+        all_log, all_marginal_log = defaultdict(float), defaultdict(float)
         for ifof, fof in t:
             torch.cuda.empty_cache()
             batch_ans_list, metric = [], {}
             for query_index in range(len(fof.easy_answer_list)):
-                ans = solve_EFOX(fof.formula_list[0], relation_matrix_list, args.c_norm, args.e_norm, query_index,
-                                 cuda_device, args.max)  # ans shape is [X * n_entity], X is number of free variable
+                if len(fof.free_term_dict) == 1:
+                    ans = solve_EFO1_new(fof, relation_matrix_list, args.c_norm, args.e_norm, query_index, cuda_device,
+                                         args.max)
+                    ans.unsqueeze_(0)
+                else:
+                    ans = solve_EFOX(fof.formula_list[0], relation_matrix_list, args.c_norm, args.e_norm, query_index,
+                                     cuda_device, args.max)  # ans shape is [X * n_entity], X is number of free variable
                 batch_ans_list.append(ans)
             batch_ans_tensor = torch.stack(batch_ans_list, dim=0)  # batch_size * X * n_entity
-            mar_log, log = compute_single_evaluation(fof, batch_ans_tensor, n_entity, cuda_device)
+            log, mar_log, mul_log = compute_single_evaluation(fof, batch_ans_tensor, n_entity, cuda_device)
             del batch_ans_tensor
             for metric in log:
                 all_log[metric] += log[metric]
+            for metric in mul_log:
+                all_log[f'multiply_{metric}'] += log[metric]
             for metric in mar_log:
-                all_log[f'marginal_{metric}'] += mar_log[metric]
+                all_marginal_log[metric] += mar_log[metric]
         for log_metric in all_log.keys():
             if log_metric != 'num_queries':
                 all_log[log_metric] /= all_log['num_queries']
+        for log_metric in all_marginal_log.keys():
+            if log_metric != 'num_queries':
+                all_marginal_log[log_metric] /= all_marginal_log['num_queries']
+        for log_metric in all_marginal_log.keys():
+            all_log[f'marginal_{log_metric}'] = all_marginal_log[log_metric]
         print(all_log)
         all_metrics[formula] = all_log
         writer.save_pickle({formula: all_log}, f"all_logging_test_0_{formula_id}.pickle")

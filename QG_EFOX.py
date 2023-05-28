@@ -102,7 +102,7 @@ def compute_single_evaluation(fof, batch_ans_tensor, n_entity, eva_device):
     return metrics
 
 
-def ranking2metrics(ranking, easy_ans, hard_ans):
+def ranking2metrics(ranking, easy_ans, hard_ans, ranking_device):
     num_hard = len(hard_ans)
     num_easy = len(easy_ans)
     assert len(set(hard_ans).intersection(set(easy_ans))) == 0
@@ -110,7 +110,7 @@ def ranking2metrics(ranking, easy_ans, hard_ans):
     cur_ranking = ranking[list(easy_ans) + list(hard_ans)]
     cur_ranking, indices = torch.sort(cur_ranking)
     masks = indices >= num_easy
-    answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
+    answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(ranking_device)
     cur_ranking = cur_ranking - answer_list + 1
     # filtered setting: +1 for start at 0, -answer_list for ignore other answers
     cur_ranking = cur_ranking[masks]

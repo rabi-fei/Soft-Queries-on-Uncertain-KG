@@ -512,6 +512,9 @@ class ConjunctiveFormula:
             now_index = max([len(grounded) for grounded in self.term_grounded_entity_id_dict.values()]) - 1
             negation_pred_list = [negation_edge[1] for negation_edge in sub_graph_negation_edge]
             full_answer = self.deterministic_query_set(now_index, data_kg, negation_pred_list, True)
+            if full_answer and (max_answer_size is None
+                                or max([len(full_answer[free]) for free in free_variable_list]) <= max_answer_size):
+                proper_answer_got = True
             if len(free_variable_list) == 1:
                 free_variable = free_variable_list[0]
                 epfo_answer_tuple = set()
@@ -521,8 +524,6 @@ class ConjunctiveFormula:
                 epfo_answer_tuple = self.deterministic_query_set_with_initialization(
                     now_index, data_kg, negation_pred_list, False, full_answer)
             self.pop_relation_and_symbols(now_index, grounded_dict)
-            if full_answer and (max_answer_size is None or len(epfo_answer_tuple) <= max_answer_size):
-                proper_answer_got = True
         final_answer_tuple = deepcopy(epfo_answer_tuple)
         answer_has_changed = False
         if sub_graph_negation_edge:  # Actually, we only consider the case of only one negation edge.

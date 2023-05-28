@@ -253,3 +253,52 @@ def solve_conjunctive(positive_graph: KnowledgeGraph, negative_graph: KnowledgeG
         else:
             raise NotImplementedError
         return final_ans
+
+
+@torch.no_grad()
+def solve_EFO1_new(DNF_formula, relation_matrix, conjunctive_tnorm, existential_tnorm, index, device,
+               max_enumeration):
+    torch.cuda.empty_cache()
+    with torch.no_grad():
+        sub_ans_list = []
+        n_entity = relation_matrix[0].shape[0]
+        for sub_formula in DNF_formula.formula_list:
+            all_candidates = {}
+            for term_name in sub_formula.term_dict:
+                if sub_formula.has_term_grounded_entity_id_list(term_name):
+                    all_candidates[term_name] = torch.zeros(n_entity).to(device)
+                    all_candidates[term_name][sub_formula.term_grounded_entity_id_dict[term_name][index]] = 1
+                else:
+                    all_candidates[term_name] = torch.ones(n_entity).to(device)
+            sub_graph_edge, sub_graph_negation_edge = [], []
+            for pred in sub_formula.predicate_dict.values():
+                pred_triples = (pred.head.name, sub_formula.pred_grounded_relation_id_dict[pred.name][index],
+                                pred.tail.name)
+                if pred.skolem_negation:
+                    sub_graph_negation_edge.append(pred_triples)
+                else:
+                    sub_graph_edge.append(pred_triples)
+            sub_kg_index = KGIndex()
+            sub_kg_index.map_entity_name_to_id = {term: 0 for term in sub_formula.term_dict}
+            sub_kg = KnowledgeGraph(sub_graph_edge, sub_kg_index)
+            neg_kg = KnowledgeGraph(sub_graph_negation_edge, sub_kg_index)
+            sub_kg_index.map_relation_name_to_id = {predicate: 0 for predicate in sub_formula.predicate_dict}
+            sub_ans = solve_conjunctive(sub_kg, neg_kg, relation_matrix,
+                                        all_candidates, conjunctive_tnorm, existential_tnorm, 'f1', device,
+                                        max_enumeration)
+            sub_ans_list.append(sub_ans)
+        if len(sub_ans_list) == 1:
+            return sub_ans_list[0]
+        else:
+            if conjunctive_tnorm == 'product':
+                not_ans = 1 - sub_ans_list[0]
+                for i in range(1, len(sub_ans_list)):
+                    not_ans = not_ans * (1 - sub_ans_list[i])
+                return 1 - not_ans
+            elif conjunctive_tnorm == 'Godel':
+                final_ans = sub_ans_list[0]
+                for i in range(1, len(sub_ans_list)):
+                    final_ans = torch.maximum(final_ans, sub_ans_list[i])
+                return final_ans
+            else:
+                raise NotImplementedError
