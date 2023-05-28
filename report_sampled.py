@@ -33,18 +33,10 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--double_check", type=float, default=-1)
-parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX')
+parser.add_argument("--dataset", type=str, default='NELL')
 parser.add_argument("--num_positive", type=int, default=1000)
 parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
-parser.add_argument("--meaningful_negation", type=bool, default=False)
-parser.add_argument("--negation_tolerance", type=int, default=1)
-parser.add_argument("--ncpus", type=int, default=10)
-parser.add_argument("--skip_exist", type=bool, default=True)
-parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
-parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
 parser.add_argument("--start_index", type=int, default=0)
 parser.add_argument("--end_index", type=int, default=813)
 
@@ -52,6 +44,7 @@ parser.add_argument("--end_index", type=int, default=813)
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
+    output_folder = osp.join('data', args.dataset + '-EFOX')
     formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_412316.csv'))
     all_sampled = 0
     for i, row in tqdm.tqdm(formula_scope.iterrows(), total=len(formula_scope)):
@@ -59,7 +52,7 @@ if __name__ == "__main__":
             continue
         lstr = row.formula
         fid = row.formula_id
-        output_file_name = osp.join(args.output_folder,
+        output_file_name = osp.join(output_folder,
                                     f'{args.mode}_{fid}_{args.sample_formula_scope}_qaa.json')
         useful_num = 0
         all_qa_dict = set()
@@ -75,4 +68,4 @@ if __name__ == "__main__":
             all_sampled += 1
         else:
             print(f'file {output_file_name} not exist')
-    print(f"During {args.start_index} {args.end_index} all_sampled", all_sampled)
+    print(f"During {args.start_index} {args.end_index} all_sampled", all_sampled, f"ratio is {all_sampled / (args.end_index - args.start_index + 1)}")
