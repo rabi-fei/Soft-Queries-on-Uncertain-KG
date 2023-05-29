@@ -45,8 +45,8 @@ parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=587)
-parser.add_argument("--end_index", type=int, default=588)
+parser.add_argument("--start_index", type=int, default=578)
+parser.add_argument("--end_index", type=int, default=578)
 parser.add_argument("--max_ans", type=int, default=100)
 
 
@@ -143,7 +143,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     now_index = -1
     full_matrix = kg2matrix(full_kg)
     use_max_ans = len(free_variable_list) * max_ans if max_ans else None
-    sample_max_ans = use_max_ans if sample_mode == 'train' else 5 * use_max_ans
+    sample_max_ans = use_max_ans if sample_mode == 'train' else 3 * max_ans
     with tqdm.tqdm(total=num_samples) as pbar:
         while pbar.n < num_samples:
             qa_dict = None

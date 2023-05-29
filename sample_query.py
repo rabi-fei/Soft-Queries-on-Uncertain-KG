@@ -143,7 +143,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     now_index = -1
     full_matrix = kg2matrix(full_kg)
     use_max_ans = len(free_variable_list) * max_ans if max_ans else None
-    sample_max_ans = use_max_ans if sample_mode == 'train' else 5 * use_max_ans
+    sample_max_ans = use_max_ans if sample_mode == 'train' else 3 * max_ans
     with tqdm.tqdm(total=num_samples) as pbar:
         while pbar.n < num_samples:
             qa_dict = None
