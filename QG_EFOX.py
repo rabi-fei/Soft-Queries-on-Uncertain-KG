@@ -269,7 +269,8 @@ def eval_batch_query(model, pred_emb_list, easy_ans_list, hard_ans_list):
     return two_marginal_logs, one_marginal_logs, no_marginal_logs
 
 
-def evaluate_batch_joint(final_ranking, ):
+def evaluate_batch_joint(final_ranking, a):
+    pass
 
 
 

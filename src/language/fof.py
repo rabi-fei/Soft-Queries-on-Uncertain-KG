@@ -724,7 +724,9 @@ class ConjunctiveFormula:
         Initialization is used to speed up the query sampling process.
         """
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
-        now_term_candidate = initialization if initialization else now_term_candidate
+        if initialization:
+            for term_name in initialization:
+                now_term_candidate[term_name] = initialization[term_name].intersection(now_term_candidate[term_name])
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
