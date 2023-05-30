@@ -48,7 +48,7 @@ parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)
 parser.add_argument("--start_index", type=int, default=0)
 parser.add_argument("--end_index", type=int, default=740)
 parser.add_argument("--max_ans", type=int, default=100)
-parser.add_argument("--double_check_num", type=int, default=10)
+parser.add_argument("--double_check_num", type=int, default=4)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ evaluate:  # only used when valid/test in action
     - 'DNF'
     - 'DNF+MultiIU'
     - 'DeMorgan'
-  formula_id_file: data/DNF_EFO2_23_41231.csv
+  formula_id_file: data/DNF_EFO2_23_4123166.csv
 estimator:
   embedding: logic # one of [Transe, box, beta, dm]
   beta:

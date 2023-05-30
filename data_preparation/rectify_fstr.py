@@ -11,13 +11,13 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-filtered')
 
 
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_41231.csv'))
+    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
         formula_id = row['formula_id']
         formula = row['formula']
