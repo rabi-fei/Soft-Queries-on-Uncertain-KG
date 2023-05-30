@@ -44,7 +44,7 @@ parser.add_argument("--end_index", type=int, default=813)
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    output_folder = osp.join('data', args.dataset + '-EFOX')
+    output_folder = osp.join('data', args.dataset + '-EFOX-filtered')
     formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     all_sampled = 0
     for i, row in tqdm.tqdm(formula_scope.iterrows(), total=len(formula_scope)):
