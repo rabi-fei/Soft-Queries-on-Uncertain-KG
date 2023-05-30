@@ -235,7 +235,7 @@ if __name__ == "__main__":
     for i in range(len(relation_matrix_list)):
         relation_matrix_list[i] = relation_matrix_list[i].to(cuda_device)
     all_metrics = defaultdict(dict)
-    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_412316.csv'))
+    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
         formula_id = row['formula_id']
         if args.formula and formula_id != args.formula:

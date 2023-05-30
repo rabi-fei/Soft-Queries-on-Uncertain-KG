@@ -34,8 +34,8 @@ query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 parser.add_argument("--double_check", type=float, default=-1)
-parser.add_argument("--output_folder", type=str, default='data/NELL-EFOX')
-parser.add_argument("--data_folder", type=str, default='data/NELL-EFOX')
+parser.add_argument("--output_folder", type=str, default='data/NELL-EFOX-filtered')
+parser.add_argument("--data_folder", type=str, default='data/NELL-EFOX-filtered')
 parser.add_argument("--num_positive", type=int, default=1000)
 parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     if args.sample_formula_scope == 'EFOX_minimal':
         formula_scope = index2EFOX_minimal
     elif args.sample_formula_scope == 'EFOX':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_412316.csv'))
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     elif args.sample_formula_scope == 'real_EFO1':
         formula_scope = index2newlstr
     else:

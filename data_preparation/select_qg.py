@@ -7,7 +7,7 @@ from shutil import copy
 
 if __name__ == "__main__":
     old_data = pd.read_csv('data/DNF_EFO2_23_412316.csv')
-    new_data = pd.read_csv('data/DNF_EFO2_23_4123166_filtered.csv')
+    new_data = pd.read_csv('data/DNF_EFO2_23_4123166.csv')
     for dataset in ['FB15k-237', 'FB15k', 'NELL']:
         old_data_folder = osp.join('data', dataset + '-EFOX')
         new_data_folder = osp.join('data', dataset + '-EFOX-filtered')

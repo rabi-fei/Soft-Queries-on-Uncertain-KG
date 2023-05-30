@@ -287,7 +287,7 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     else:
         device = torch.device('cuda:{}'.format(configure['cuda']))
-    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_412316.csv'))
+    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     case_name = configure['output']['output_path'] if configure['output']['output_path'] else \
         args.config.split("config")[-1][1:]
     writer = Writer(case_name=case_name, config=configure, log_path=configure["output"]["prefix"])

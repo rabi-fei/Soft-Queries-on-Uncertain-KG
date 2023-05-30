@@ -236,7 +236,7 @@ if __name__ == "__main__":
     if args.sample_formula_scope == 'EFOX_minimal':
         formula_scope = index2EFOX_minimal
     elif args.sample_formula_scope == 'EFOX':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_412316.csv'))
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     elif args.sample_formula_scope == 'real_EFO1':
         formula_scope = index2newlstr
     else:
