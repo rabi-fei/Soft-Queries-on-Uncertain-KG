@@ -547,7 +547,7 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
         if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1:
             if len(h2t_relation) == 1:
                 now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
-                    data_graph.r2t[list(t2h_relation)[0]])
+                    data_graph.r2t[list(h2t_relation)[0]])
             elif len(t2h_relation) == 1:
                 now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
                     data_graph.r2h[list(t2h_relation)[0]])
