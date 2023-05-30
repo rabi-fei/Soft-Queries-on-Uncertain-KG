@@ -166,111 +166,116 @@ def eval_batch_query(model, pred_emb_list, easy_ans_list, hard_ans_list):
                                            repeat(argsort.shape[0], 1).to(device))
                 final_ranking_list.append(ranking)
             final_ranking = torch.stack(final_ranking_list, dim=1).to(device)  # batch * free_num * nentity
-            for i in range(all_logit.shape[0]):
-                easy_ans = easy_ans_list[i][f_str]  # A list of list, each list is an instance.
-                hard_ans = hard_ans_list[i][f_str]
-                num_easy, num_hard = len(easy_ans), len(hard_ans)
-                #  assert len(set(hard_ans).intersection(set(easy_ans))) == 0
-                full_ans = easy_ans + hard_ans
-                full_ans_tensor = torch.tensor(full_ans).to(device).transpose(0, 1)
-                marginal_easy_ans_list, marginal_hard_ans_list = [], []
-                couple_filtered_list = []
-                marginal_exist_num = 0
-                for j in range(len(pred_emb_list)):
-                    marginal_easy_ans, marginal_full_ans = set([easy_instance[j] for easy_instance in easy_ans]), \
-                        set([full_instance[j] for full_instance in full_ans])
-                    marginal_hard_ans = marginal_full_ans - marginal_easy_ans
-                    marginal_easy_ans_list.append(marginal_easy_ans)
-                    marginal_hard_ans_list.append(marginal_hard_ans)
-                    marginal_ans_ranking = final_ranking[i, j][list(marginal_easy_ans) + list(marginal_hard_ans)]
-                    marginal_num_hard, marginal_num_easy = len(marginal_hard_ans), len(marginal_easy_ans)
-                    sort_marginal_ranking, marginal_indices = torch.sort(marginal_ans_ranking)
-                    marginal_masks = marginal_indices >= marginal_num_easy
-                    marginal_answer_list = torch.arange(
-                        marginal_num_hard + marginal_num_easy).to(torch.float).to(device)
-                    filtered_marginal_ranking = sort_marginal_ranking - marginal_answer_list + 1
-                    # filtered setting: +1 for start at 0, -answer_list for ignore other answers
-                    adjusted_marginal_all_ranking = final_ranking[i, j].clone().to(device)
-                    adjusted_marginal_all_ranking[list(marginal_easy_ans) + list(marginal_hard_ans)] = \
-                        torch.gather(filtered_marginal_ranking, dim=0, index=marginal_indices.argsort())
-                    couple_filtered_list.append(adjusted_marginal_all_ranking)
-                    #  Compute the marginal ranking first
-                    marginal_stored = []
-                    if len(marginal_hard_ans) == 0:  # There is really possibility that no marginal hard answer
-                        pass
-                    else:
-                        marginal_exist_num += 1
-                        marginal_hard_ranking = filtered_marginal_ranking[marginal_masks]
-                        marginal_mrr = torch.mean(1. / marginal_hard_ranking).item()
-                        marginal_h1 = torch.mean((marginal_hard_ranking <= 1).to(torch.float)).item()
-                        marginal_h3 = torch.mean((marginal_hard_ranking <= 3).to(torch.float)).item()
-                        marginal_h10 = torch.mean(
-                            (marginal_hard_ranking <= 10).to(torch.float)).item()
-                        marginal_stored.append([marginal_mrr, marginal_h1, marginal_h3, marginal_h10])
-                marginal_filtered_joint_rank = torch.stack(couple_filtered_list, dim=0)  # free_num * nentity
-                m_j_ranking = torch.gather(
-                    marginal_filtered_joint_rank, dim=1, index=torch.tensor(hard_ans).to(device).transpose(0, 1))
-                #  free_num * hard_num
-                couple_h1 = torch.mean(torch.prod((m_j_ranking <= 1).to(torch.float), dim=0)).item()
-                couple_h3 = torch.mean(torch.prod((m_j_ranking <= 3).to(torch.float), dim=0)).item()
-                couple_h10 = torch.mean(torch.prod((m_j_ranking <= 10).to(torch.float), dim=0)).item()
-
-                #  Compute the hard joint ranking
-                couple_ans_ranking = torch.gather(final_ranking[i], dim=1, index=full_ans_tensor)  # free_num * ans
-                add_ans_ranking = torch.sum(couple_ans_ranking, dim=0)  # ans
-                final_ans_ranking = add_ans_ranking * (add_ans_ranking + 1) / 2 + couple_ans_ranking[0]
-                sort_ans_ranking, indices = torch.sort(final_ans_ranking)
-                masks = indices >= num_easy
-                answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
-                filtered_ans_ranking = sort_ans_ranking - answer_list + 1
-                cur_ranking = filtered_ans_ranking[masks]
-                # if math.isinf(mrr):
-                # print("warning: mrr is inf")
-                mrr = torch.mean(1. / cur_ranking).item()
-                h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()
-                h3 = torch.mean((cur_ranking <= 3).to(torch.float)).item()
-                h10 = torch.mean(
-                    (cur_ranking <= 10).to(torch.float)).item()
-                if marginal_exist_num == 0:
-                    no_marginal_logs['MRR'] += mrr
-                    no_marginal_logs['HITS1'] += h1
-                    no_marginal_logs['HITS3'] += h3
-                    no_marginal_logs['HITS10'] += h10
-                    no_marginal_logs['num_queries'] += 1
-                    no_marginal_logs['HITS1*1'] += couple_h1
-                    no_marginal_logs['HITS3*3'] += couple_h3
-                    no_marginal_logs['HITS10*10'] += couple_h10
-                elif marginal_exist_num == 1:
-                    one_marginal_logs['MRR'] += mrr
-                    one_marginal_logs['HITS1'] += h1
-                    one_marginal_logs['HITS3'] += h3
-                    one_marginal_logs['HITS10'] += h10
-                    one_marginal_logs['num_queries'] += 1
-                    one_marginal_logs['HITS1*1'] += couple_h1
-                    one_marginal_logs['HITS3*3'] += couple_h3
-                    one_marginal_logs['HITS10*10'] += couple_h10
-                    one_marginal_logs['marginal_MRR'] += marginal_stored[0][0]
-                    one_marginal_logs['marginal_HITS1'] += marginal_stored[0][1]
-                    one_marginal_logs['marginal_HITS3'] += marginal_stored[0][2]
-                    one_marginal_logs['marginal_HITS10'] += marginal_stored[0][3]
-                else:
-                    two_marginal_logs['MRR'] += mrr
-                    two_marginal_logs['HITS1'] += h1
-                    two_marginal_logs['HITS3'] += h3
-                    two_marginal_logs['HITS10'] += h10
-                    two_marginal_logs['num_queries'] += 1
-                    two_marginal_logs['HITS1*1'] += couple_h1
-                    two_marginal_logs['HITS3*3'] += couple_h3
-                    two_marginal_logs['HITS10*10'] += couple_h10
-                    two_marginal_logs['marginal_MRR'] += marginal_stored[0][0] / 2
-                    two_marginal_logs['marginal_HITS1'] += marginal_stored[0][1] / 2
-                    two_marginal_logs['marginal_HITS3'] += marginal_stored[0][2] / 2
-                    two_marginal_logs['marginal_HITS10'] += marginal_stored[0][3] / 2
+            two_marginal_logs, one_marginal_logs, no_marginal_logs = evaluate_batch_joint(final_ranking, easy_ans_list,
+                                                                                          hard_ans_list, device, f_str)
     return two_marginal_logs, one_marginal_logs, no_marginal_logs
 
 
-def evaluate_batch_joint(final_ranking, a):
-    pass
+def log_add_metric(add_log, mrr, h1, h3, h10, mul_mrr, h1_1, h3_3, h10_10):
+    add_log['MRR'] += mrr
+    add_log['HITS1'] += h1
+    add_log['HITS3'] += h3
+    add_log['HITS10'] += h10
+    add_log['num_queries'] += 1
+    add_log['couple_MRR'] += mul_mrr
+    add_log['HITS1*1'] += h1_1
+    add_log['HITS3*3'] += h3_3
+    add_log['HITS10*10'] += h10_10
+    return add_log
+
+
+def evaluate_batch_joint(final_ranking, easy_ans_list, hard_ans_list, device, f_str):
+    two_marginal_logs = defaultdict(float)
+    one_marginal_logs, no_marginal_logs = defaultdict(float), defaultdict(float)
+    for i in range(final_ranking.shape[0]):
+        easy_ans = easy_ans_list[i][f_str]  # A list of list, each list is an instance.
+        hard_ans = hard_ans_list[i][f_str]
+        num_easy, num_hard = len(easy_ans), len(hard_ans)
+        #  assert len(set(hard_ans).intersection(set(easy_ans))) == 0
+        full_ans = easy_ans + hard_ans
+        full_ans_tensor = torch.tensor(full_ans).to(device).transpose(0, 1)
+        marginal_easy_ans_list, marginal_hard_ans_list = [], []
+        couple_filtered_list = []
+        marginal_exist_num = 0
+        marginal_stored = []
+        for j in range(final_ranking.shape[1]):
+            marginal_easy_ans, marginal_full_ans = set([easy_instance[j] for easy_instance in easy_ans]), \
+                set([full_instance[j] for full_instance in full_ans])
+            marginal_hard_ans = marginal_full_ans - marginal_easy_ans
+            marginal_easy_ans_list.append(marginal_easy_ans)
+            marginal_hard_ans_list.append(marginal_hard_ans)
+            marginal_ans_ranking = final_ranking[i, j][list(marginal_easy_ans) + list(marginal_hard_ans)]
+            marginal_num_hard, marginal_num_easy = len(marginal_hard_ans), len(marginal_easy_ans)
+            sort_marginal_ranking, marginal_indices = torch.sort(marginal_ans_ranking)
+            marginal_masks = marginal_indices >= marginal_num_easy
+            marginal_answer_list = torch.arange(
+                marginal_num_hard + marginal_num_easy).to(torch.float).to(device)
+            filtered_marginal_ranking = sort_marginal_ranking - marginal_answer_list + 1
+            # filtered setting: +1 for start at 0, -answer_list for ignore other answers
+            adjusted_marginal_all_ranking = final_ranking[i, j].clone().to(device)
+            adjusted_marginal_all_ranking[list(marginal_easy_ans) + list(marginal_hard_ans)] = \
+                torch.gather(filtered_marginal_ranking, dim=0, index=marginal_indices.argsort())
+            couple_filtered_list.append(adjusted_marginal_all_ranking)
+            #  Compute the marginal ranking first
+            if len(marginal_hard_ans) == 0:  # There is really possibility that no marginal hard answer
+                pass
+            else:
+                marginal_exist_num += 1
+                marginal_hard_ranking = filtered_marginal_ranking[marginal_masks]
+                marginal_mrr = torch.mean(1. / marginal_hard_ranking).item()
+                marginal_h1 = torch.mean((marginal_hard_ranking <= 1).to(torch.float)).item()
+                marginal_h3 = torch.mean((marginal_hard_ranking <= 3).to(torch.float)).item()
+                marginal_h10 = torch.mean(
+                    (marginal_hard_ranking <= 10).to(torch.float)).item()
+                marginal_stored.append([marginal_mrr, marginal_h1, marginal_h3, marginal_h10])
+        marginal_filtered_joint_rank = torch.stack(couple_filtered_list, dim=0)  # free_num * nentity
+        m_j_ranking = torch.gather(
+            marginal_filtered_joint_rank, dim=1, index=torch.tensor(hard_ans).to(device).transpose(0, 1))
+        #  free_num * hard_num
+
+        couple_mrr = torch.mean(torch.sqrt(torch.prod((1. / m_j_ranking), dim=0))).item()
+        couple_h1 = torch.mean(torch.prod((m_j_ranking <= 1).to(torch.float), dim=0)).item()
+        couple_h3 = torch.mean(torch.prod((m_j_ranking <= 3).to(torch.float), dim=0)).item()
+        couple_h10 = torch.mean(torch.prod((m_j_ranking <= 10).to(torch.float), dim=0)).item()
+
+        #  Compute the hard joint ranking
+        couple_ans_ranking = torch.gather(final_ranking[i], dim=1, index=full_ans_tensor)  # free_num * ans
+        add_ans_ranking = torch.sum(couple_ans_ranking, dim=0)  # ans
+        final_ans_ranking = add_ans_ranking * (add_ans_ranking + 1) / 2 + couple_ans_ranking[0]
+        sort_ans_ranking, indices = torch.sort(final_ans_ranking)
+        masks = indices >= num_easy
+        answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
+        filtered_ans_ranking = sort_ans_ranking - answer_list + 1
+        cur_ranking = filtered_ans_ranking[masks]
+        # if math.isinf(mrr):
+        # print("warning: mrr is inf")
+        mrr = torch.mean(1. / cur_ranking).item()
+        h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()
+        h3 = torch.mean((cur_ranking <= 3).to(torch.float)).item()
+        h10 = torch.mean(
+            (cur_ranking <= 10).to(torch.float)).item()
+        if marginal_exist_num == 0:
+            no_marginal_logs = log_add_metric(
+                no_marginal_logs, mrr, h1, h3, h10, couple_mrr, couple_h1, couple_h3, couple_h10)
+        elif marginal_exist_num == 1:
+            one_marginal_logs = log_add_metric(
+                one_marginal_logs, mrr, h1, h3, h10, couple_mrr, couple_h1, couple_h3, couple_h10)
+            one_marginal_logs['marginal_MRR'] += marginal_stored[0][0]
+            one_marginal_logs['marginal_HITS1'] += marginal_stored[0][1]
+            one_marginal_logs['marginal_HITS3'] += marginal_stored[0][2]
+            one_marginal_logs['marginal_HITS10'] += marginal_stored[0][3]
+        else:
+            two_marginal_logs = log_add_metric(
+                two_marginal_logs, mrr, h1, h3, h10, couple_mrr, couple_h1, couple_h3, couple_h10)
+            two_marginal_logs['marginal_MRR'] += marginal_stored[0][0] / 2
+            two_marginal_logs['marginal_HITS1'] += marginal_stored[1][0] / 2
+            two_marginal_logs['marginal_HITS1'] += marginal_stored[0][1] / 2
+            two_marginal_logs['marginal_HITS3'] += marginal_stored[1][1] / 2
+            two_marginal_logs['marginal_HITS3'] += marginal_stored[0][2] / 2
+            two_marginal_logs['marginal_HITS10'] += marginal_stored[1][2] / 2
+            two_marginal_logs['marginal_HITS10'] += marginal_stored[0][3] / 2
+            two_marginal_logs['marginal_HITS10'] += marginal_stored[1][3] / 2
+    return two_marginal_logs, one_marginal_logs, no_marginal_logs
 
 
 

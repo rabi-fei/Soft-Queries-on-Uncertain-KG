@@ -34,6 +34,8 @@ parser.add_argument("--max_pair", type=int, default=2)
 parser.add_argument("--max_distance", type=int, default=3)
 parser.add_argument("--max_negation", type=int, default=1)
 parser.add_argument("--output_dir", type=str, default='data')
+parser.add_argument("--max_total_edge", type=int, default=6)
+parser.add_argument("--max_total_node", type=int, default=6)
 
 partition_save = {}
 
@@ -60,7 +62,7 @@ def partitions(n, partition_num=1):
 
 
 def create_qg_whole(max_e_node, max_f_node, max_c_node, max_edge,
-                    max_surpass_edge, pair_limit, max_f_distance, max_negation_num):
+                    max_surpass_edge, pair_limit, max_f_distance, max_negation_num, max_total_node, max_total_edge):
     """
     The e,f,c is for existential, free and constant node number。
     """
@@ -68,6 +70,10 @@ def create_qg_whole(max_e_node, max_f_node, max_c_node, max_edge,
     for e_num, f_num, c_num, addition_edge in product(
             range(max_e_node + 1), range(1, max_f_node + 1), range(1, max_c_node + 1), range(max_surpass_edge + 1)):
         if addition_edge + e_num + f_num - 1 > max_edge:
+            continue
+        if addition_edge + e_num + f_num + c_num - 1 > max_total_edge:
+            continue
+        if e_num + f_num + c_num > max_total_node:
             continue
         qg_list = create_qg(e_num, f_num, c_num, addition_edge, pair_limit, max_f_distance, max_negation_num)
         for qg in qg_list:
@@ -100,8 +106,8 @@ def create_qg(e_num, f_num, c_num, additional_edge_num, pair_limit, max_f_distan
             for j, multi_qg_ef in enumerate(multi_qg_list):
                 epfo_qg_list = add_constants(multi_qg_ef, c_num)
                 for k, epfo_qg in enumerate(epfo_qg_list):
-                    all_graph_list.append(epfo_qg)
                     if distance_condition(epfo_qg, max_f_distance) and existential_leaf_condition(epfo_qg):
+                        all_graph_list.append(epfo_qg)
                         negative_qg_list = replace_negation(epfo_qg, max_negation_num)
                         all_graph_list.extend(negative_qg_list)
     return all_graph_list
@@ -368,7 +374,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     new_lstr_dict = create_qg_whole(args.max_e, args.max_f, args.max_c, args.max_edge, args.max_surpass, args.max_pair,
-                                    args.max_distance, args.max_negation)
+                                    args.max_distance, args.max_negation, args.max_total_node, args.max_total_edge)
     data_dict = defaultdict(list)
     total_count = 0
     for keys in new_lstr_dict:
@@ -386,7 +392,7 @@ if __name__ == "__main__":
             data_dict['cyclic'].append(being_cyclic)
             data_dict['multi'].append(being_multiple)
     pd.DataFrame(data_dict).to_csv(
-        osp.join(args.output_dir, f"DNF_EFO{args.max_f}_{args.max_e}{args.max_c}_{args.max_edge}{args.max_surpass}{args.max_pair}{args.max_distance}{args.max_negation}.csv"))
+        osp.join(args.output_dir, f"DNF_EFO{args.max_f}_{args.max_e}{args.max_c}_{args.max_edge}{args.max_surpass}{args.max_pair}{args.max_distance}{args.max_negation}{args.max_total_node}{args.max_total_edge}_filtered.csv"))
 
 
 
