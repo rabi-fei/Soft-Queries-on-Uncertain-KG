@@ -1,6 +1,7 @@
 import os
 import os.path as osp
 
+import json
 import pandas as pd
 import tqdm
 from shutil import copy
@@ -25,7 +26,14 @@ if __name__ == "__main__":
             else:
                 old_formula_id = old_data[old_data['formula'] == formula]['formula_id'].values[0]
                 if osp.exists(osp.join(old_data_folder, f'test_{old_formula_id}_EFOX_qaa.json')):
-                    copy(osp.join(old_data_folder, f'test_{old_formula_id}_EFOX_qaa.json'), osp.join(new_data_folder, f'test_{formula_id}_EFOX_qaa.json'))
+                    if not osp.exists(osp.join(new_data_folder, f'test_{formula_id}_EFOX_qaa.json')):
+                        copy(osp.join(old_data_folder, f'test_{old_formula_id}_EFOX_qaa.json'),
+                             osp.join(new_data_folder, f'test_{formula_id}_EFOX_qaa.json'))
+                    else:
+                        with open(osp.join(new_data_folder, f'test_{formula_id}_EFOX_qaa.json'), 'rt') as f:
+                            old_data = json.load(f)
+                            assert len(old_data) == 1
+                            assert formula in old_data
                 else:
                     print(f'{formula_id} not sampled')
 

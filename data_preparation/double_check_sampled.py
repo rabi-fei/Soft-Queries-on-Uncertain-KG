@@ -45,8 +45,8 @@ parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=555)
-parser.add_argument("--end_index", type=int, default=555)
+parser.add_argument("--start_index", type=int, default=0)
+parser.add_argument("--end_index", type=int, default=740)
 parser.add_argument("--max_ans", type=int, default=100)
 parser.add_argument("--double_check_num", type=int, default=10)
 
@@ -66,6 +66,7 @@ if __name__ == "__main__":
         kgindex=kgidx)
 
     formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
+    problem_list = []
     for i, row in tqdm.tqdm(formula_scope.iterrows(), total=len(formula_scope)):
         if i > args.end_index or i < args.start_index:
             continue
@@ -86,14 +87,19 @@ if __name__ == "__main__":
                 free_variable_list = list(fof.free_term_dict.keys())
                 free_variable_list.sort()
                 f_str = '_'.join(free_variable_list)
+                easy_ans_set = set(tuple(ans) for ans in easy_ans_dict[f_str])
+                hard_ans_set = set(tuple(ans) for ans in hard_ans_dict[f_str])
                 fof.append_qa_instances(qa_dict)
                 full_ans = fof.deterministic_query(0, test_kg)
                 part_ans = fof.deterministic_query(0, valid_kg)
                 hard_ans = full_ans - part_ans
-                if part_ans == easy_ans_dict[f_str] and hard_ans == hard_ans_dict[f_str]:
+                if part_ans == easy_ans_set and hard_ans == hard_ans_set:
                     continue
                 else:
-                    check_problem = True
+                    problem_list.append((lstr, fid, qa_dict))
                     print('problem', lstr, fid, qa_dict)
+                    break
         else:
             print('warning, no file', output_file_name)
+    if len(problem_list) > 0:
+        print(problem_list)
