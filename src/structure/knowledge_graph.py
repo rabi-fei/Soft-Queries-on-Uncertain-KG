@@ -543,6 +543,18 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
     all_successor = set()
+    if len(now_candidate_set[now_node]) == data_graph.num_entities:  # Special speed up for whole set.
+        if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1:
+            if len(h2t_relation) == 1:
+                now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
+                    data_graph.r2t[list(t2h_relation)[0]])
+            elif len(t2h_relation) == 1:
+                now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
+                    data_graph.r2h[list(t2h_relation)[0]])
+            else:
+                pass  # Do nothing because it is negation.
+            exist_answer = (len(now_candidate_set[to_change_node]) != 0)
+            return now_candidate_set, exist_answer
     for candidate_leaf in now_candidate_set[now_node]:
         single_node_successor = set(range(data_graph.num_entities))
         if h2t_relation:
