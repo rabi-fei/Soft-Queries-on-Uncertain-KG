@@ -12,6 +12,8 @@ import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-filtered')
+parser.add_argument("--num_p", type=int, default=1000)
+parser.add_argument("--num_n", type=int, default=500)
 
 
 if __name__ == "__main__":
@@ -40,5 +42,18 @@ if __name__ == "__main__":
                     new_data[formula].append(new_data_instance)
                 with open(data_path, 'wt') as f:
                     json.dump(new_data, f)
+            else:
+                if '!' not in formula:
+                    assert len(old_data[formula]) >= args.num_p
+                    if len(old_data[formula]) > args.num_p:
+                        old_data[formula] = old_data[formula][:args.num_p]
+                    with open(data_path, 'wt') as f:
+                        json.dump(old_data, f)
+                else:
+                    assert len(old_data[formula]) >= args.num_n
+                    if len(old_data[formula]) > args.num_n:
+                        old_data[formula] = old_data[formula][:args.num_n]
+                    with open(data_path, 'wt') as f:
+                        json.dump(old_data, f)
 
 
