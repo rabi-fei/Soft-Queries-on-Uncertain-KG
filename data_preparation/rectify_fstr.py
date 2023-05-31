@@ -26,6 +26,7 @@ if __name__ == "__main__":
         # data_path = osp.join(configure['data']['data_folder'], f'test_type{i:04d}_EFOX_qaa.json')
         data_path = osp.join(args.data_folder, f'test_{formula_id}_EFOX_qaa.json')
         if not osp.exists(data_path):
+            print(f"{formula_id} not sampled")
             continue
         else:
             with open(data_path, 'rt') as f:
