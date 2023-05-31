@@ -47,16 +47,17 @@ if __name__ == "__main__":
                 if '!' not in formula:
                     assert len(old_data[formula]) >= args.num_p
                     if len(old_data[formula]) > args.num_p:
-                        old_data[formula] = old_data[formula][:args.num_p]
                         print(f"{formula_id} has {len(old_data[formula])} instances")
+                        old_data[formula] = old_data[formula][:args.num_p]
+
                         with open(data_path, 'wt') as f:
                             json.dump(old_data, f)
 
                 else:
                     assert len(old_data[formula]) >= args.num_n
                     if len(old_data[formula]) > args.num_n:
-                        old_data[formula] = old_data[formula][:args.num_n]
                         print(f"{formula_id} has {len(old_data[formula])} instances")
+                        old_data[formula] = old_data[formula][:args.num_n]
                         with open(data_path, 'wt') as f:
                             json.dump(old_data, f)
 
