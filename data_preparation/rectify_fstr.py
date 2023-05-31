@@ -11,7 +11,7 @@ import numpy as np
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-filtered')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-final')
 parser.add_argument("--num_p", type=int, default=1000)
 parser.add_argument("--num_n", type=int, default=500)
 
