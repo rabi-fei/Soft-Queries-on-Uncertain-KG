@@ -14,8 +14,7 @@ import torch.nn.functional as F
 import tqdm
 from torch import nn
 
-from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
-from src.structure import get_nbp_class
+
 from src.structure.knowledge_graph import KnowledgeGraph, kg2matrix
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
@@ -33,22 +32,17 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--double_check", type=float, default=-1)
-parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX-filtered')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-filtered')
+parser.add_argument("--output_folder", type=str, default='data/NELL-EFOX-filtered')
+parser.add_argument("--data_folder", type=str, default='data/NELL-EFOX-filtered')
 parser.add_argument("--num_positive", type=int, default=1000)
 parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
-parser.add_argument("--meaningful_negation", type=bool, default=False)
-parser.add_argument("--negation_tolerance", type=int, default=1)
-parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
-parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=0)
+parser.add_argument("--start_index", type=int, default=19)
 parser.add_argument("--end_index", type=int, default=740)
-parser.add_argument("--max_ans", type=int, default=100)
-parser.add_argument("--double_check_num", type=int, default=4)
+parser.add_argument("--double_check_num", type=int, default=2)
+parser.add_argument("--use_constraint", type=bool, default=True)
 
 
 if __name__ == "__main__":
@@ -90,8 +84,17 @@ if __name__ == "__main__":
                 easy_ans_set = set(tuple(ans) for ans in easy_ans_dict[f_str])
                 hard_ans_set = set(tuple(ans) for ans in hard_ans_dict[f_str])
                 fof.append_qa_instances(qa_dict)
-                full_ans = fof.deterministic_query(0, test_kg)
-                part_ans = fof.deterministic_query(0, valid_kg)
+                if 'f2' in lstr or args.use_constraint:
+                    neglect_negation_list = []
+                    for pred in fof.predicate_dict.values():
+                        if pred.skolem_negation:
+                            neglect_negation_list.append(pred.name)
+                    efpo_constraint = fof.formula_list[0].deterministic_query_set(0, test_kg, neglect_negation_list, True)
+                    full_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, test_kg, None, False, efpo_constraint)
+                    part_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, valid_kg, None, False, efpo_constraint)
+                else:
+                    full_ans = fof.formula_list[0].deterministic_query(0, test_kg)
+                    part_ans = fof.formula_list[0].deterministic_query(0, valid_kg)
                 hard_ans = full_ans - part_ans
                 if part_ans == easy_ans_set and hard_ans == hard_ans_set:
                     continue
