@@ -6,8 +6,8 @@ data:
   cpu: 10
 load:
   load_model: True
-  checkpoint_path: ckpt/FB15k-237/LogicE_full
-  step: 450000
+  checkpoint_path: ckpt/FB15k-237/BetaE_full
+  step: 0
 output:
   output_path: null
   prefix: EFO-1_log
@@ -38,7 +38,7 @@ evaluate:  # only used when valid/test in action
     - 'DeMorgan'
   formula_id_file: data/DNF_EFO2_23_4123166.csv
 estimator:
-  embedding: logic # one of [Transe, box, beta, dm]
+  embedding: beta # one of [Transe, box, beta, dm]
   beta:
     entity_dim: 400
     relation_dim: 400

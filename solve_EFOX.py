@@ -20,21 +20,24 @@ torch.autograd.set_detect_anomaly(True)
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
 parser.add_argument("--ckpt", type=str, default='sparse/237/torch_0.005_0.001.ckpt')
-parser.add_argument("--batch_size", type=int, default=10)
+parser.add_argument("--batch_size", type=int, default=100)
 parser.add_argument("--cuda", type=int, default=0)
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-final')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
 parser.add_argument("--max", type=int, default=0)
-parser.add_argument("--formula", type=str, default="type0020")
+parser.add_argument("--max_total", type=int, default=10)
+parser.add_argument("--formula", type=str, default=None)
+parser.add_argument("--start", type=int, default=67)
+parser.add_argument("--end", type=int, default=740)
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
 
 
 
 @torch.no_grad()
 def solve_EFOX(conj_formula: ConjunctiveFormula, relation_matrix, conjunctive_tnorm, existential_tnorm, index, device,
-               max_enumeration):
+               max_enumeration, max_enumeration_total):
     torch.cuda.empty_cache()
     with torch.no_grad():
         n_entity = relation_matrix[0].shape[0]
@@ -58,11 +61,11 @@ def solve_EFOX(conj_formula: ConjunctiveFormula, relation_matrix, conjunctive_tn
         sub_kg = KnowledgeGraph(sub_graph_edge, sub_kg_index)
         neg_kg = KnowledgeGraph(sub_graph_negation_edge, sub_kg_index)
         sub_kg_index.map_relation_name_to_id = {predicate: 0 for predicate in conj_formula.predicate_dict}
-        sub_ans_dict = solve_conjunctive_all(sub_kg, neg_kg, relation_matrix,
-                                    all_candidates, conjunctive_tnorm, existential_tnorm, 'f', device,
-                                    max_enumeration, all_candidates)
         free_variable_list = list(conj_formula.free_variable_dict.keys())
         free_variable_list.sort()
+        sub_ans_dict = solve_conjunctive_all(sub_kg, neg_kg, relation_matrix,
+                                    all_candidates, conjunctive_tnorm, existential_tnorm, free_variable_list, device,
+                                    max_enumeration, max_enumeration_total, all_candidates)
         ans_emb_list = [sub_ans_dict[term_name] for term_name in free_variable_list]
         return torch.stack(ans_emb_list, dim=0)
 
@@ -103,7 +106,7 @@ def find_enumerate_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph
 @torch.no_grad()
 def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: KnowledgeGraph, relation_matrix,
                       now_candidate_set: dict, conjunctive_tnorm, existential_tnorm, now_variable_list, device,
-                      max_enumeration, all_candidate_set):
+                      max_enumeration, max_enumeration_total, all_candidate_set):
     n_entity = relation_matrix[0].shape[0]
     if not positive_graph.triples and not negative_graph.triples:
         return all_candidate_set
@@ -121,7 +124,7 @@ def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: Knowle
             copy_variable_list.remove(now_leaf_node)
             sub_ans_dict = solve_conjunctive_all(sub_pos_g, sub_neg_g, relation_matrix, now_candidate_set,
                                                  conjunctive_tnorm, existential_tnorm, copy_variable_list, device,
-                                                 max_enumeration, all_candidate_set)
+                                                 max_enumeration, max_enumeration_total, all_candidate_set)
             final_ans = extend_ans(now_leaf_node, adjacency_node, positive_graph, negative_graph, relation_matrix,
                                    now_candidate_set[now_leaf_node], sub_ans_dict[adjacency_node], conjunctive_tnorm,
                                    existential_tnorm)
@@ -130,15 +133,21 @@ def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: Knowle
         else:
             sub_candidate_set = cut_node_sub_problem(now_leaf_node, adjacency_node_list, positive_graph, negative_graph,
                                           relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
-                                          now_variable_list, device, max_enumeration, all_candidate_set)
+                                          now_variable_list, device, max_enumeration, max_enumeration_total,
+                                                     all_candidate_set)
             return sub_candidate_set
     else:
         to_enumerate_node, adjacency_node_list = find_enumerate_node(positive_graph, negative_graph, now_candidate_set,
                                                                      now_variable_list)
+        easy_candidate = torch.count_nonzero(now_candidate_set[to_enumerate_node] == 1)
+        enumeration_num = torch.count_nonzero(now_candidate_set[to_enumerate_node])
+        max_enumeration_here = min(max_enumeration + easy_candidate, max_enumeration_total)
+        if torch.count_nonzero(now_candidate_set[to_enumerate_node]) > 100:
+            sub_candidate_set = cut_node_sub_problem(to_enumerate_node, adjacency_node_list, positive_graph, negative_graph,
+                                 relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
+                                 now_variable_list, device, max_enumeration, max_enumeration_total, all_candidate_set)
+            return sub_candidate_set
         if max_enumeration is not None:
-            easy_candidate = torch.count_nonzero(now_candidate_set[to_enumerate_node] == 1)
-            enumeration_num = torch.count_nonzero(now_candidate_set[to_enumerate_node])
-            max_enumeration_here = max_enumeration + easy_candidate
             to_enumerate_candidates = torch.argsort(now_candidate_set[to_enumerate_node],
                                                     descending=True)[:min(max_enumeration_here, enumeration_num)]
         else:
@@ -146,7 +155,7 @@ def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: Knowle
         this_node_candidates = deepcopy(now_candidate_set[to_enumerate_node])
         all_enumerate_ans = torch.zeros((to_enumerate_candidates.shape[0], n_entity)).to(device)
         if to_enumerate_candidates.shape[0] == 0:
-            return torch.zeros(n_entity).to(device)
+            return {variable: torch.zeros(n_entity).to(device) for variable in all_candidate_set}
         for i, enumerate_candidate in enumerate(to_enumerate_candidates):
             single_candidate = torch.zeros_like(now_candidate_set[to_enumerate_node]).to(device)
             candidate_truth_value = this_node_candidates[enumerate_candidate]
@@ -154,7 +163,8 @@ def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: Knowle
             now_candidate_set[to_enumerate_node] = single_candidate
             answer_dict = cut_node_sub_problem(to_enumerate_node, adjacency_node_list, positive_graph, negative_graph,
                                           relation_matrix, now_candidate_set, conjunctive_tnorm, existential_tnorm,
-                                          now_variable_list, device, max_enumeration, all_candidate_set)
+                                          now_variable_list, device, max_enumeration, max_enumeration_total,
+                                               all_candidate_set)
             for free_variable in now_variable_list:
                 answer = answer_dict[free_variable]
                 if conjunctive_tnorm == 'product':
@@ -175,7 +185,7 @@ def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: Knowle
 @torch.no_grad()
 def cut_node_sub_problem(to_cut_node, adjacency_node_list, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
                          r_matrix_list, now_candidate_set, conj_tnorm, exist_tnorm, now_variable, device,
-                         max_enumeration, all_candidate_set):
+                         max_enumeration, max_enumeration_total, all_candidate_set):
     new_candidate_set = deepcopy(now_candidate_set)
     for adjacency_node in adjacency_node_list:
         adj_candidate_vec = existential_update(to_cut_node, adjacency_node, sub_graph, neg_sub_graph, r_matrix_list,
@@ -187,7 +197,8 @@ def cut_node_sub_problem(to_cut_node, adjacency_node_list, sub_graph: KnowledgeG
                                        kg_remove_node(neg_sub_graph, to_cut_node)
     new_candidate_set.pop(to_cut_node)
     sub_answer = solve_conjunctive_all(new_sub_graph, new_sub_neg_graph, r_matrix_list, new_candidate_set, conj_tnorm,
-                                       exist_tnorm, now_variable, device, max_enumeration, all_candidate_set)
+                                       exist_tnorm, now_variable, device, max_enumeration, max_enumeration_total,
+                                       all_candidate_set)
     return sub_answer
 
 
@@ -206,9 +217,9 @@ def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entit
             ranking.squeeze_()
             for i in range(batch_ans_tensor.shape[0]):
                 # ranking = ranking.scatter_(0, argsort, torch.arange(n_entity).to(torch.float))
-                hard_ans = fof.hard_answer_list[i][f_str]
-                easy_ans = fof.easy_answer_list[i][f_str]
-                mrr, h1, h3, h10 = ranking2metrics(ranking, easy_ans, hard_ans, eval_device)
+                easy_ans = [instance[0] for instance in fof.easy_answer_list[i][f_str]]
+                hard_ans = [instance[0] for instance in fof.hard_answer_list[i][f_str]]
+                mrr, h1, h3, h10 = ranking2metrics(ranking[i], easy_ans, hard_ans, eval_device)
                 two_marginal_logs['MRR'] += mrr
                 two_marginal_logs['HITS1'] += h1
                 two_marginal_logs['HITS3'] += h3
@@ -225,7 +236,7 @@ def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entit
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
-    writer = Writer(case_name=args.ckpt, config=args, log_path='results')
+    writer = Writer(case_name=args.ckpt, config=args, log_path='EFOX_results')
     relation_matrix_list = torch.load(args.ckpt)
     n_relation, n_entity = len(relation_matrix_list), relation_matrix_list[0].shape[0]
     if args.cuda < 0:
@@ -238,7 +249,7 @@ if __name__ == "__main__":
     all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
         formula_id = row['formula_id']
-        if args.formula and formula_id != args.formula:
+        if i > args.end or i < args.start:
             continue
         formula = row['formula']
         # data_path = osp.join(configure['data']['data_folder'], f'test_type{i:04d}_EFOX_qaa.json')
@@ -255,39 +266,32 @@ if __name__ == "__main__":
             num_workers=0)
         fof_list = test_dataloader.get_fof_list_no_shuffle()
         t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
-        all_log, all_marginal_log = defaultdict(float), defaultdict(float)
+        all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
         for ifof, fof in t:
             torch.cuda.empty_cache()
             batch_ans_list, metric = [], {}
             for query_index in range(len(fof.easy_answer_list)):
-                if len(fof.free_term_dict) == 1:
-                    ans = solve_EFO1_new(fof, relation_matrix_list, args.c_norm, args.e_norm, query_index, cuda_device,
-                                         args.max)
-                    ans.unsqueeze_(0)
-                else:
-                    ans = solve_EFOX(fof.formula_list[0], relation_matrix_list, args.c_norm, args.e_norm, query_index,
-                                     cuda_device, args.max)  # ans shape is [X * n_entity], X is number of free variable
+                ans = solve_EFOX(fof.formula_list[0], relation_matrix_list, args.c_norm, args.e_norm, query_index,
+                                     cuda_device, args.max, args.max_total)  # ans shape is [X * n_entity], X is number of free variable
                 batch_ans_list.append(ans)
             batch_ans_tensor = torch.stack(batch_ans_list, dim=0)  # batch_size * X * n_entity
-            log, mar_log, mul_log = compute_single_evaluation(fof, batch_ans_tensor, n_entity, cuda_device)
+            log, one_log, nol_log = compute_single_evaluation(fof, batch_ans_tensor, n_entity, cuda_device)
             del batch_ans_tensor
             for metric in log:
-                all_log[metric] += log[metric]
-            for metric in mul_log:
-                all_log[f'multiply_{metric}'] += log[metric]
-            for metric in mar_log:
-                all_marginal_log[metric] += mar_log[metric]
-        for log_metric in all_log.keys():
+                all_two_log[metric] += log[metric]
+            for metric in one_log:
+                all_one_log[metric] += one_log[metric]
+            for metric in nol_log:
+                all_no_log[metric] += nol_log[metric]
+        '''
+        for log_metric in all_two_log.keys():
             if log_metric != 'num_queries':
-                all_log[log_metric] /= all_log['num_queries']
-        for log_metric in all_marginal_log.keys():
+                all_two_log[log_metric] /= all_two_log['num_queries']
+        for log_metric in all_one_log.keys():
             if log_metric != 'num_queries':
-                all_marginal_log[log_metric] /= all_marginal_log['num_queries']
-        for log_metric in all_marginal_log.keys():
-            all_log[f'marginal_{log_metric}'] = all_marginal_log[log_metric]
-        print(all_log)
-        all_metrics[formula] = all_log
-        writer.save_pickle({formula: all_log}, f"all_logging_test_0_{formula_id}.pickle")
-    print(all_metrics)
-    #writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-    writer.save_pickle(all_metrics, f"all_logging_{args.mode}_0.pickle")
+                all_one_log[log_metric] /= all_one_log['num_queries']
+        for log_metric in all_one_log.keys():
+            all_two_log[f'marginal_{log_metric}'] = all_one_log[log_metric]
+        '''
+        print(all_two_log)
+        writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]}, f"all_logging_test_0_{formula_id}.pickle")

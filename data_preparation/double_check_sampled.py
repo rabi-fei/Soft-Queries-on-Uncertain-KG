@@ -39,9 +39,9 @@ parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--skip_exist", type=bool, default=True)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
-parser.add_argument("--start_index", type=int, default=19)
+parser.add_argument("--start_index", type=int, default=250)
 parser.add_argument("--end_index", type=int, default=740)
-parser.add_argument("--double_check_num", type=int, default=2)
+parser.add_argument("--double_check_num", type=int, default=100)
 parser.add_argument("--use_constraint", type=bool, default=True)
 
 
@@ -89,18 +89,41 @@ if __name__ == "__main__":
                     for pred in fof.predicate_dict.values():
                         if pred.skolem_negation:
                             neglect_negation_list.append(pred.name)
-                    efpo_constraint = fof.formula_list[0].deterministic_query_set(0, test_kg, neglect_negation_list, True)
-                    full_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, test_kg, None, False, efpo_constraint)
-                    part_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, valid_kg, None, False, efpo_constraint)
+                    assert len(neglect_negation_list) <= 1
+                    if len(neglect_negation_list) != 1:
+                        break
+                    neg_pred = fof.predicate_dict[neglect_negation_list[0]]
+                    nh, nt = neg_pred.head.name, neg_pred.tail.name
+                    if ('s' in nh and 'e' in nt) or ('e' in nh and 's' in nt):
+                        print(fid, 'need to check')
+                        efpo_constraint = fof.formula_list[0].deterministic_query_set(0, test_kg, neglect_negation_list,
+                                                                                      True)
+                        skip_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, test_kg, neglect_negation_list,
+                                                                                                   False,
+                                                                                                   efpo_constraint)
+                        full_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, test_kg, None,
+                                                                                                   False,
+                                                                                                   efpo_constraint)
+                        part_ans = fof.formula_list[0].deterministic_query_set_with_initialization(0, valid_kg, None,
+                                                                                                   False,
+                                                                                                   efpo_constraint)
+                    else:
+                        continue
                 else:
+                    continue
                     full_ans = fof.formula_list[0].deterministic_query(0, test_kg)
                     part_ans = fof.formula_list[0].deterministic_query(0, valid_kg)
+
                 hard_ans = full_ans - part_ans
                 if part_ans == easy_ans_set and hard_ans == hard_ans_set:
-                    continue
+                    pass
                 else:
                     problem_list.append((lstr, fid, qa_dict))
                     print('problem', lstr, fid, qa_dict)
+                    break
+                if skip_ans == full_ans:
+                    pass
+                else:  #  We have make sure the answer is correct by skip_ans is not the same as full_ans.
                     break
         else:
             print('warning, no file', output_file_name)

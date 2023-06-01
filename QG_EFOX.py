@@ -19,8 +19,7 @@ from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, Con
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", type=str, default="config/LogicE_FB15k-237_EFOX.yaml")
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1')
+parser.add_argument("--config", type=str, default="config/BetaE_FB15k-237_EFOX.yaml")
 
 
 def read_from_yaml(yaml_path):
@@ -185,6 +184,9 @@ def log_add_metric(add_log, mrr, h1, h3, h10, mul_mrr, h1_1, h3_3, h10_10):
 
 
 def evaluate_batch_joint(final_ranking, easy_ans_list, hard_ans_list, device, f_str):
+    """
+    final_ranking: batch * free_num * nentity
+    """
     two_marginal_logs = defaultdict(float)
     one_marginal_logs, no_marginal_logs = defaultdict(float), defaultdict(float)
     for i in range(final_ranking.shape[0]):
@@ -291,10 +293,10 @@ if __name__ == "__main__":
     case_name = configure['output']['output_path'] if configure['output']['output_path'] else \
         args.config.split("config")[-1][1:]
     writer = Writer(case_name=case_name, config=configure, log_path=configure["output"]["prefix"])
-
-    kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
+    data_folder = configure['data']['data_folder']
+    kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
+        triple_files=osp.join(data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     # get model
     train_config = configure['train']
@@ -349,6 +351,7 @@ if __name__ == "__main__":
             init_step = checkpoint_step + 1  # I think there should be + 1 for train is before then save
         else:
             lr, train_config['warm_up_steps'], init_step = load_beta_model(checkpoint_path, model, opt)
+            init_step += 1
     if 'train' not in configure['action']:
         assert train_config['steps'] == init_step
 
@@ -374,30 +377,33 @@ if __name__ == "__main__":
             # for lstr in test_dataloader.lstr_qaa:
             # all_answers[lstr] = torch.zeros((len(test_dataloader.lstr_qaa[lstr]), n_entity))
             # now_formula_index[lstr] = 0
-            all_log, all_marginal_log = defaultdict(float), defaultdict(float)
+            all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
             for ifof, fof in t:
                 QG_instance = QueryGraph(fof.formula_list[0], device)
                 QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
-                log, mar_log, multiply_logs = \
+                two_mar_log, mar_log, no_mar_logs = \
                     eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
-                for metric in log:
-                    all_log[metric] += log[metric]
-                for metric in multiply_logs:
-                    all_log[metric] += multiply_logs[metric]
-                for metric in mar_log.keys():
-                    all_marginal_log[metric] += mar_log[metric]
-            for log_metric in all_log.keys():
+                for metric in two_mar_log:
+                    all_two_log[metric] += two_mar_log[metric]
+                for metric in mar_log:
+                    all_one_log[metric] += mar_log[metric]
+                for metric in no_mar_logs.keys():
+                    all_no_log[metric] += no_mar_logs[metric]
+            '''
+            for log_metric in all_two_log.keys():
                 if log_metric != 'num_queries':
-                    all_log[log_metric] /= all_log['num_queries']
-            for log_metric in all_marginal_log.keys():
+                    all_two_log[log_metric] /= all_two_log['num_queries']
+            for log_metric in all_one_log.keys():
                 if log_metric != 'num_queries':
-                    all_marginal_log[log_metric] /= all_marginal_log['num_queries']
-            for log_metric in all_marginal_log.keys():
-                all_log[f'marginal_{log_metric}'] = all_marginal_log[log_metric]
-            print(all_log)
-            all_metrics[formula] = all_log
+                    all_one_log[log_metric] /= all_one_log['num_queries']
+            for log_metric in all_no_log.keys():
+                if log_metric != 'num_queries':
+                    all_no_log[log_metric] /= all_no_log['num_queries']
+            '''
+            print(all_two_log)
+            all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
         #  writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-            writer.save_pickle({formula: all_log}, f"all_logging_test_0_{formula_id}.pickle")
+            writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]}, f"all_logging_test_0_{formula_id}.pickle")
         writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
 
 

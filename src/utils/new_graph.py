@@ -8,6 +8,8 @@ import numpy as np
 import sys
 import shutil
 
+from src.utils.class_util import fixed_depth_nested_dict
+
 
 
 def fill_dict_to_array(whole_dict, array, depth2key, now_depth, full_depth):
@@ -223,6 +225,45 @@ def aggregate_test(folder_path, prefix, delete_segmented):
                 shutil.rmtree(os.path.join(folder_path, sub_file))
 
 
+def merge_EFOX_data(folder_path, all_formula_data_file):
+    all_formula_data = pd.read_csv(all_formula_data_file)
+    marinal_log, joint_log = fixed_depth_nested_dict(float, 2), fixed_depth_nested_dict(float, 2)
+    EFO1_log = fixed_depth_nested_dict(float, 2)
+    marginal_metric_list = ['marginal_MRR', 'marginal_HITS1', 'marginal_HITS3', 'marginal_HITS10', 'num_queries']
+    joint_metric_list = ['couple_MRR', 'HITS1*1', 'HITS3*3', 'HITS10*10', 'MRR', 'HITS1', 'HITS3', 'HITS10',
+                         'num_queries']
+    EFO1_metric_list = ['MRR', 'HITS1', 'HITS3', 'HITS10', 'num_queries']
+    for i, row in all_formula_data.iterrows():
+        formula_id, formula = row['formula_id'], row['formula']
+        with open(os.path.join(folder_path, f'all_logging_test_0_{formula_id}.pickle'), 'rb') as f:
+            single_log = pickle.load(f)
+            two_mar_log, one_mar_log, no_mar_log = single_log[formula]
+            if row['f_num'] != 1:
+                for key in marginal_metric_list:
+                    marinal_log[formula][key] += two_mar_log[key]
+                    marinal_log[formula][key] += one_mar_log[key]
+                if marinal_log[formula]['num_queries'] != 0:
+                    for key in marinal_log[formula]:
+                        if key != 'num_queries':
+                            marinal_log[formula][key] /= marinal_log[formula]['num_queries']
+                for key in joint_metric_list:
+                    joint_log[formula][key] += two_mar_log[key]
+                    joint_log[formula][key] += one_mar_log[key]
+                    joint_log[formula][key] += no_mar_log[key]
+                for key in joint_log[formula]:
+                    if key != 'num_queries':
+                        joint_log[formula][key] /= joint_log[formula]['num_queries']
+            else:
+                EFO1_log[formula] = two_mar_log
+                for key in EFO1_log[formula]:
+                    if key != 'num_queries':
+                        EFO1_log[formula][key] /= EFO1_log[formula]['num_queries']
+
+    pd.DataFrame(marinal_log).T.to_csv(os.path.join(folder_path, 'marginal_log.csv'))
+    pd.DataFrame(joint_log).T.to_csv(os.path.join(folder_path, 'joint_log.csv'))
+    pd.DataFrame(EFO1_log).T.to_csv(os.path.join(folder_path, 'EFO1_log.csv'))
+    return marinal_log, joint_log, EFO1_log
+
 # output_dict = process_output_whole_folder('EFO-1_log/operator_MAML_LogicE/10_27', True, False)
 # process_output_whole_folder('EFO-1_log/original4compare', False, False)
 
@@ -237,4 +278,5 @@ fb237_result = {
     'valid_faithful': 'results/sparse/torch_0.01_0.01.ckpt230118.14:34:56ed0b73c5'
 }
 
-process_output_whole_folder('results/sparse', ["step", "formula", "metric"], True, 'test', {'step': 0}, True, False)
+# process_output_whole_folder('results/sparse', ["step", "formula", "metric"], True, 'test', {'step': 0}, True, False)
+merge_EFOX_data('EFO-1_log/LogicE_FB15k-237_EFOX.yaml230531.15:26:35192a92af', 'data/DNF_EFO2_23_4123166.csv')
