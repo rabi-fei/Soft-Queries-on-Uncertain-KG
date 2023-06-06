@@ -296,7 +296,7 @@ if __name__ == "__main__":
             with open(output_file_name, 'rt') as f:
                 old_data = json.load(f)
         else:
-            old_data = {}
+            old_data = {lstr: []}
         if lstr in old_data:
             for i in range(len(old_data[lstr])):
                 if str(old_data[lstr][i][0]) not in all_qa_dict:
