@@ -34,20 +34,21 @@ query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 parser.add_argument("--double_check", type=float, default=-1)
-parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFOX-filtered')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-filtered')
-parser.add_argument("--num_positive", type=int, default=1000)
-parser.add_argument("--num_negative", type=int, default=500)
+parser.add_argument("--output_folder", type=str, default='data/FB15k-EFOX-filtered')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-EFOX-filtered')
+parser.add_argument("--num_positive", type=int, default=800)
+parser.add_argument("--num_negative", type=int, default=400)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=False)
 parser.add_argument("--negation_tolerance", type=int, default=1)
 parser.add_argument("--ncpus", type=int, default=10)
-parser.add_argument("--skip_exist", type=bool, default=True)
+parser.add_argument("--skip_exist", type=bool, default=False)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=0)
-parser.add_argument("--end_index", type=int, default=19)
+parser.add_argument("--start_index", type=int, default=487)
+parser.add_argument("--end_index", type=int, default=487)
 parser.add_argument("--max_ans", type=int, default=100)
+parser.add_argument("--store_each", type=int, default=10)
 
 
 lstr_3c = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
@@ -124,7 +125,7 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
 
 
 def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: KnowledgeGraph, num_samples, sample_mode,
-                             meaningful_negation, double_checking, negation_tolerance, n_cpus: int = 1, max_ans=None,
+                             meaningful_negation, double_checking, negation_tolerance, full_matrix=None, n_cpus: int = 1, max_ans=None,
                              existing_all_qa_dict=None):
     """
     The double-checking have two probabilities: 1. Use Manually write code, 2. use the solver to check.
@@ -133,7 +134,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     """
     if num_samples == 0:
         return []
-    print(f'sampling query of {given_lstr}')
+
     fof = parse_lstr_to_disjunctive_formula(given_lstr)
     free_variable_list = list(fof.free_term_dict.keys())
     free_variable_list.sort()
@@ -141,7 +142,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     stored_qa_dict = existing_all_qa_dict if existing_all_qa_dict else set()
     all_query_list = []
     now_index = -1
-    full_matrix = kg2matrix(full_kg)
+    full_matrix = full_matrix if full_matrix is not None else kg2matrix(full_kg)
     use_max_ans = len(free_variable_list) * max_ans if max_ans else None
     sample_max_ans = use_max_ans if sample_mode == 'train' else 3 * max_ans
     with tqdm.tqdm(total=num_samples) as pbar:
@@ -191,7 +192,7 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
                         new_query = [qa_dict, {f_str: list(easy_answer)}, {f_str: list(full_answer - easy_answer)}]
                     all_query_list.append(new_query)
                     pbar.update(1)
-    return all_query_list
+    return all_query_list, stored_qa_dict
 
 
 def check_sampled(lstr, qa_dict, part_ans_dict, hard_ans_dict, part_kg: KnowledgeGraph, full_kg: KnowledgeGraph):
@@ -296,13 +297,13 @@ if __name__ == "__main__":
                 old_data = json.load(f)
         else:
             old_data = {}
-        '''
         if lstr in old_data:
             for i in range(len(old_data[lstr])):
                 if str(old_data[lstr][i][0]) not in all_qa_dict:
                     now_data[lstr].append(old_data[lstr][i])
                     useful_num += 1
                 all_qa_dict.add(str(old_data[lstr][i][0]))
+        '''
         exist_lstr = list(old_data.keys())[0]
         for i in range(len(old_data[exist_lstr])):
             if str(old_data[exist_lstr][i][0]) not in all_qa_dict:
@@ -312,29 +313,44 @@ if __name__ == "__main__":
                 useful_num += 1
             all_qa_dict.add(str(old_data[exist_lstr][i][0]))
         '''
-        if args.mode == 'easy':
+        now_data[lstr] = old_data[lstr]
+        print(f'sampling query of {lstr}')
+        if args.mode == 'train':
+            use_full_matrix = kg2matrix(train_kg)
             all_query = sample_one_formula_query(lstr, None, train_kg, args.num_positive - useful_num, args.mode,
                                                  args.meaningful_negation, args.double_check, args.negation_tolerance,
-                                                 args.ncpus, args.max_ans, all_qa_dict)
+                                                 use_full_matrix, args.ncpus, args.max_ans, all_qa_dict)
+
         elif args.mode == 'valid':
+            use_full_matrix = kg2matrix(valid_kg)
             all_query = sample_one_formula_query(lstr, train_kg, valid_kg, args.num_positive - useful_num, args.mode,
                                                  args.meaningful_negation, args.double_check, args.negation_tolerance,
-                                                 args.ncpus, args.max_ans, all_qa_dict)
+                                                 use_full_matrix, args.ncpus, args.max_ans, all_qa_dict)
+
         elif args.mode == 'test':
+            use_full_matrix = kg2matrix(test_kg)
             if '!' in lstr:
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_negative - useful_num,
-                                                     args.mode,
-                                                     args.meaningful_negation, args.double_check,
-                                                     args.negation_tolerance,
-                                                     args.ncpus, args.max_ans, all_qa_dict)
+                for j in range(0, args.num_negative - useful_num, args.store_each):
+                    all_query, new_all_qa_dict = sample_one_formula_query(lstr, valid_kg, test_kg, args.store_each,
+                                                         args.mode,
+                                                         args.meaningful_negation, args.double_check,
+                                                         args.negation_tolerance,
+                                                         use_full_matrix, args.ncpus, args.max_ans, all_qa_dict)
+                    now_data[lstr].extend(all_query)
+                    with open(output_file_name, 'wt') as f:
+                        json.dump(now_data, f)
+
             else:
-                all_query = sample_one_formula_query(lstr, valid_kg, test_kg, args.num_positive - useful_num, args.mode,
-                                                     args.meaningful_negation, args.double_check,
-                                                     args.negation_tolerance,
-                                                     args.ncpus, args.max_ans, all_qa_dict)
+                for j in range(0, args.num_positive - useful_num, args.store_each):
+                    all_query, new_all_qa_dict = sample_one_formula_query(
+                        lstr, valid_kg, test_kg, args.num_positive - useful_num, args.mode, args.meaningful_negation,
+                        args.double_check, args.negation_tolerance, use_full_matrix, args.ncpus, args.max_ans,
+                        all_qa_dict)
+                    now_data[lstr].extend(all_query)
+                    with open(output_file_name, 'wt') as f:
+                        json.dump(now_data, f)
         else:
             raise NotImplementedError
-        now_data[lstr].extend(all_query)
         all_data[lstr] = now_data[lstr]
         with open(output_file_name, 'wt') as f:
             json.dump(now_data, f)

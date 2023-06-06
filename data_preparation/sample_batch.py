@@ -4,10 +4,10 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--start", type=int, default=150)
 parser.add_argument("--end", type=int, default=250)
-parser.add_argument("--dataset", type=str, default='NELL')
-parser.add_argument("--each", type=int, default=5)
-parser.add_argument("--num_positive", type=int, default='400')
-parser.add_argument("--num_negative", type=int, default='100')
+parser.add_argument("--dataset", type=str, default='FB15k')
+parser.add_argument("--each", type=int, default=1)
+parser.add_argument("--num_positive", type=int, default='800')
+parser.add_argument("--num_negative", type=int, default='400')
 
 if __name__ == "__main__":
     args = parser.parse_args()

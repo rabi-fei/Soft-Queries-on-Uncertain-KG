@@ -19,7 +19,7 @@ from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, Con
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", type=str, default="config/BetaE_FB15k-237_EFOX.yaml")
+parser.add_argument("--config", type=str, default="config/LogicE_FB15k-237_EFOX.yaml")
 
 
 def read_from_yaml(yaml_path):
@@ -49,56 +49,6 @@ def load_beta_model(checkpoint_path, model, optimizer):
     warm_up_steps = checkpoint['warm_up_steps']
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     return current_learning_rate, warm_up_steps, init_step
-
-
-def compute_single_evaluation(fof, batch_ans_tensor, n_entity, eva_device):
-    k = 'f'
-    metrics = defaultdict(float)
-    argsort = torch.argsort(batch_ans_tensor, dim=1, descending=True)
-    ranking = argsort.clone().to(torch.float).to(eva_device)
-    ranking = ranking.scatter_(1, argsort, torch.arange(n_entity).to(torch.float).
-                               repeat(argsort.shape[0], 1).to(eva_device))
-    for i in range(batch_ans_tensor.shape[0]):
-        #ranking = ranking.scatter_(0, argsort, torch.arange(n_entity).to(torch.float))
-        hard_ans = fof.hard_answer_list[i][k]
-        easy_ans = fof.easy_answer_list[i][k]
-        num_hard = len(hard_ans)
-        num_easy = len(easy_ans)
-        real_ans_num = num_easy + num_hard
-        pred_ans_num = torch.sum(batch_ans_tensor[i])
-        cur_ranking = ranking[i, list(easy_ans) + list(hard_ans)]
-        cur_ranking, indices = torch.sort(cur_ranking)
-        masks = indices >= num_easy
-        # easy_masks = indices < num_easy
-        answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(eva_device)
-        cur_ranking = cur_ranking - answer_list + 1
-        # filtered setting: +1 for start at 0, -answer_list for ignore other answers
-        # easy_ranking = cur_ranking[easy_masks]
-        hard_ranking = cur_ranking[masks]
-        # only take indices that belong to the hard answers
-        '''
-        if easy_ans:
-            easy_mrr = torch.mean(1. / easy_ranking).item()
-            metrics['easy_queries'] += 1
-        else:
-            easy_mrr = 0
-        metrics['easy_MRR'] += easy_mrr
-        '''
-        mrr = torch.mean(1. / hard_ranking).item()
-        h1 = torch.mean((hard_ranking <= 1).to(torch.float)).item()
-        h3 = torch.mean((hard_ranking <= 3).to(torch.float)).item()
-        h10 = torch.mean(
-            (hard_ranking <= 10).to(torch.float)).item()
-        mae = torch.abs(pred_ans_num - real_ans_num).item()
-        mape = mae / real_ans_num
-        metrics['MAE'] += mae
-        metrics['MAPE'] += mape
-        metrics['MRR'] += mrr
-        metrics['HITS1'] += h1
-        metrics['HITS3'] += h3
-        metrics['HITS10'] += h10
-    metrics['num_queries'] += batch_ans_tensor.shape[0]
-    return metrics
 
 
 def ranking2metrics(ranking, easy_ans, hard_ans, ranking_device):
@@ -269,6 +219,7 @@ def evaluate_batch_joint(final_ranking, easy_ans_list, hard_ans_list, device, f_
         else:
             two_marginal_logs = log_add_metric(
                 two_marginal_logs, mrr, h1, h3, h10, couple_mrr, couple_h1, couple_h3, couple_h10)
+            # assert h10 <= couple_h10
             two_marginal_logs['marginal_MRR'] += marginal_stored[0][0] / 2
             two_marginal_logs['marginal_HITS1'] += marginal_stored[1][0] / 2
             two_marginal_logs['marginal_HITS1'] += marginal_stored[0][1] / 2

@@ -19,17 +19,17 @@ torch.autograd.set_detect_anomaly(True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
-parser.add_argument("--ckpt", type=str, default='sparse/237/torch_0.005_0.001.ckpt')
+parser.add_argument("--ckpt", type=str, default='sparse/NELL/torch_0.0002_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=100)
-parser.add_argument("--cuda", type=int, default=0)
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-final')
+parser.add_argument("--cuda", type=int, default=1)
+parser.add_argument("--data_folder", type=str, default='data/NELL-EFOX-final')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='product', choices=['Godel', 'product'])
 parser.add_argument("--max", type=int, default=0)
 parser.add_argument("--max_total", type=int, default=10)
 parser.add_argument("--formula", type=str, default=None)
-parser.add_argument("--start", type=int, default=67)
+parser.add_argument("--start", type=int, default=0)
 parser.add_argument("--end", type=int, default=740)
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))', '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))', '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
 
@@ -236,6 +236,8 @@ def compute_single_evaluation(fof: DisjunctiveFormula, batch_ans_tensor, n_entit
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
+    if 'NELL' in args.data_folder:
+        torch.set_default_dtype(torch.float16)
     writer = Writer(case_name=args.ckpt, config=args, log_path='EFOX_results')
     relation_matrix_list = torch.load(args.ckpt)
     n_relation, n_entity = len(relation_matrix_list), relation_matrix_list[0].shape[0]
@@ -244,7 +246,10 @@ if __name__ == "__main__":
     else:
         cuda_device = torch.device('cuda:{}'.format(args.cuda))
     for i in range(len(relation_matrix_list)):
-        relation_matrix_list[i] = relation_matrix_list[i].to(cuda_device)
+        if 'NELL' in args.data_folder:
+            relation_matrix_list[i] = relation_matrix_list[i].to(torch.float16).to(cuda_device)
+        else:
+            relation_matrix_list[i] = relation_matrix_list[i].to(cuda_device)
     all_metrics = defaultdict(dict)
     all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
