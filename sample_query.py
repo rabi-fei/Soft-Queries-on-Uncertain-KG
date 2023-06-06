@@ -343,7 +343,7 @@ if __name__ == "__main__":
             else:
                 for j in range(0, args.num_positive - useful_num, args.store_each):
                     all_query, new_all_qa_dict = sample_one_formula_query(
-                        lstr, valid_kg, test_kg, args.num_positive - useful_num, args.mode, args.meaningful_negation,
+                        lstr, valid_kg, test_kg, args.store_each, args.mode, args.meaningful_negation,
                         args.double_check, args.negation_tolerance, use_full_matrix, args.ncpus, args.max_ans,
                         all_qa_dict)
                     now_data[lstr].extend(all_query)
