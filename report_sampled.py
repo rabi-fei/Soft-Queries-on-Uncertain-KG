@@ -33,12 +33,12 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--dataset", type=str, default='NELL')
-parser.add_argument("--num_positive", type=int, default=1000)
-parser.add_argument("--num_negative", type=int, default=500)
+parser.add_argument("--dataset", type=str, default='FB15k')
+parser.add_argument("--num_positive", type=int, default=800)
+parser.add_argument("--num_negative", type=int, default=400)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--start_index", type=int, default=0)
-parser.add_argument("--end_index", type=int, default=813)
+parser.add_argument("--end_index", type=int, default=740)
 
 
 if __name__ == "__main__":
@@ -65,12 +65,12 @@ if __name__ == "__main__":
                 if len(old_data[lstr]) >= args.num_negative:
                     all_sampled += 1
                 else:
-                    print(f'file {output_file_name} not enough negative samples')
+                    print(f'file {output_file_name} not enough negative samples, now {len(old_data[lstr])}')
             else:
                 if len(old_data[lstr]) >= args.num_positive:
                     all_sampled += 1
                 else:
-                    print(f'file {output_file_name} not enough positive samples')
+                    print(f'file {output_file_name} not enough positive samples, now {len(old_data[lstr])}')
         else:
             print(f'file {output_file_name} not exist')
     print(f"During {args.start_index} {args.end_index} all_sampled", all_sampled, f"ratio is {all_sampled / (args.end_index - args.start_index + 1)}")
