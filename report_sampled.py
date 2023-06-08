@@ -62,10 +62,15 @@ if __name__ == "__main__":
             assert len(old_data) == 1
             assert lstr in old_data
             if '!' in lstr:
-                assert len(old_data[lstr]) >= args.num_negative
+                if len(old_data[lstr]) >= args.num_negative:
+                    all_sampled += 1
+                else:
+                    print(f'file {output_file_name} not enough negative samples')
             else:
-                assert len(old_data[lstr]) >= args.num_positive
-            all_sampled += 1
+                if len(old_data[lstr]) >= args.num_positive:
+                    all_sampled += 1
+                else:
+                    print(f'file {output_file_name} not enough positive samples')
         else:
             print(f'file {output_file_name} not exist')
     print(f"During {args.start_index} {args.end_index} all_sampled", all_sampled, f"ratio is {all_sampled / (args.end_index - args.start_index + 1)}")
