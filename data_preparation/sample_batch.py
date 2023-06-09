@@ -8,6 +8,7 @@ parser.add_argument("--dataset", type=str, default='FB15k')
 parser.add_argument("--each", type=int, default=1)
 parser.add_argument("--num_positive", type=int, default='800')
 parser.add_argument("--num_negative", type=int, default='400')
+parser.add_argument("--s_each", type=int, default=4)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -21,6 +22,7 @@ if __name__ == "__main__":
                    f"--data_folder {datafolder} "
                    f"--num_positive {args.num_positive} "
                    f"--num_negative {args.num_negative} "
+                   f"--store_each {args.s_each} "
                    f"--output_folder {output_folder} "
                    f"--start_index {start} "
                    f"--end_index {start + each_num - 1} > sample_EFOX_{dataset}_{start}_{start + each_num - 1}.log 2>&1 &")

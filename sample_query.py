@@ -313,7 +313,7 @@ if __name__ == "__main__":
                 useful_num += 1
             all_qa_dict.add(str(old_data[exist_lstr][i][0]))
         '''
-        now_data[lstr] = old_data[lstr]
+        # now_data[lstr] = old_data[lstr]
         print(f'sampling query of {lstr}')
         if args.mode == 'train':
             use_full_matrix = kg2matrix(train_kg)
