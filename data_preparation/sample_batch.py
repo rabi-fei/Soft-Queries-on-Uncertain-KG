@@ -8,7 +8,7 @@ parser.add_argument("--dataset", type=str, default='FB15k')
 parser.add_argument("--each", type=int, default=1)
 parser.add_argument("--num_positive", type=int, default='800')
 parser.add_argument("--num_negative", type=int, default='400')
-parser.add_argument("--s_each", type=int, default=4)
+parser.add_argument("--s_each", type=int, default=10)
 
 if __name__ == "__main__":
     args = parser.parse_args()

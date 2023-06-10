@@ -515,6 +515,9 @@ class ConjunctiveFormula:
             if full_answer and (max_answer_size is None
                                 or max([len(full_answer[free]) for free in free_variable_list]) <= max_answer_size):
                 proper_answer_got = True
+            else:
+                self.pop_relation_and_symbols(now_index, grounded_dict)
+                continue
             if len(free_variable_list) == 1:
                 free_variable = free_variable_list[0]
                 epfo_answer_tuple = set()

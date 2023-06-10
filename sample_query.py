@@ -45,10 +45,10 @@ parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=False)
 parser.add_argument("--sample_formula_scope", type=str, default='EFOX', choices=['real_EFO1', 'EFOX_minimal', 'EFOX'])
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=487)
-parser.add_argument("--end_index", type=int, default=487)
+parser.add_argument("--start_index", type=int, default=739)
+parser.add_argument("--end_index", type=int, default=739)
 parser.add_argument("--max_ans", type=int, default=100)
-parser.add_argument("--store_each", type=int, default=10)
+parser.add_argument("--store_each", type=int, default=5)
 
 
 lstr_3c = '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))'
@@ -339,6 +339,7 @@ if __name__ == "__main__":
                     now_data[lstr].extend(all_query)
                     with open(output_file_name, 'wt') as f:
                         json.dump(now_data, f)
+                    print("now data length: ", len(now_data[lstr]))
 
             else:
                 for j in range(0, args.num_positive - useful_num, args.store_each):
@@ -349,6 +350,7 @@ if __name__ == "__main__":
                     now_data[lstr].extend(all_query)
                     with open(output_file_name, 'wt') as f:
                         json.dump(now_data, f)
+                    print("now data length: ", len(now_data[lstr]))
         else:
             raise NotImplementedError
         all_data[lstr] = now_data[lstr]
