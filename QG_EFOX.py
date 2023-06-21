@@ -5,9 +5,11 @@ from collections import defaultdict
 
 import torch
 import tqdm
+from tqdm import trange
 import json
 import pandas as pd
 import numpy as np
+import torch.nn.functional as F
 
 from FIT import solve_EFO1
 from src.utils.data import QueryAnsweringSeqDataLoader_v2
@@ -16,7 +18,7 @@ from src.structure.geometric_graph import QueryGraph
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, ConEstimator, FuzzQEstiamtor
-
+from fol import order_bounds
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config/LogicE_FB15k-237_EFOX.yaml")
@@ -49,6 +51,71 @@ def load_beta_model(checkpoint_path, model, optimizer):
     warm_up_steps = checkpoint['warm_up_steps']
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     return current_learning_rate, warm_up_steps, init_step
+
+
+def compute_final_loss(positive_logit, negative_logit, subsampling_weight):
+    positive_score = F.logsigmoid(positive_logit).squeeze(dim=1)   # note this is b*1 by beta
+    negative_score = F.logsigmoid(-negative_logit)
+    negative_score = torch.mean(negative_score, dim=1)
+    positive_loss = -(positive_score * subsampling_weight).sum()
+    negative_loss = -(negative_score * subsampling_weight).sum()
+    positive_loss /= subsampling_weight.sum()
+    negative_loss /= subsampling_weight.sum()
+    return positive_loss, negative_loss
+
+
+def compute_loss_bpr(positive_logit, negative_logit, subsampling_weight):
+    diff = -F.logsigmoid(positive_logit - negative_logit)
+    unweighted_sample_loss = torch.mean(diff, dim=-1)
+    loss = (subsampling_weight * unweighted_sample_loss).sum()
+    loss /= subsampling_weight.sum()
+    return loss
+
+
+def train_step(model, opt, data_loader: QueryAnsweringSeqDataLoader_v2, batch_size: int, loss_function):
+    model.train()
+    torch.autograd.set_detect_anomaly(True)
+    opt.zero_grad()
+    query_data = data_loader.get_fof_list_no_shuffle()
+    emb_list, answer_list = [], []
+    union_emb_list, union_answer_list = [], []
+    for full_formula in query_data:
+        if 'u' in full_formula or 'U' in full_formula:  # TODO: full formula now contains nothing
+            union_emb_list.append(query_data[full_formula]['emb'])
+            union_answer_list.append(query_data[full_formula]['answer_set'])
+        else:
+            emb_list.append(query_data[full_formula]['emb'])
+            answer_list.extend(query_data[full_formula]['answer_set'])
+    pred_embedding = torch.cat(emb_list, dim=0)
+    all_positive_logit, all_negative_logit, all_subsampling_weight = model.criterion(pred_embedding, answer_list, )
+    for i in range(len(union_emb_list)):
+        union_positive_logit, union_negative_logit, union_subsampling_weight = \
+            model.criterion(union_emb_list[i], union_answer_list[i], )
+        all_positive_logit = torch.cat([all_positive_logit, union_positive_logit], dim=0)
+        all_negative_logit = torch.cat([all_negative_logit, union_negative_logit], dim=0)
+        all_subsampling_weight = torch.cat([all_subsampling_weight, union_subsampling_weight], dim=0)
+    if loss_function == 'original':
+        positive_loss, negative_loss = compute_final_loss(all_positive_logit, all_negative_logit, all_subsampling_weight)
+        loss = (positive_loss + negative_loss) / 2
+    elif loss_function == 'bpr':
+        loss = compute_loss_bpr(all_positive_logit, all_negative_logit, all_subsampling_weight)
+        positive_loss, negative_loss = None, None
+    else:
+        raise NotImplementedError
+    loss.backward()
+    opt.step()
+    log = {
+        'po': positive_loss.item() if positive_loss else 0,
+        'ne': negative_loss.item() if negative_loss else 0,
+        'loss': loss.item()
+    }
+    if model.name == 'logic':
+        entity_embeddings = model.entity_embeddings.weight.data
+        if model.bounded:
+            model.entity_embeddings.weight.data = order_bounds(entity_embeddings)
+        else:
+            model.entity_embeddings.weight.data = torch.clamp(entity_embeddings, 0, 1)
+    return log
 
 
 def ranking2metrics(ranking, easy_ans, hard_ans, ranking_device):
@@ -231,7 +298,6 @@ def evaluate_batch_joint(final_ranking, easy_ans_list, hard_ans_list, device, f_
     return two_marginal_logs, one_marginal_logs, no_marginal_logs
 
 
-
 if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
@@ -290,14 +356,49 @@ if __name__ == "__main__":
         opt = torch.optim.Adam(
             filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
         scheduler = None
+
     init_step = 1
     loss_function = train_config['loss_function'] if 'loss_function' in train_config else 'original'
+
+    data_path = configure['data']['data_folder']
+    train_path_tm, train_other_tm = None, None
+    if 'train' in configure['action']:
+        train_formula_id_file = configure['train']['formula_id_file']
+        train_formula_id_data = pd.read_csv(train_formula_id_file)
+        path_formulas_index_list, other_formulas_index_list = [], []
+        for index in train_formula_id_data.index:
+            original_formula = train_formula_id_data['formula'][index]
+            if train_formula_id_data['path'][index] == 'True':
+                path_formulas_index_list.append(index)
+            else:
+                other_formulas_index_list.append(index)
+        path_formula_id_data = train_formula_id_data.loc[path_formulas_index_list]
+        other_formula_id_data = train_formula_id_data.loc[other_formulas_index_list]
+        train_all_tm = QueryAnsweringSeqDataLoader_v2(
+            data_path,
+            target_lstr=None,
+            batch_size=train_config['batch_size'],
+            shuffle=False,
+            num_workers=configure['data']['cpu'])
+        train_path_tm = QueryAnsweringSeqDataLoader_v2(
+            data_path,
+            target_lstr=path_formula_id_data,
+            batch_size=train_config['batch_size'],
+            shuffle=False,
+            num_workers=configure['data']['cpu'])
+        if other_formulas_index_list:
+            train_other_tm = QueryAnsweringSeqDataLoader_v2(
+                data_path,
+                target_lstr=other_formula_id_data,
+                batch_size=train_config['batch_size'],
+                shuffle=False,
+                num_workers=configure['data']['cpu'])
 
     if configure['load']['load_model']:
         checkpoint_path, checkpoint_step = configure['load']['checkpoint_path'], configure['load']['step']
         if checkpoint_step != 0:
             lr_dict, train_config['warm_up_steps'] = load_model(checkpoint_step, checkpoint_path, model, opt,
-                                                                    device)
+                                                                device)
             lr = lr_dict
             init_step = checkpoint_step + 1  # I think there should be + 1 for train is before then save
         else:
@@ -305,6 +406,29 @@ if __name__ == "__main__":
             init_step += 1
     if 'train' not in configure['action']:
         assert train_config['steps'] == init_step
+
+    with trange(init_step, train_config['steps'] + 1) as t:
+        for step in t:
+            # basic training step
+            if train_path_tm:
+                if step >= train_config['warm_up_steps']:
+                    if not scheduler:
+                        lr /= 5
+                        opt = torch.optim.Adam(
+                            filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+                        train_config['warm_up_steps'] *= 1.5
+                    # logging
+                if train_config['train_method'] == 'original':
+                    if train_config['formula_split'] == 'path':
+                        _log = train_step(model, opt, train_path_tm, configure['train']['batch_size'], loss_function)
+                        if train_other_tm:
+                            _log_other = train_step(model, opt, train_other_tm, configure['train']['batch_size'],
+                                                    loss_function)
+                            if model_name != 'FuzzQE':
+                                _log_second = train_step(model, opt, train_path_tm, configure['train']['batch_size'],
+                                                         loss_function)
+                    else:
+                        raise NotImplementedError
 
     if 'test' in configure['action']:
         all_metrics = defaultdict(dict)
@@ -353,10 +477,7 @@ if __name__ == "__main__":
             '''
             print(all_two_log)
             all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
-        #  writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-            writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]}, f"all_logging_test_0_{formula_id}.pickle")
+            #  writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
+            writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                               f"all_logging_test_0_{formula_id}.pickle")
         writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
-
-
-
-
