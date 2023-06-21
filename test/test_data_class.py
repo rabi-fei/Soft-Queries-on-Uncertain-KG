@@ -19,7 +19,7 @@ from src.structure.geometric_graph import QueryGraph
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
-from lifted_embedding_estimation_with_truth_value import name2lstr, newlstr2name, lstr2name, DNF_lstr2name, EFOXlstr
+from train_lmpnn import name2lstr, newlstr2name, lstr2name, DNF_lstr2name, EFOXlstr
 from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, DNF_Transformation, concate_iu_chains, parse_lstr_to_disjunctive_formula
 from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import QueryAnsweringSeqDataLoader, QueryAnsweringSeqDataLoader_v2

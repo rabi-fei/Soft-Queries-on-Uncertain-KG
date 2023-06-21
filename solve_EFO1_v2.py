@@ -23,7 +23,7 @@ from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data import QueryAnsweringSeqDataLoader_v2
 from src.utils.class_util import Writer
 from src.utils.data_util import RaggedBatch
-from lifted_embedding_estimation_with_truth_value import compute_evaluation_scores
+from train_lmpnn import compute_evaluation_scores
 
 torch.autograd.set_detect_anomaly(True)
 
