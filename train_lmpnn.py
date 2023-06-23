@@ -20,7 +20,7 @@ from src.pipeline.reasoning_machine import (DeepsetEFOReasoner,
                                             GNNEFOReasonerComplEx,
                                             RelationalDeepSet,
                                             VanillaGNNLayerComplEx,
-                                            LogicalGNNLayerComplEx)
+                                            LogicalLMPLayer)
 from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
@@ -28,6 +28,7 @@ from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.utils.data import (QueryAnsweringMixDataLoader,
                             QueryAnsweringSeqDataLoader, TrainRandomSentencePairDataLoader)
 from src.utils.data_util import RaggedBatch
+from QG_EFOX import log_add_metric, ranking2metrics, evaluate_batch_joint, eval_batch_query
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -492,107 +493,48 @@ def train_lifted_estimator_v2(
     return metric
 
 
-def train_lifted_estimator_v3(
-        desc: str,
-        train_dataloader: QueryAnsweringSeqDataLoader,
-        nbp: NeuralBinaryPredicate,
-        reasoner: Reasoner,
-        optimizer: torch.optim.Optimizer,
-        args):
-    """
-    Allows for training for Disjunctive Formula
-    """
-    T = args.temp
-    trajectory = defaultdict(list)
+def compute_evaluation_scores(fof, batch_entity_rankings, metric):
+    k = 'f'
+    for i, ranking in enumerate(torch.split(batch_entity_rankings, 1)):
+        ranking = ranking.squeeze()
+        if fof.hard_answer_list[i]:
+            # [1, num_entities]
+            hard_answers = torch.tensor(fof.hard_answer_list[i][k],
+                                        device=nbp.device)
+            hard_answer_rank = ranking[hard_answers]
 
-    fof_list = train_dataloader.get_fof_list()
-    fof_list: List[DisjunctiveFormula]
-    t = tqdm.tqdm(enumerate(fof_list), desc=desc, total=len(fof_list))
+            # remove better easy answers from its rankings
+            if fof.easy_answer_list[i][k]:
+                easy_answers = torch.tensor(fof.easy_answer_list[i][k],
+                                            device=nbp.device)
+                easy_answer_rank = ranking[easy_answers].view(-1, 1)
 
-    # for each batch
-    for ifof, fof in t:
-        ####################
-        loss = 0
-        metric_step = {}
-        assert len(fof.formula_list) == 1, "Training models by the DNF formula is meaningless!"
-        sub_fof = fof.formula_list[0]
-        reasoner.initialize_with_formula(sub_fof)
-        # this procedure is somewhat of low efficiency
-        # ? can we change it to batch implementation ?
-        reasoner.estimate_lifted_embeddings()
-        batch_fvar_emb = reasoner.get_embedding('f')
-        pos_1answer_list = []
-        neg_answers_list = []
-        for i, pos_answer_dict in enumerate(fof.easy_answer_list):
-            # this iteration is somehow redundant since there is only one free
-            # variable in current case, i.e., fname='f'
-            assert 'f' in pos_answer_dict
-            pos_1answer_list.append(random.choice(pos_answer_dict['f']))
-            neg_answers_list.append(torch.randint(0, nbp.num_entities, (args.noisy_sample_size, 1)))
+                num_skipped_answers = torch.sum(
+                    hard_answer_rank > easy_answer_rank, dim=0)
+                pure_hard_ans_rank = hard_answer_rank - num_skipped_answers
+            else:
+                pure_hard_ans_rank = hard_answer_rank.squeeze()
 
-        batch_pos_emb = nbp.get_entity_emb(pos_1answer_list)
-        batch_neg_emb = nbp.get_entity_emb(torch.cat(neg_answers_list, dim=1))
-
-        if args.score == 'cos':
-            contrastive_pos_score = torch.exp(torch.cosine_similarity(
-                batch_pos_emb, batch_fvar_emb, dim=-1) / T)
-            contrastive_neg_score = torch.exp(torch.cosine_similarity(
-                batch_neg_emb, batch_fvar_emb, dim=-1) / T)
-
-            contrastive_nll = - torch.log(
-                contrastive_pos_score / (contrastive_pos_score + contrastive_neg_score.sum(0))
-            ).mean()
-            metric_step['contrastive_pos_score'] = contrastive_pos_score.mean().item()
-            metric_step['contrastive_neg_score'] = contrastive_neg_score.mean().item()
-            metric_step['contrastive_nll'] = contrastive_nll.item()
-            loss += contrastive_nll
         else:
-            pos_nll = - F.logsigmoid(args.gamma - torch.norm(batch_pos_emb - batch_fvar_emb, dim=-1))
-            neg_nll = - F.logsigmoid(torch.norm(batch_neg_emb - batch_fvar_emb, dim=-1) - args.gamma)
-            neg_sample_nll = pos_nll + neg_nll
-            loss += neg_sample_nll.mean()
-            metric_step['pos_nll'] = pos_nll.mean().item()
-            metric_step['neg_nll'] = neg_nll.mean().item()
-            metric_step['neg_sample_nll'] = neg_sample_nll.mean().item()
+            pure_hard_ans_rank = ranking[
+                torch.tensor(fof.easy_answer_list[i][k], device=nbp.device)]
 
-        if 'neg_sample_dist' in args.objective:
-            pos_sample_score = torch.sigmoid(
-                args.dist_margin - torch.sum((batch_pos_emb - batch_fvar_emb) ** 2, dim=-1) / T)
-            neg_sample_score = torch.sigmoid(
-                args.dist_margin - torch.sum((batch_neg_emb - batch_fvar_emb) ** 2, dim=-1) / T)
+        # remove better hard answers from its ranking
+        _reference_hard_ans_rank = pure_hard_ans_rank.reshape(-1, 1)
+        num_skipped_answers = torch.sum(
+            pure_hard_ans_rank > _reference_hard_ans_rank, dim=0
+        )
+        pure_hard_ans_rank -= num_skipped_answers.reshape(
+            pure_hard_ans_rank.shape)
 
-            neg_sample_nll = - torch.log(pos_sample_score + 1e-10).mean() \
-                             - torch.log(1 - neg_sample_score + 1e-10).mean()
-
-            metric_step['pos_sample_score'] = pos_sample_score.mean().item()
-            metric_step['neg_sample_score'] = neg_sample_score.mean().item()
-            metric_step['neg_sample_nll'] = neg_sample_nll.item()
-            loss += neg_sample_nll
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        ####################
-        metric_step['loss'] = loss.item()
-
-        postfix = {'step': ifof + 1}
-        for k in metric_step:
-            postfix[k] = np.mean(metric_step[k])
-            trajectory[k].append(postfix[k])
-        postfix['acc_loss'] = np.mean(trajectory['loss'])
-        t.set_postfix(postfix)
-
-        metric_step['acc_loss'] = postfix['acc_loss']
-        metric_step['lstr'] = fof.lstr
-
-        logging.info(f"[train lifted estimator {desc}] {json.dumps(metric_step)}")
-
-    t.close()
-
-    metric = {}
-    for k in trajectory:
-        metric[k] = np.mean(trajectory[k])
-    return metric
+        rr = (1 / (1 + pure_hard_ans_rank)).detach().cpu().float().numpy()
+        hit1 = (pure_hard_ans_rank < 1).detach().cpu().float().numpy()
+        hit3 = (pure_hard_ans_rank < 3).detach().cpu().float().numpy()
+        hit10 = (pure_hard_ans_rank < 10).detach().cpu().float().numpy()
+        metric['mrr'].append(rr.mean())
+        metric['hit1'].append(hit1.mean())
+        metric['hit3'].append(hit3.mean())
+        metric['hit10'].append(hit10.mean())
 
 
 def compute_evaluation_scores(fof, batch_entity_rankings, metric):
@@ -741,7 +683,7 @@ def evaluate_by_nearest_search(
     logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
 
 
-def evaluate_by_nearest_search_v2(
+def evaluate_by_nearest_search_efok(
         e,
         desc,
         dataloader,
@@ -755,42 +697,64 @@ def evaluate_by_nearest_search_v2(
     # first level key: lstr
     # second level key: metric name
     metric = defaultdict(lambda: defaultdict(list))
-    fofs = dataloader.get_fof_list()
+    two_marginal_logs = defaultdict(float)
+    one_marginal_logs, no_marginal_logs = defaultdict(float), defaultdict(float)
+    formula = list(dataloader.lstr_iterator.keys())[0]
+    num_var = (1 if "f1" in formula else 0) + (1 if "f2" in formula else 0)
+    f_str_list = [f'f{i + 1}' for i in range(num_var)]
+    f_str = '_'.join(f_str_list)
+    foqs = dataloader.get_fof_list()
 
     # conduct reasoning
-    with tqdm.tqdm(fofs, desc=desc) as t:
-        for fof in t:
-            with torch.no_grad():
-                batch_fvar_emb_list = []
-                for sub_formula in fof.formula_list:
-                    reasoner.initialize_with_formula(sub_formula)
-                    reasoner.estimate_lifted_embeddings()
-                    batch_fvar_emb = reasoner.get_embedding('f')
-                    batch_fvar_emb_list.append(batch_fvar_emb)
-                batch_fvar_emb = torch.stack(batch_fvar_emb_list, dim=1)  # batch*disj_num*dim
-                batch_entity_rankings = nbp.get_all_entity_rankings_v2(
-                    batch_fvar_emb, score=args.score)
-            # [batch_size, num_entities]
-            print(batch_entity_rankings)
-            compute_evaluation_scores(
-                fof, batch_entity_rankings, metric[fof.lstr])
-            t.set_postfix({'lstr': fof.lstr})
-
-        print("sum metric")
-        sum_metric = defaultdict(dict)
-        for lstr in metric:
-            for score_name in metric[lstr]:
-                sum_metric[lstr2name[lstr]][score_name] = float(
-                    np.mean(metric[lstr][score_name]))
-
-        postfix = {}
-        for name in ['1p', '2p', '3p', '2i', 'inp']:
-            if name in sum_metric:
-                postfix[name + '_hit3'] = sum_metric[name]['hit3']
-        torch.cuda.empty_cache()
-
-    sum_metric['epoch'] = e
-    logging.info(f"[{desc}][final] {json.dumps(sum_metric)}")
+    with tqdm.tqdm(foqs, desc=desc) as t:
+        for query in t:
+            reasoner.initialize_with_query(query)
+            reasoner.estimate_variable_embeddings()
+            if len(f_str_list) == 1:
+                with torch.no_grad():
+                    truth_value_entity_batch = reasoner.evaluate_truth_values(
+                        free_var_emb_dict={
+                            'f1': nbp.entity_embedding.unsqueeze(1),
+                            #                        "f2": reasoner.term_local_emb_dict["f2"]
+                        },
+                        batch_size_eval=args.batch_size_eval_truth_value)  # [num_entities batch_size]
+                ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
+                ranked_entity_ids = torch.argsort(
+                    ranking_score, dim=-1, descending=True)
+                batch_entity_rankings = torch.argsort(
+                    ranked_entity_ids, dim=-1, descending=False)
+                ranking = batch_entity_rankings
+                for i in range(ranking.shape[0]):
+                    easy_ans = [instance[0] for instance in query.easy_answer_list[i][f_str]]
+                    hard_ans = [instance[0] for instance in query.hard_answer_list[i][f_str]]
+                    mrr, h1, h3, h10 = ranking2metrics(ranking[i], easy_ans, hard_ans, nbp.device)
+                    two_marginal_logs['MRR'] += mrr
+                    two_marginal_logs['HITS1'] += h1
+                    two_marginal_logs['HITS3'] += h3
+                    two_marginal_logs['HITS10'] += h10
+                    two_marginal_logs["num_queries"] = ranking.shape[0]
+            else:
+                final_ranking_list = []
+                for i in range(len(f_str_list)):
+                    with torch.no_grad():
+                        truth_value_entity_batch = reasoner.evaluate_truth_values(
+                            free_var_emb_dict={
+                                f'f{i + 1}': nbp.entity_embedding.unsqueeze(1),
+                                #                        "f2": reasoner.term_local_emb_dict["f2"]
+                            },
+                            batch_size_eval=args.batch_size_eval_truth_value)  # [num_entities batch_size]
+                    ranking_score = torch.transpose(truth_value_entity_batch, 0, 1)
+                    ranked_entity_ids = torch.argsort(
+                        ranking_score, dim=-1, descending=True)
+                    batch_entity_rankings = torch.argsort(
+                        ranked_entity_ids, dim=-1, descending=False)
+                    final_ranking_list.append(batch_entity_rankings)
+                final_ranking = torch.stack(final_ranking_list, dim=1).to(nbp.device)  # batch * free_num * nentity
+                two_marginal_logs, one_marginal_logs, no_marginal_logs = evaluate_batch_joint(final_ranking,
+                                                                                              query.easy_answer_list,
+                                                                                              query.hard_answer_list,
+                                                                                              nbp.device, f_str)
+    return two_marginal_logs, one_marginal_logs, no_marginal_logs
 
 
 if __name__ == "__main__":
@@ -819,12 +783,8 @@ if __name__ == "__main__":
         scale=args.scale,
         device=args.device)
 
-    optimizer_nbp = getattr(torch.optim, args.optimizer)(
-        nbp.parameters(),
-        lr=1e-3,
-        weight_decay=args.weight_decay)
-
     if args.checkpoint_path:
+        print("loading model from", args.checkpoint_path)
         nbp.load_state_dict(torch.load(args.checkpoint_path), strict=False)
 
     nbp.to(args.device)
@@ -848,22 +808,18 @@ if __name__ == "__main__":
             lr=args.learning_rate,
             weight_decay=args.weight_decay)
 
-    elif args.reasoner == 'gnn':
-        if args.no_relational_inference:
-            lgnn_layer = VanillaGNNLayerComplEx(nbp.embedding_dim,
-                                                hidden_dim=args.hidden_dim,
-                                                num_entities=nbp.num_entities,
-                                                layers=args.num_layers,
-                                                eps=args.eps,
-                                                agg_func=args.agg_func)
-        else:
-            lgnn_layer = LogicalGNNLayerComplEx(nbp.embedding_dim,
-                                                hidden_dim=args.hidden_dim,
-                                                num_entities=nbp.num_entities,
-                                                layers=args.num_layers,
-                                                eps=args.eps,
-                                                agg_func=args.agg_func)
+    elif args.reasoner == 'lmpnn':
+        lgnn_layer = LogicalLMPLayer(nbp.embedding_dim,
+                                     hidden_dim=args.hidden_dim,
+                                     num_entities=nbp.num_entities,
+                                     layers=args.num_layers,
+                                     eps=args.eps,
+                                     agg_func=args.agg_func)
+        if args.checkpoint_path_lmpnn:
+            print("loading lmpnn model from", args.checkpoint_path_lmpnn)
+            lgnn_layer.load_state_dict(torch.load(args.checkpoint_path_lmpnn, map_location=nbp.device), strict=True)
         lgnn_layer.to(nbp.device)
+
         reasoner = GNNEFOReasonerComplEx(nbp, tnorm, lgnn_layer, depth_shift=args.depth_shift)
         print(lgnn_layer)
         if args.finetune_kge:

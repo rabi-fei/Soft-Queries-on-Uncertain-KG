@@ -707,12 +707,12 @@ def complex_vector_multiplication(cva0,cva1,cvb0,cvb1):
     ], 1)
 
 
-class LogicalGNNLayerComplEx(nn.Module):
+class LogicalLMPLayer(nn.Module):
     """
     data format [batch, dim]
     """
     def __init__(self, emb_dim, hidden_dim, num_entities, layers=1, eps=0.1, agg_func='sum'):
-        super(LogicalGNNLayerComplEx, self).__init__()
+        super(LogicalLMPLayer, self).__init__()
         self.emb_dim = emb_dim
         self.feature_dim = 2 * emb_dim # for complex
 
@@ -796,7 +796,7 @@ class LogicalGNNLayerRotatE(nn.Module):
     data format [batch, dim]
     """
     def __init__(self, emb_dim, hidden_dim, num_entities, layers=1, eps=0.1, agg_func='sum'):
-        super(LogicalGNNLayerComplEx, self).__init__()
+        super(LogicalLMPLayer, self).__init__()
         self.emb_dim = emb_dim
         self.feature_dim = 2 * emb_dim # for complex
 
@@ -957,7 +957,7 @@ class GNNEFOReasonerComplEx(Reasoner):
     def __init__(self,
                  nbp: NeuralBinaryPredicate,
                  tnorm: Tnorm,
-                 lgnn_layer: LogicalGNNLayerComplEx,
+                 lgnn_layer: LogicalLMPLayer,
                  depth_shift=0):
         self.nbp = nbp
         self.tnorm: Tnorm = tnorm
