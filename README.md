@@ -83,11 +83,25 @@ python sample_query.py
 
 ### 3.1 
 
-For query embedding method, please run the following command:
+For query embedding method, including BetaE, LogicE, ConE, please run the following command:
 
 ```angular2html
 python QG_EFOX.py --config config/LogicE_FB15k-237.yaml
 ```
 
 which is an example for LogicE method on FB15k-237 dataset.
+
+For CQD and LMPNN, please run the following command:
+
+```angular2html
+python train_lmpnn.py 
+```
+
+which is an example for LMPNN method on FB15k-237 dataset.
+
+For FIT, please run the following command: 
+
+```angular2html
+python solve_EFOX.py 
+```
 
