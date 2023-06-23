@@ -306,7 +306,7 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     else:
         device = torch.device('cuda:{}'.format(configure['cuda']))
-    all_formula_data = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
+    all_formula_data = pd.read_csv(configure['evaluate']['formula_id_file'])
     case_name = configure['output']['output_path'] if configure['output']['output_path'] else \
         args.config.split("config")[-1][1:]
     writer = Writer(case_name=case_name, config=configure, log_path=configure["output"]["prefix"])
@@ -430,13 +430,12 @@ if __name__ == "__main__":
                     else:
                         raise NotImplementedError
 
-    if 'test' in configure['action']:
+    if 'valid' in configure['action']:
         all_metrics = defaultdict(dict)
         for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
             formula_id = row['formula_id']
             formula = row['formula']
-            # data_path = osp.join(configure['data']['data_folder'], f'test_type{i:04d}_EFOX_qaa.json')
-            data_path = osp.join(configure['data']['data_folder'], f'test_{formula_id}_EFOX_qaa.json')
+            data_path = osp.join(configure['data']['data_folder'], f'valid_{formula_id}_EFOX_qaa.json')
             if not osp.exists(data_path):
                 print(f'Warnings,{data_path} not exists!')
                 continue
@@ -448,10 +447,6 @@ if __name__ == "__main__":
                 num_workers=0)
             fof_list = test_dataloader.get_fof_list_no_shuffle()
             t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
-            # all_answers, now_formula_index = {}, {}
-            # for lstr in test_dataloader.lstr_qaa:
-            # all_answers[lstr] = torch.zeros((len(test_dataloader.lstr_qaa[lstr]), n_entity))
-            # now_formula_index[lstr] = 0
             all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
             for ifof, fof in t:
                 QG_instance = QueryGraph(fof.formula_list[0], device)
@@ -464,20 +459,41 @@ if __name__ == "__main__":
                     all_one_log[metric] += mar_log[metric]
                 for metric in no_mar_logs.keys():
                     all_no_log[metric] += no_mar_logs[metric]
-            '''
-            for log_metric in all_two_log.keys():
-                if log_metric != 'num_queries':
-                    all_two_log[log_metric] /= all_two_log['num_queries']
-            for log_metric in all_one_log.keys():
-                if log_metric != 'num_queries':
-                    all_one_log[log_metric] /= all_one_log['num_queries']
-            for log_metric in all_no_log.keys():
-                if log_metric != 'num_queries':
-                    all_no_log[log_metric] /= all_no_log['num_queries']
-            '''
-            print(all_two_log)
             all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
-            #  writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
+            writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                               f"all_logging_valid_0_{formula_id}.pickle")
+
+    if 'test' in configure['action']:
+        all_metrics = defaultdict(dict)
+        for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
+            formula_id = row['formula_id']
+            formula = row['formula']
+            data_path = osp.join(configure['data']['data_folder'], f'test_{formula_id}_EFOX_qaa.json')
+            if not osp.exists(data_path):
+                print(f'Warnings,{data_path} not exists!')
+                continue
+            test_dataloader = QueryAnsweringSeqDataLoader_v2(
+                data_path,
+                target_lstr=None,
+                batch_size=configure['evaluate']['batch_size'],
+                shuffle=False,
+                num_workers=0)
+            fof_list = test_dataloader.get_fof_list_no_shuffle()
+            t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
+            all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
+            for ifof, fof in t:
+                QG_instance = QueryGraph(fof.formula_list[0], device)
+                QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
+                two_mar_log, mar_log, no_mar_logs = \
+                    eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
+                for metric in two_mar_log:
+                    all_two_log[metric] += two_mar_log[metric]
+                for metric in mar_log:
+                    all_one_log[metric] += mar_log[metric]
+                for metric in no_mar_logs.keys():
+                    all_no_log[metric] += no_mar_logs[metric]
+            # print(all_two_log)
+            all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
             writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
                                f"all_logging_test_0_{formula_id}.pickle")
         writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
