@@ -12,7 +12,7 @@ import numpy as np
 import torch.nn.functional as F
 
 from FIT import solve_EFO1
-from src.utils.data import QueryAnsweringSeqDataLoader_v2
+from src.utils.data import QueryAnsweringSeqDataLoader_v2, QueryAnsweringMixDataLoader
 from src.utils.class_util import Writer
 from src.structure.geometric_graph import QueryGraph
 from src.structure.knowledge_graph import KnowledgeGraph
@@ -21,7 +21,10 @@ from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, Con
 from fol import order_bounds
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", type=str, default="config/LogicE_FB15k-237_EFOX.yaml")
+parser.add_argument("--config", type=str, default="config/train_model/LogicE_FB15k-237.yaml")
+
+
+path_formula_list = ['r1(s1,f1)', '(r1(s1,e1))&(r2(e1,f1))', '(r1(s1,e1))&((r2(e1,e2))&(r3(e2,f1)))']
 
 
 def read_from_yaml(yaml_path):
@@ -72,28 +75,23 @@ def compute_loss_bpr(positive_logit, negative_logit, subsampling_weight):
     return loss
 
 
-def train_step(model, opt, data_loader: QueryAnsweringSeqDataLoader_v2, batch_size: int, loss_function):
+def train_step(model, opt, data_loader: QueryAnsweringMixDataLoader, loss_function):
     model.train()
     torch.autograd.set_detect_anomaly(True)
     opt.zero_grad()
-    query_data = data_loader.get_fof_list_no_shuffle()
+    query_data = data_loader.get_single_fof_list()
     emb_list, answer_list = [], []
-    union_emb_list, union_answer_list = [], []
-    for full_formula in query_data:
-        if 'u' in full_formula or 'U' in full_formula:  # TODO: full formula now contains nothing
-            union_emb_list.append(query_data[full_formula]['emb'])
-            union_answer_list.append(query_data[full_formula]['answer_set'])
-        else:
-            emb_list.append(query_data[full_formula]['emb'])
-            answer_list.extend(query_data[full_formula]['answer_set'])
+    for formula in query_data:
+        QG_instance = QueryGraph(query_data[formula].formula_list[0], device)
+        QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
+        emb_list.append(QG_embedding_list[0])
+        f_str_list = [f'f{i + 1}' for i in range(len(query_data[formula].free_term_dict))]
+        f_str = '_'.join(f_str_list)
+        efo1_ans_list = [[instance[0] for instance in ans_dict[f_str]]
+                         for ans_dict in query_data[formula].easy_answer_list]
+        answer_list.extend(efo1_ans_list)
     pred_embedding = torch.cat(emb_list, dim=0)
-    all_positive_logit, all_negative_logit, all_subsampling_weight = model.criterion(pred_embedding, answer_list, )
-    for i in range(len(union_emb_list)):
-        union_positive_logit, union_negative_logit, union_subsampling_weight = \
-            model.criterion(union_emb_list[i], union_answer_list[i], )
-        all_positive_logit = torch.cat([all_positive_logit, union_positive_logit], dim=0)
-        all_negative_logit = torch.cat([all_negative_logit, union_negative_logit], dim=0)
-        all_subsampling_weight = torch.cat([all_subsampling_weight, union_subsampling_weight], dim=0)
+    all_positive_logit, all_negative_logit, all_subsampling_weight = model.criterion(pred_embedding, answer_list)
     if loss_function == 'original':
         positive_loss, negative_loss = compute_final_loss(all_positive_logit, all_negative_logit, all_subsampling_weight)
         loss = (positive_loss + negative_loss) / 2
@@ -185,6 +183,35 @@ def eval_batch_query(model, pred_emb_list, easy_ans_list, hard_ans_list):
             two_marginal_logs, one_marginal_logs, no_marginal_logs = evaluate_batch_joint(final_ranking, easy_ans_list,
                                                                                           hard_ans_list, device, f_str)
     return two_marginal_logs, one_marginal_logs, no_marginal_logs
+
+
+def eval_step(data_path, model, configure, device, step, writer=None):
+    if not osp.exists(data_path):
+        print(f'Warnings,{data_path} not exists!')
+        return None
+    test_dataloader = QueryAnsweringSeqDataLoader_v2(
+        data_path,
+        target_lstr=None,
+        batch_size=configure['evaluate']['batch_size'],
+        shuffle=False,
+        num_workers=0)
+    fof_list = test_dataloader.get_fof_list_no_shuffle()
+    t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
+    all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
+    for ifof, fof in t:
+        QG_instance = QueryGraph(fof.formula_list[0], device)
+        QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
+        two_mar_log, mar_log, no_mar_logs = \
+            eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
+        for metric in two_mar_log:
+            all_two_log[fof.formula][metric] += two_mar_log[metric]
+        for metric in mar_log:
+            all_one_log[metric] += mar_log[metric]
+        for metric in no_mar_logs.keys():
+            all_no_log[metric] += no_mar_logs[metric]
+    all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
+    writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                       f"all_logging_test_{step}_{formula_id}.pickle")
 
 
 def log_add_metric(add_log, mrr, h1, h3, h10, mul_mrr, h1_1, h3_3, h10_10):
@@ -306,7 +333,6 @@ if __name__ == "__main__":
         device = torch.device('cpu')
     else:
         device = torch.device('cuda:{}'.format(configure['cuda']))
-    all_formula_data = pd.read_csv(configure['evaluate']['formula_id_file'])
     case_name = configure['output']['output_path'] if configure['output']['output_path'] else \
         args.config.split("config")[-1][1:]
     writer = Writer(case_name=case_name, config=configure, log_path=configure["output"]["prefix"])
@@ -360,36 +386,32 @@ if __name__ == "__main__":
     init_step = 1
     loss_function = train_config['loss_function'] if 'loss_function' in train_config else 'original'
 
-    data_path = configure['data']['data_folder']
+    data_folder = configure['data']['data_folder']
     train_path_tm, train_other_tm = None, None
     if 'train' in configure['action']:
-        train_formula_id_file = configure['train']['formula_id_file']
-        train_formula_id_data = pd.read_csv(train_formula_id_file)
-        path_formulas_index_list, other_formulas_index_list = [], []
-        for index in train_formula_id_data.index:
-            original_formula = train_formula_id_data['formula'][index]
-            if train_formula_id_data['path'][index] == 'True':
-                path_formulas_index_list.append(index)
-            else:
-                other_formulas_index_list.append(index)
-        path_formula_id_data = train_formula_id_data.loc[path_formulas_index_list]
-        other_formula_id_data = train_formula_id_data.loc[other_formulas_index_list]
-        train_all_tm = QueryAnsweringSeqDataLoader_v2(
-            data_path,
+        train_data_file = osp.join(data_folder, 'train-qaa.json')
+        train_all_tm = QueryAnsweringMixDataLoader(
+            osp.join(data_folder, 'train-qaa.json'),
             target_lstr=None,
             batch_size=train_config['batch_size'],
             shuffle=False,
             num_workers=configure['data']['cpu'])
-        train_path_tm = QueryAnsweringSeqDataLoader_v2(
-            data_path,
-            target_lstr=path_formula_id_data,
+        train_path_formula_list, train_other_formula_list = [], []
+        for formula in train_all_tm.lstr_iterator:
+            if formula in path_formula_list:
+                train_path_formula_list.append(formula)
+            else:
+                train_other_formula_list.append(formula)
+        train_path_tm = QueryAnsweringMixDataLoader(
+            train_data_file,
+            target_lstr=train_path_formula_list,
             batch_size=train_config['batch_size'],
             shuffle=False,
             num_workers=configure['data']['cpu'])
-        if other_formulas_index_list:
-            train_other_tm = QueryAnsweringSeqDataLoader_v2(
-                data_path,
-                target_lstr=other_formula_id_data,
+        if train_other_formula_list:
+            train_other_tm = QueryAnsweringMixDataLoader(
+                train_data_file,
+                target_lstr=train_other_formula_list,
                 batch_size=train_config['batch_size'],
                 shuffle=False,
                 num_workers=configure['data']['cpu'])
@@ -406,7 +428,7 @@ if __name__ == "__main__":
             init_step += 1
     if 'train' not in configure['action']:
         assert train_config['steps'] == init_step
-
+    all_formula_data = pd.read_csv(configure['evaluate']['formula_id_file'])
     with trange(init_step, train_config['steps'] + 1) as t:
         for step in t:
             # basic training step
@@ -418,82 +440,97 @@ if __name__ == "__main__":
                             filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
                         train_config['warm_up_steps'] *= 1.5
                     # logging
-                if train_config['train_method'] == 'original':
-                    if train_config['formula_split'] == 'path':
-                        _log = train_step(model, opt, train_path_tm, configure['train']['batch_size'], loss_function)
-                        if train_other_tm:
-                            _log_other = train_step(model, opt, train_other_tm, configure['train']['batch_size'],
-                                                    loss_function)
-                            if model_name != 'FuzzQE':
-                                _log_second = train_step(model, opt, train_path_tm, configure['train']['batch_size'],
-                                                         loss_function)
-                    else:
-                        raise NotImplementedError
+                _log = train_step(model, opt, train_path_tm, loss_function)
+                if train_other_tm:
+                    _log_other = train_step(model, opt, train_other_tm, loss_function)
+                    if model_name != 'FuzzQE':
+                        _log_second = train_step(model, opt, train_path_tm, loss_function)
+                _alllog = {}
+                for key in _log:
+                    _alllog[f'all_{key}'] = (_log[key] + _log_other[key]) / 2 if train_other_tm else _log[key]
+                    _alllog[key] = _log[key]
+                _log = _alllog
+                t.set_postfix({'loss': _log['loss']})
+                training_logs.append(_log)
+                if step % train_config['log_every_steps'] == 0:
+                    for metric in training_logs[0].keys():
+                        _log[metric] = sum(log[metric] for log in training_logs) / len(training_logs)
+                    _log['step'] = step
+                    training_logs = []
+                    writer.append_trace('train', _log)
+                if scheduler:
+                    scheduler.step()
 
-    if 'valid' in configure['action']:
-        all_metrics = defaultdict(dict)
-        for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
-            formula_id = row['formula_id']
-            formula = row['formula']
-            data_path = osp.join(configure['data']['data_folder'], f'valid_{formula_id}_EFOX_qaa.json')
-            if not osp.exists(data_path):
-                print(f'Warnings,{data_path} not exists!')
-                continue
-            test_dataloader = QueryAnsweringSeqDataLoader_v2(
-                data_path,
-                target_lstr=None,
-                batch_size=configure['evaluate']['batch_size'],
-                shuffle=False,
-                num_workers=0)
-            fof_list = test_dataloader.get_fof_list_no_shuffle()
-            t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
-            all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
-            for ifof, fof in t:
-                QG_instance = QueryGraph(fof.formula_list[0], device)
-                QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
-                two_mar_log, mar_log, no_mar_logs = \
-                    eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
-                for metric in two_mar_log:
-                    all_two_log[metric] += two_mar_log[metric]
-                for metric in mar_log:
-                    all_one_log[metric] += mar_log[metric]
-                for metric in no_mar_logs.keys():
-                    all_no_log[metric] += no_mar_logs[metric]
-            all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
-            writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
-                               f"all_logging_valid_0_{formula_id}.pickle")
+            if step % train_config['evaluate_every_steps'] == 0 or step == train_config['steps']:
+                if 'valid' in configure['action']:
+                    all_metrics = defaultdict(dict)
+                    for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
+                        formula_id = row['formula_id']
+                        formula = row['formula']
+                        data_path = osp.join(configure['data']['data_folder'], f'valid_{formula_id}_EFOX_qaa.json')
+                        if not osp.exists(data_path):
+                            print(f'Warnings,{data_path} not exists!')
+                            continue
+                        test_dataloader = QueryAnsweringSeqDataLoader_v2(
+                            data_path,
+                            target_lstr=None,
+                            batch_size=configure['evaluate']['batch_size'],
+                            shuffle=False,
+                            num_workers=0)
+                        fof_list = test_dataloader.get_fof_list_no_shuffle()
+                        t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
+                        all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(
+                            float)
+                        for ifof, fof in t:
+                            QG_instance = QueryGraph(fof.formula_list[0], device)
+                            QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
+                            two_mar_log, mar_log, no_mar_logs = \
+                                eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
+                            for metric in two_mar_log:
+                                all_two_log[metric] += two_mar_log[metric]
+                            for metric in mar_log:
+                                all_one_log[metric] += mar_log[metric]
+                            for metric in no_mar_logs.keys():
+                                all_no_log[metric] += no_mar_logs[metric]
+                        all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
+                        writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                                           f"all_logging_valid_0_{formula_id}.pickle")
 
-    if 'test' in configure['action']:
-        all_metrics = defaultdict(dict)
-        for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
-            formula_id = row['formula_id']
-            formula = row['formula']
-            data_path = osp.join(configure['data']['data_folder'], f'test_{formula_id}_EFOX_qaa.json')
-            if not osp.exists(data_path):
-                print(f'Warnings,{data_path} not exists!')
-                continue
-            test_dataloader = QueryAnsweringSeqDataLoader_v2(
-                data_path,
-                target_lstr=None,
-                batch_size=configure['evaluate']['batch_size'],
-                shuffle=False,
-                num_workers=0)
-            fof_list = test_dataloader.get_fof_list_no_shuffle()
-            t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
-            all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(float)
-            for ifof, fof in t:
-                QG_instance = QueryGraph(fof.formula_list[0], device)
-                QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
-                two_mar_log, mar_log, no_mar_logs = \
-                    eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
-                for metric in two_mar_log:
-                    all_two_log[metric] += two_mar_log[metric]
-                for metric in mar_log:
-                    all_one_log[metric] += mar_log[metric]
-                for metric in no_mar_logs.keys():
-                    all_no_log[metric] += no_mar_logs[metric]
-            # print(all_two_log)
-            all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
-            writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
-                               f"all_logging_test_0_{formula_id}.pickle")
-        writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
+                if 'test' in configure['action']:
+                    all_metrics = defaultdict(dict)
+                    for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
+                        formula_id = row['formula_id']
+                        formula = row['formula']
+                        data_path = osp.join(configure['data']['data_folder'], f'test_{formula_id}_EFOX_qaa.json')
+                        if not osp.exists(data_path):
+                            print(f'Warnings,{data_path} not exists!')
+                            continue
+                        test_dataloader = QueryAnsweringSeqDataLoader_v2(
+                            data_path,
+                            target_lstr=None,
+                            batch_size=configure['evaluate']['batch_size'],
+                            shuffle=False,
+                            num_workers=0)
+                        fof_list = test_dataloader.get_fof_list_no_shuffle()
+                        t = tqdm.tqdm(enumerate(fof_list), total=len(fof_list))
+                        all_two_log, all_one_log, all_no_log = defaultdict(float), defaultdict(float), defaultdict(
+                            float)
+                        for ifof, fof in t:
+                            QG_instance = QueryGraph(fof.formula_list[0], device)
+                            QG_embedding_list = QG_instance.get_whole_graph_embedding(model=model)
+                            two_mar_log, mar_log, no_mar_logs = \
+                                eval_batch_query(model, QG_embedding_list, fof.easy_answer_list, fof.hard_answer_list)
+                            for metric in two_mar_log:
+                                all_two_log[metric] += two_mar_log[metric]
+                            for metric in mar_log:
+                                all_one_log[metric] += mar_log[metric]
+                            for metric in no_mar_logs.keys():
+                                all_no_log[metric] += no_mar_logs[metric]
+                        # print(all_two_log)
+                        all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
+                        writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                                           f"all_logging_test_0_{formula_id}.pickle")
+                    writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
+
+
+
