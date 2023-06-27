@@ -15,12 +15,6 @@ from torch import nn
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.language.fof import ConjunctiveFormula, DisjunctiveFormula
-from src.pipeline.reasoning_machine import (DeepsetEFOReasoner,
-                                            GradientEFOReasoner, Reasoner,
-                                            GNNEFOReasonerComplEx,
-                                            RelationalDeepSet,
-                                            VanillaGNNLayerComplEx,
-                                            LogicalLMPLayer)
 from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
@@ -141,9 +135,9 @@ parser.add_argument("--device", type=str, default="cuda:1")
 parser.add_argument("--output_dir", type=str, default='log')
 
 # input task folder, defines knowledge graph, index, and formulas
-parser.add_argument("--task_folder", type=str, default='data/FB15k-237-EFO1')
+parser.add_argument("--task_folder", type=str, default='data/FB15k-237-EFOX-final')
 parser.add_argument("--train_queries", action='append')
-parser.add_argument("--eval_queries", action='append')
+parser.add_argument("--eval_queries", default="DNF_EFO2_23_4123166.csv", action='append')
 
 parser.add_argument("--eval_cqd", action="store_true", default=False)
 parser.add_argument("--finetune_kge", action="store_true", default=False)
@@ -153,9 +147,9 @@ parser.add_argument("--no_relational_inference", action="store_true", default=Fa
 parser.add_argument("--model_name", type=str, default='complex')
 parser.add_argument("--embedding_dim", type=int, default=1000)
 parser.add_argument("--margin", type=float, default=10)
-parser.add_argument("--scale", type=float, default=0.1)
+parser.add_argument("--scale", type=float, default=1)
 parser.add_argument("--p", type=int, default=1)
-parser.add_argument("--checkpoint_path")
+parser.add_argument("--checkpoint_path", default="ckpt/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt", type=str, help="path to the KGE checkpoint")
 
 # optimization for the entire process
 parser.add_argument("--optimizer", type=str, default='AdamW')
@@ -198,6 +192,7 @@ parser.add_argument("--agg_func", type=str, default='sum')
 
 parser.add_argument("--score", type=str, default='cos', choices=['cos', 'dist'])
 parser.add_argument("--gamma", type=float, default=9)
+parser.add_argument("--checkpoint_path_lmpnn", type=str, default="pretrain/lmpnn/lmpnn-FB15K-237.ckpt")
 
 
 def train_neural_binary_predicate(

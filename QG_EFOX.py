@@ -494,7 +494,7 @@ if __name__ == "__main__":
                                 all_no_log[metric] += no_mar_logs[metric]
                         all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
                         writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
-                                           f"all_logging_valid_0_{formula_id}.pickle")
+                                           f"all_logging_valid_{step}_{formula_id}.pickle")
 
                 if 'test' in configure['action']:
                     all_metrics = defaultdict(dict)
@@ -529,8 +529,8 @@ if __name__ == "__main__":
                         # print(all_two_log)
                         all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
                         writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
-                                           f"all_logging_test_0_{formula_id}.pickle")
-                    writer.save_pickle(all_metrics, f"all_logging_test_0.pickle")
+                                           f"all_logging_test_{step}_{formula_id}.pickle")
+                    writer.save_pickle(all_metrics, f"all_logging_test_{step}.pickle")
 
 
 
