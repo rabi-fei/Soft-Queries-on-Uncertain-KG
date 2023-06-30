@@ -9,7 +9,7 @@ import torch
 import torch_geometric
 from torch_geometric.data import Data
 
-from src.language.fof import ConjunctiveFormula
+from src.language.foq import ConjunctiveFormula
 from src.structure.knowledge_graph import KnowledgeGraph
 from fol import AppFOQEstimator
 
@@ -29,7 +29,7 @@ class QueryGraph(nx.MultiGraph):
         self.add_nodes_from(input_formula.term_dict.keys())
         for pred_name in input_formula.predicate_dict:
             pred = input_formula.predicate_dict[pred_name]
-            if pred.skolem_negation is False:
+            if pred.negated is False:
                 self.add_edge(pred.head.name, pred.tail.name, name=pred_name, type='positive')
             else:
                 self.add_edge(pred.head.name, pred.tail.name, name=pred_name, type='negative')

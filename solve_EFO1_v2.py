@@ -17,7 +17,7 @@ import pickle
 from torch import nn
 from scipy.sparse import csc_matrix, diags, issparse
 
-from src.language.fof import ConjunctiveFormula, DisjunctiveFormula
+from src.language.foq import ConjunctiveFormula, DisjunctiveFormula
 from src.structure.knowledge_graph import KnowledgeGraph, kg_remove_node
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data import QueryAnsweringSeqDataLoader_v2
@@ -253,7 +253,7 @@ def solve_EFO1(DNF_formula: DisjunctiveFormula, relation_matrix, conjunctive_tno
             for pred in sub_formula.predicate_dict.values():
                 pred_triples = (pred.head.name, sub_formula.pred_grounded_relation_id_dict[pred.name][index],
                                 pred.tail.name)
-                if pred.skolem_negation:
+                if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
                     sub_graph_edge.append(pred_triples)

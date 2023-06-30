@@ -21,15 +21,13 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.utils.data import QueryAnsweringSeqDataLoader
+from train_lmpnn import name2lstr, lstr2name, negation_query
 
 torch.autograd.set_detect_anomaly(True)
 
 from convert_beta_dataset import beta_lstr2name
 
-lstr2name = {parse_lstr_to_lformula(k).lstr: v for k, v in beta_lstr2name.items()}
-name2lstr = {v: k for k, v in lstr2name.items()}
 
-negation_query = [name for name in name2lstr if '!' in name]
 
 parser = argparse.ArgumentParser()
 
@@ -47,7 +45,7 @@ parser.add_argument("--batch_size_eval_dataloader", type=int, default=5000, help
 
 # model, defines the neural binary predicate
 parser.add_argument("--model_name", type=str, default='complex')
-parser.add_argument("--checkpoint_path",default="ckpt/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt", type=str, help="path to the KGE checkpoint")
+parser.add_argument("--checkpoint_path", default="ckpt/FB15k-237/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt", type=str, help="path to the KGE checkpoint")
 parser.add_argument("--embedding_dim", type=int, default=1000)
 parser.add_argument("--margin", type=float, default=10)
 parser.add_argument("--scale", type=float, default=1)
@@ -76,7 +74,7 @@ parser.add_argument("--hidden_dim", type=int, default=4096)
 parser.add_argument("--eps", type=float, default=0.1)
 parser.add_argument("--depth_shift", type=int, default=0)
 parser.add_argument("--agg_func", type=str, default='sum')
-parser.add_argument("--checkpoint_path_lmpnn", type=str, default="ckpt/LMPNN/lmpnn-FB15K-237.ckpt")
+parser.add_argument("--checkpoint_path_lmpnn", type=str, default="ckpt/FB15k-237/LMPNN/lmpnn-FB15K-237.ckpt")
 
 
 def log_add_metric(add_log, mrr, h1, h3, h10, mul_mrr, h1_1, h3_3, h10_10):
@@ -552,7 +550,7 @@ if __name__ == "__main__":
 
     # * load the dataset, by default, we load the dataset to test
     print("loading dataset")
-    info_eval_queries = pd.read_csv(osp.join(args.task_folder, 'DNF_EFO2_23_4123166.csv'))
+    info_eval_queries = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
     if args.eval_queries:
         eval_queries = list(info_eval_queries.formula)
     else:
@@ -591,9 +589,12 @@ if __name__ == "__main__":
                         -1, f"evaluate test set", test_dataloader, nbp, reasoner)
             log = {eval_queries[i] : [two_marginal_logs, one_marginal_logs, no_marginal_logs]}
             all_log[eval_queries[i]] = log
-            with open('result/{}_result/cqd_test/all_logging_test_0_type{:0>4d}.pickle'.format(args.task_folder.split("/")[-1].split("-")[0], i), 'wb') as f:
+            if osp.exists(
+                    'EFO-1_log/{}_result/cqd_test'.format(args.task_folder.split("/")[-1].split("-")[0])) == False:
+                os.makedirs('EFO-1_log/{}_result/cqd_test'.format(args.task_folder.split("/")[-1].split("-")[0]))
+            with open('EFO-1_log/{}_result/cqd_test/all_logging_test_0_type{:0>4d}.pickle'.format(args.task_folder.split("/")[-1].split("-")[0], i), 'wb') as f:
                                 pickle.dump(log, f)
-        with open('result/{}_result/cqd_test/all_log.pickle'.format(args.task_folder.split("/")[-1].split("-")[0]), 'wb') as g:
+        with open('EFO-1_log/{}_result/cqd_test/all_log.pickle'.format(args.task_folder.split("/")[-1].split("-")[0]), 'wb') as g:
                     pickle.dump(all_log, g)
 
     elif args.reasoner == 'lmpnn':
@@ -667,7 +668,9 @@ if __name__ == "__main__":
                                             test_dataloader, nbp, reasoner)
                 log = {eval_queries[i] : [two_marginal_logs, one_marginal_logs, no_marginal_logs]}
                 all_log[eval_queries[i]] = log
-                with open('result/{}_result/lmpnn_test/all_logging_test_0_type{:0>4d}.pickle'.format(args.task_folder.split("/")[-1].split("-")[0], i), 'wb') as f:
+                if osp.exists('EFO-1_log/{}_result/lmpnn_test'.format(args.task_folder.split("/")[-1].split("-")[0])) == False:
+                    os.makedirs('EFO-1_log/{}_result/lmpnn_test'.format(args.task_folder.split("/")[-1].split("-")[0]))
+                with open('EFO-1_log/{}_result/lmpnn_test/all_logging_test_0_type{:0>4d}.pickle'.format(args.task_folder.split("/")[-1].split("-")[0], i), 'wb') as f:
                         pickle.dump(log, f)
-            with open('result/{}_result/lmpnn_test/all_logging.pickle'.format(args.task_folder.split("/")[-1].split("-")[0]), 'wb') as g:
+            with open('EFO-1_log/{}_result/lmpnn_test/all_logging.pickle'.format(args.task_folder.split("/")[-1].split("-")[0]), 'wb') as g:
                     pickle.dump(all_log, g)

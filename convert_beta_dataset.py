@@ -6,7 +6,7 @@ from typing import Dict
 
 from tqdm import tqdm
 
-from src.language import fof
+from src.language import foq
 from src.language.grammar import parse_lstr_to_lformula
 from src.structure.knowledge_graph_index import KGIndex
 from src.structure.knowledge_graph import KnowledgeGraph

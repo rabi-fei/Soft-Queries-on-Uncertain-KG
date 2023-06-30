@@ -13,6 +13,12 @@ We have utilized a CSP solver provided in the python-constraint package, please 
 pip install python-constraint
 ```
 
+We have also utilized the pytorch-geometric and networkx package, please install it by:
+```
+conda install pyg -c pyg
+conda install networkx
+```
+
 
 ### 1.1 Data Preparation
 
@@ -40,7 +46,8 @@ where the `test-type0000-EFOX-qaa.json` is used for the EFOX experiment, contain
 The `kgindex.json` and `train_kg.tsv` are the index file and the training graph for the knowledge graph respectively, 
 the `valid_kg.tsv` and `test_kg.tsv` are the validation graph and the test graph respectively. They are used for data generation.
 
-
+In each `test-type0000-EFOX-qaa.json`, it contains a dict with the key be the formula and the value is a list of query:
+{formula: [query1, query2, ...]}.
 
 
 
@@ -69,7 +76,9 @@ where each sub folder is the checkpoint for each model, and the name of the sub 
 ## 2. Sample the data yourself
 
 We have the powerful frame that supports several key functionalities for the task of complex query answering, 
-you can also sample the query by yourself
+you can also sample the query by yourself following the instruction. 
+
+If you have downloaded the EFO<sub>k</sub>-CQA dataset, you can also skip this section.
 
 
 
@@ -101,48 +110,45 @@ python data_preparation/sample_query.py --output_folder data/FB15k-237-EFOX-fina
 For query embedding method, including BetaE, LogicE, ConE, please run the following command:
 
 ```angular2html
-python QG_EFOX.py --config config/LogicE_FB15k-237.yaml
+python QG_EFOX.py --config config/LogicE_FB15k-237_EFOX.yaml
 ```
 
 which is an example for LogicE method on FB15k-237 dataset. The config file in the `config` folder is used to specify 
 the model and knowledge graph used in the experiment.
 
-### 3.2 Query graph method
+### 3.2 Query graph method: CQD + LMPNN
 
-For CQD and LMPNN, please run the following command:
+For LMPNN, note that you need to download the CQD checkpoint as well checkpoint of LMPNN since LMPNN is built upon CQD,
+please run the following command for LMPNN on FB15k-237 dataset:
 
 ```angular2html
 python evaluate_lmpnn.py \
   --task_folder data/FB15k-237-EFOX-final \
-  --checkpoint_path ckpt/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
-  --checkpoint_path_lmpnn ckpt/LMPNN/lmpnn-FB15K-237.ckpt
+  --checkpoint_path ckpt/FB15k-237/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
+  --checkpoint_path_lmpnn ckpt/FB15k-237/LMPNN/lmpnn-FB15K-237.ckpt \
   --embedding_dim 1000
 ```
 
-which is an example for LMPNN method on FB15k-237 dataset.
 
 For LMPNN on FB15k:
-
 ```angular2html
-python3 evaluate_lmpnn.py \
+python evaluate_lmpnn.py \
   --task_folder data/FB15k-EFOX-final \
-  --checkpoint_path ckpt/CQD/FB15k-model-rank-1000-epoch-100-1602520745.pt \ 
-  --checkpoint_path_lmpnn ckpt/LMPNN/lmpnn-FB15K.ckpt \
+  --checkpoint_path ckpt/FB15k/CQD/FB15k-model-rank-1000-epoch-100-1602520745.pt \
+  --checkpoint_path_lmpnn ckpt/FB15k/LMPNN/lmpnn-FB15K.ckpt \
   --hidden_dim 8192 
 ```
+
 
 For LMPNN on NELL:
 
 ```angular2html
 python3 evaluate_lmpnn.py \
   --task_folder data/NELL-EFOX-final \
-  --checkpoint_path ckpt/CQD/NELL-model-rank-1000-epoch-100-1602499096.pt \
-  --checkpoint_path_lmpnn ckpt/LMPNN/lmpnn-NELL.ckpt \
+  --checkpoint_path ckpt/NELL/CQD/NELL-model-rank-1000-epoch-100-1602499096.pt \
+  --checkpoint_path_lmpnn ckpt/NELL/LMPNN/lmpnn-NELL.ckpt \
   --hidden_dim 8192 \
-  --temp 0.1 \
-  --batch_size 512 \
-  --batch_size_eval_dataloader 8 \
-  --batch_size_eval_truth_value 1 \
+  --temp 0.1 
 ```
 
 For CQD on FB15k-237:
@@ -150,16 +156,16 @@ For CQD on FB15k-237:
 python evaluate_lmpnn.py \
   --task_folder data/FB15k-237-EFOX-final \
   --reasoner gradient \
-  --checkpoint_path ckpt/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt \
+  --checkpoint_path ckpt/FB15k-237/CQD/FB15k-237-model-rank-1000-epoch-100-1602508358.pt 
 ```
 
 For CQD on FB15k:
 
 ```angular2html
-python3 evaluate_lmpnn.py \
+python evaluate_lmpnn.py \
   --task_folder data/FB15k-EFOX-final \
   --reasoner gradient \
-  --checkpoint_path ckpt/CQD/FB15k-model-rank-1000-epoch-100-1602520745.pt \ 
+  --checkpoint_path ckpt/FB15k/CQD/FB15k-model-rank-1000-epoch-100-1602520745.pt \
   --hidden_dim 8192 
 ```
 
@@ -169,10 +175,10 @@ For CQD on NELL:
 python3 evaluate_lmpnn.py \
   --task_folder data/NELL-EFOX-final \
   --reasoner gradient \
-  --checkpoint_path ckpt/CQD/NELL-model-rank-1000-epoch-100-1602499096.pt \
-  --hidden_dim 8192 \
+  --checkpoint_path ckpt/NELL/CQD/NELL-model-rank-1000-epoch-100-1602499096.pt \
+  --hidden_dim 8192 
 ```
-
+### 3.3 Query graph method: FIT
 
 For FIT, please run the following command to run the expriment on FB15k-237: 
 
@@ -183,11 +189,11 @@ python solve_EFOX.py
 If you want to try to use FIT on KB15k or NELL, please run the following command:
 
 ```angular2html
-python solve_EFOX.py  --ckpt ckpt/FB15k/torch_0.005_0.001.ckpt --data_folder data/FB15k-EFOX-final
+python solve_EFOX.py  --ckpt ckpt/FB15k/FIT/torch_0.005_0.001.ckpt --data_folder data/FB15k-EFOX-final
 ```
 
 ```angular2html
-python solve_EFOX.py  --ckpt ckpt/NELL/torch_0.0002_0.001.ckpt --data_folder data/NELL-EFOX-final
+python solve_EFOX.py  --ckpt ckpt/NELL/FIT/torch_0.0002_0.001.ckpt --data_folder data/NELL-EFOX-final
 ```
 
 
