@@ -199,3 +199,26 @@ python solve_EFOX.py  --ckpt ckpt/NELL/FIT/torch_0.0002_0.001.ckpt --data_folder
 
 We note it may encounter out-of-memory error when running the FIT model on KB15k and NELL as mentioned in the paper, 
 which indicates that FIT face the challenge of scalability.
+
+## 4. Aggregate the final result.
+
+As there are numerous abstract query graphs (query types), we can aggregate the result of each query type to get the 
+final result.
+
+Please create a folder to record the benchmark result, just like the following:
+```
+result/FB15k-237_result
+-BetaE_test
+-LogicE_test
+-ConE_test
+-CQD_test
+-LMPNN_test
+-FIT_test
+```
+
+Then run the following code and get the presentation of the table, for knowledge graph FB15k-237, queries with one free variable: 
+```angular2html
+python construct_and_analyze.py --out_folder result --dataset FB15k-237 --model LogicE --variable 1 --construct 1
+```
+
+The `--variable` is used to specify the number of variable in the query graph, it can be set to 1 or 2.
