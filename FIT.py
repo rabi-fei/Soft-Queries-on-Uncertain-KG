@@ -196,7 +196,7 @@ def solve_conjunctive(positive_graph: KnowledgeGraph, negative_graph: KnowledgeG
                       now_candidate_set: dict, conjunctive_tnorm, existential_tnorm, now_variable, device,
                       max_enumeration):
     n_entity = relation_matrix[0].shape[0]
-    if not positive_graph.triples and not negative_graph.triples:
+    if not positive_graph.facts and not negative_graph.facts:
         return now_candidate_set[now_variable]
     if len(now_candidate_set) == 1:
         return now_candidate_set

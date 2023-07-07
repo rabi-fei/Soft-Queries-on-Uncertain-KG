@@ -36,21 +36,21 @@ def convert_kg_flder(input_folder, output_folder):
 
     print("process train kg")
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(input_folder, 'edges_as_id_train.tsv'),
+        quadruple_files=osp.join(input_folder, 'edges_as_id_train.tsv'),
         kgindex=kgidx)
     train_kg.dump(osp.join(output_folder, 'train_kg.tsv'))
     print("done")
 
     print("process valid kg")
     valid_kg = KnowledgeGraph.create(
-        triple_files=osp.join(input_folder, 'edges_as_id_valid.tsv'),
+        quadruple_files=osp.join(input_folder, 'edges_as_id_valid.tsv'),
         kgindex=kgidx)
     valid_kg.dump(osp.join(output_folder, 'valid_kg.tsv'))
     print("done")
 
     print("process test kg")
     test_kg = KnowledgeGraph.create(
-        triple_files=osp.join(input_folder, 'edges_as_id_test.tsv'),
+        quadruple_files=osp.join(input_folder, 'edges_as_id_test.tsv'),
         kgindex=kgidx)
     test_kg.dump(osp.join(output_folder, 'test_kg.tsv'))
     print("done")

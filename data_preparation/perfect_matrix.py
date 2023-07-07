@@ -39,7 +39,7 @@ if __name__ == "__main__":
     mode_list = ['train', 'valid', 'test']
     for mode in mode_list:
         kg = KnowledgeGraph.create(
-            triple_files=osp.join(args.data_folder, f'{mode}_kg.tsv'),
+            quadruple_files=osp.join(args.data_folder, f'{mode}_kg.tsv'),
             kgindex=kgidx)
         matrix_path = osp.join(args.output_folder, f'torch_{mode}_perfect.ckpt')
         sparse_matrix_list = create_perfect_matrix(kg)

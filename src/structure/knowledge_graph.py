@@ -22,13 +22,13 @@ class KnowledgeGraph:
     Fully tensorized
     """
 
-    def __init__(self, triples: List[Triple], kgindex: KGIndex, device='cpu', tensorize=False, **kwargs):
-        self.triples = triples
+    def __init__(self, facts: List[Triple], kgindex: KGIndex, device='cpu', tensorize=False, **kwargs):
+        self.facts = facts
         self.kgindex = kgindex
         self.num_entities: int = kgindex.num_entities
         self.num_relations: int = kgindex.num_relations
         self.device = device
-
+        self.hrt2p = defaultdict(set)
         self.hr2t = defaultdict(set)
         self.tr2h = defaultdict(set)
         self.r2ht = defaultdict(set)
@@ -40,7 +40,12 @@ class KnowledgeGraph:
         self.node2or = fixed_depth_nested_dict(int, 2)
         self.node2ir = fixed_depth_nested_dict(int, 2)
 
-        for h, r, t in self.triples:
+        for fact in self.facts:
+            if len(fact) == 3:
+                h, r, t = fact
+            else:
+                h, r, t, p = fact
+                self.hrt2p[(h, r, t)].add(p)
             self.hr2t[(h, r)].add(t)
             self.tr2h[(t, r)].add(h)
             self.r2ht[r].add((h, t))
@@ -65,7 +70,7 @@ class KnowledgeGraph:
         print("building the triple tensor")
         t0 = time.time()
         self.triple_tensor = torch.tensor(
-            self.triples,
+            self.facts,
             dtype=torch.long,
             device=self.device)
         print("use time", time.time() - t0)
@@ -100,36 +105,36 @@ class KnowledgeGraph:
         print("use time", time.time() - t0)
 
     @classmethod
-    def create(cls, triple_files, kgindex: KGIndex, **kwargs):
+    def create(cls, quadruple_files, kgindex: KGIndex, **kwargs):
         """
         Create the class
         TO be modified when certain parameters controls the triple_file
         triple files can be a list
         """
-        triples = []
-        for h, r, t in iter_triple_from_tsv(triple_files):
+        quadruples = []
+        for h, r, t, p in iter_triple_from_tsv(quadruple_files):
             assert h in kgindex.inverse_entity_id_to_name
             assert r in kgindex.inverse_relation_id_to_name
             assert t in kgindex.inverse_entity_id_to_name
-            triples.append((h, r, t))
+            quadruples.append((h, r, t, p))
 
-        return cls(triples,
+        return cls(quadruples,
                    kgindex=kgindex,
                    **kwargs)
 
     def dump(self, filename):
         with open(filename, 'wt') as f:
-            for h, r, t in self.triples:
+            for h, r, t in self.facts:
                 f.write(f"{h}\t{r}\t{t}\n")
 
     @classmethod
     def from_config(cls, config: KnowledgeGraphConfig):
-        return cls.create(triple_files=config.filelist,
+        return cls.create(quadruple_files=config.filelist,
                           kgindex=KGIndex.load(config.kgindex_file),
                           device=config.device)
 
     def get_triple_dataloader(self, **kwargs):
-        dataloader = DataLoader(self.triples, **kwargs)
+        dataloader = DataLoader(self.facts, **kwargs)
         return dataloader
 
     def get_entity_mask(self, entity_tensor):
@@ -303,7 +308,7 @@ class KnowledgeGraph:
 
 def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
              data_graph: KnowledgeGraph):
-    if not sub_graph.triples and not neg_sub_graph.triples:
+    if not sub_graph.facts and not neg_sub_graph.facts:
         return now_candidate_set, True
     if len(now_candidate_set) == 1:
         final_node = list(now_candidate_set)[0]
@@ -354,7 +359,7 @@ def csp_efox(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
     Returns a list of dict, example:
     [{'f1': 13536, 'f2': 11440}, {'f1': 11441, 'f2': 11440}, {'f1': 7000, 'f2': 11440}]
     """
-    if not sub_graph.triples and not neg_sub_graph.triples:
+    if not sub_graph.facts and not neg_sub_graph.facts:
         copy_candidate_set = deepcopy(now_candidate_set)
         for variable_name in now_candidate_set:
             if variable_name not in free_variable_list:
@@ -618,7 +623,7 @@ def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now
 
 
 def kg_remove_node(kg: KnowledgeGraph, node: int):
-    remove_kg_triple = [triple for triple in kg.triples if (node != triple[0] and node != triple[2])]
+    remove_kg_triple = [triple for triple in kg.facts if (node != triple[0] and node != triple[2])]
     new_kg = KnowledgeGraph(remove_kg_triple, kg.kgindex)
     return new_kg
 
@@ -830,7 +835,8 @@ def kg2matrix(kg: KnowledgeGraph):
     all_node_list = list(set(kg.node2or.keys()).union(set(kg.node2ir.keys())))
     node_num = len(all_node_list)
     kg_matrix = np.zeros((node_num, node_num), dtype=int)
-    for triple in kg.triples:
+    for quadruple in kg.facts:
+        triple = quadruple[:3]
         head, relation, tail = triple
         kg_matrix[head][tail] += 1
     return kg_matrix

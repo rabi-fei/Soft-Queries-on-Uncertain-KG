@@ -108,7 +108,7 @@ def solve_conjunctive_all(positive_graph: KnowledgeGraph, negative_graph: Knowle
                       now_candidate_set: dict, conjunctive_tnorm, existential_tnorm, now_variable_list, device,
                       max_enumeration, max_enumeration_total, all_candidate_set):
     n_entity = relation_matrix[0].shape[0]
-    if not positive_graph.triples and not negative_graph.triples:
+    if not positive_graph.facts and not negative_graph.facts:
         return all_candidate_set
     if len(now_candidate_set) == 1:
         return all_candidate_set

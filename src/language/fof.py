@@ -199,10 +199,14 @@ class BinaryPredicate(Formula):
     def __init__(self,
                  name: str,
                  head: Term,
-                 tail: Term) -> None:
+                 tail: Term,
+                 alpha: float,
+                 beta: float) -> None:
         self.name = name
         self.head = head
         self.tail = tail
+        self.alpha = alpha
+        self.beta = beta
         self.relation_id_list = []
         self.skolem_negation = False
 
@@ -234,7 +238,7 @@ class BinaryPredicate(Formula):
         return obj
 
     def lstr(self):
-        lstr = f"{self.name}({self.head.name},{self.tail.name})"
+        lstr = f"{self.name}({self.head.name},{self.tail.name},{self.alpha},{self.beta})"
         return lstr
 
     def get_predicates(self) -> Dict[str, 'BinaryPredicate']:
