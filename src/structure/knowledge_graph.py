@@ -29,6 +29,8 @@ class KnowledgeGraph:
         self.num_relations: int = kgindex.num_relations
         self.device = device
         self.hrt2p = defaultdict(set)
+        self.hr2tp = defaultdict(list)
+
         self.hr2t = defaultdict(set)
         self.tr2h = defaultdict(set)
         self.r2ht = defaultdict(set)
@@ -46,6 +48,7 @@ class KnowledgeGraph:
             else:
                 h, r, t, p = fact
                 self.hrt2p[(h, r, t)].add(p)
+                self.hr2tp[(h, r)].append((t, p))
             self.hr2t[(h, r)].add(t)
             self.tr2h[(t, r)].add(h)
             self.r2ht[r].add((h, t))
@@ -563,6 +566,14 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     for candidate_leaf in now_candidate_set[now_node]:
         single_node_successor = set(range(data_graph.num_entities))
         if h2t_relation:
+            target = defaultdict(float) 
+            for rel in h2t_relation:
+                for t, p in data_graph.hr2tp[(candidate_leaf, rel)]:
+                    if f"{now_node}_scores" in now_candidate_set:
+                        impt_value =  p + now_candidate_set[f"{now_node}_scores"][candidate_leaf]
+                    else:
+                        impt_value = p
+                    target[t] = impt_value
             h2t_constraint = set.intersection(*[data_graph.hr2t[(candidate_leaf, rel)] for rel in h2t_relation])
             single_node_successor = h2t_constraint
         if t2h_relation:
@@ -575,7 +586,16 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
             single_node_successor = single_node_successor.difference(t2h_negation_exclude)
         all_successor.update(single_node_successor)
-    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(all_successor)
+    if f"{to_change_node}_scores" not in now_candidate_set:
+        now_candidate_set[f"{to_change_node}_scores"] = target
+        now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(all_successor)
+    else:
+        for candidate in target.keys():
+            if candidate in now_candidate_set[f"{to_change_node}_scores"]:
+                now_candidate_set[f"{to_change_node}_scores"][candidate] += target[candidate]
+            else:
+                now_candidate_set[f"{to_change_node}_scores"][candidate] = target[candidate]
+        now_candidate_set[to_change_node] = now_candidate_set[to_change_node].union(all_successor)
     exist_answer = (len(now_candidate_set[to_change_node]) != 0)
     return now_candidate_set, exist_answer
 

@@ -277,10 +277,10 @@ if __name__ == "__main__":
         quadruple_files=osp.join(args.data_folder, 'train.txt'),
         kgindex=kgidx)
     valid_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(args.data_folder, 'valid.txt')],
+        quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt')],
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(args.data_folder, 'test.txt')],
+        quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt'), osp.join(args.data_folder, 'test.txt')],
         kgindex=kgidx)
     """
     for lstr in DNF_lstr2name:
