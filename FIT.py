@@ -25,7 +25,7 @@ def solve_EFO1(DNF_formula, relation_matrix, conjunctive_tnorm, existential_tnor
             for pred in sub_formula.predicate_dict.values():
                 pred_triples = (pred.head.name, sub_formula.pred_grounded_relation_id_dict[pred.name][index],
                                 pred.tail.name)
-                if pred.skolem_negation:
+                if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
                     sub_graph_edge.append(pred_triples)
@@ -274,7 +274,7 @@ def solve_EFO1_new(DNF_formula, relation_matrix, conjunctive_tnorm, existential_
             for pred in sub_formula.predicate_dict.values():
                 pred_triples = (pred.head.name, sub_formula.pred_grounded_relation_id_dict[pred.name][index],
                                 pred.tail.name)
-                if pred.skolem_negation:
+                if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
                     sub_graph_edge.append(pred_triples)

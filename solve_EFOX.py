@@ -12,14 +12,14 @@ from src.utils.data import QueryAnsweringSeqDataLoader_v2
 from src.utils.class_util import Writer
 from src.structure.knowledge_graph import KnowledgeGraph, kg_remove_node
 from src.structure.knowledge_graph_index import KGIndex
-from src.language.fof import ConjunctiveFormula, DisjunctiveFormula
+from src.language.foq import ConjunctiveFormula, DisjunctiveFormula
 from QG_EFOX import ranking2metrics, evaluate_batch_joint
 
 torch.autograd.set_detect_anomaly(True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
-parser.add_argument("--ckpt", type=str, default='ckpt/FB15k-237/torch_0.005_0.001.ckpt')
+parser.add_argument("--ckpt", type=str, default='ckpt/FB15k-237/FIT/torch_0.005_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=100)
 parser.add_argument("--cuda", type=int, default=1)
 parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFOX-final')
@@ -52,7 +52,7 @@ def solve_EFOX(conj_formula: ConjunctiveFormula, relation_matrix, conjunctive_tn
         for pred in conj_formula.predicate_dict.values():
             pred_triples = (pred.head.name, conj_formula.pred_grounded_relation_id_dict[pred.name][index],
                             pred.tail.name)
-            if pred.skolem_negation:
+            if pred.negated:
                 sub_graph_negation_edge.append(pred_triples)
             else:
                 sub_graph_edge.append(pred_triples)
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     print(args)
     if 'NELL' in args.data_folder:
         torch.set_default_dtype(torch.float16)
-    writer = Writer(case_name=args.ckpt, config=args, log_path='EFOX_results')
+    writer = Writer(case_name=args.ckpt, config=args, log_path='EFO-1_log')
     relation_matrix_list = torch.load(args.ckpt)
     n_relation, n_entity = len(relation_matrix_list), relation_matrix_list[0].shape[0]
     if args.cuda < 0:

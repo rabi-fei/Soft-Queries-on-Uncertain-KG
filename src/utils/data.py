@@ -6,7 +6,7 @@ from collections import OrderedDict
 import torch
 from torch.utils.data import DataLoader
 
-from src.language.fof import ConjunctiveFormula, DisjunctiveFormula, Disjunction
+from src.language.foq import ConjunctiveFormula, DisjunctiveFormula, Disjunction, EFO1Query
 from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, concate_iu_chains, \
     parse_lstr_to_disjunctive_formula
 
@@ -74,8 +74,8 @@ class QAACollator:
         self.lstr = lstr
 
     def __call__(self, batch_input):
-        lformula = parse_lstr_to_lformula(self.lstr)
-        fof = ConjunctiveFormula(lformula)
+        lformula = parse_lstr_to_lformula_v2(self.lstr)
+        fof = EFO1Query(lformula)
         for rsdict, easy_ans, hard_ans in batch_input:
             fof.append_qa_instances(rsdict, easy_ans, hard_ans)
         return fof
@@ -94,6 +94,7 @@ class QAACollator_v2:
 
 class QueryAnsweringSeqDataLoader:
     def __init__(self, qaafile, target_lstr=None, size_limit=-1, **dataloader_kwargs) -> None:
+        # FIXME: size_limit=-1 neglect the last one
         self.dataloader_kwargs = dataloader_kwargs
 
         with open(qaafile, 'rt') as f:

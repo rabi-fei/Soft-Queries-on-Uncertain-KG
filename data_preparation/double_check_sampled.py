@@ -20,7 +20,7 @@ from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
 from train_lmpnn import name2lstr, newlstr2name, index2newlstr, index2EFOX_minimal
 from src.language.grammar import parse_lstr_to_disjunctive_formula
-from src.language.fof import Disjunction, ConjunctiveFormula, DisjunctiveFormula
+from src.language.foq import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
                             QueryAnsweringSeqDataLoader_v2,
                             TrainRandomSentencePairDataLoader)
@@ -87,7 +87,7 @@ if __name__ == "__main__":
                 if 'f2' in lstr or args.use_constraint:
                     neglect_negation_list = []
                     for pred in fof.predicate_dict.values():
-                        if pred.skolem_negation:
+                        if pred.negated:
                             neglect_negation_list.append(pred.name)
                     assert len(neglect_negation_list) <= 1
                     if len(neglect_negation_list) != 1:
