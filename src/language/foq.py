@@ -1052,7 +1052,7 @@ class DisjunctiveFormula:
         grounded_dict, sub_answer, epfo_constraint = selected_sub_formula.sample_query(
             kg, strict_meaningful_negation, kg_matrix, max_ans)
         if not grounded_dict:
-            return None, None
+            return None, None, None
         for index in range(len(self.formula_list)):
             if index != selected_sub_formula_index:
                 grounded_dict = self.formula_list[index].sample_other_query(kg, grounded_dict)
