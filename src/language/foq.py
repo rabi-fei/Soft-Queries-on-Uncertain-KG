@@ -622,7 +622,7 @@ class ConjunctiveFormula:
             else:
                 assert False, "There should not be an existential node that only connected to negation edge"
         if strict_meaningful_negation and sub_graph_negation_edge and False in grounded_neg_pred.values():
-            return None, None
+            return None, None, None
         if answer_has_changed:
             return grounded_dict, None, full_answer
         else:
