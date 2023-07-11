@@ -611,11 +611,15 @@ class ConjunctiveFormula:
                         else:
                             guess_head = random.randint(0, data_kg.num_entities - 1)
                             guess_predicate = random.sample(data_kg.node2or[guess_head].keys(), 1)[0]
-                        if len(tail_candidate - data_kg.hr2t[(guess_head, guess_predicate)]) > 0:
+                        if len(tail_candidate - data_kg.hr2t[(guess_head, guess_predicate)]) > 0 and data_kg.hr2t[(guess_head, guess_predicate)].intersection(tail_candidate):
                             grounded_dict[now_head] = guess_head
                             grounded_dict[now_predicate] = guess_predicate
                             grounded_neg_pred[now_predicate] = True
                             node2index[now_tail] = len(node2index)
+                            full_answer[now_head] = guess_head
+                            for candidate in full_answer[now_tail].keys():
+                                if candidate not in data_kg.hr2t[(guess_head, guess_predicate)]:
+                                    full_answer[now_tail][candidate] += 1- data_kg.hrt2p[(now_head, now_predicate, candidate)]
                             break
                     else:
                         guess_head = random.randint(0, data_kg.num_entities - 1)
@@ -738,7 +742,8 @@ class ConjunctiveFormula:
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
         if initialization:
             for term_name in initialization:
-                now_term_candidate[term_name] = initialization[term_name].intersection(now_term_candidate[term_name])
+                if "scores" not in term_name:
+                    now_term_candidate[term_name] = initialization[term_name].intersection(now_term_candidate[term_name])
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
