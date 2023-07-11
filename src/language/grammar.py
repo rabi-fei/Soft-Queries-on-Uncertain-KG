@@ -170,29 +170,18 @@ def parse_lstr_to_lformula_v2(lstr: str) -> Formula:
             alpha, beta = float(alpha), float(beta)
             if predicate_name.isnumeric():
                 predicate_id = int(predicate_name)
-<<<<<<< HEAD
-                predicate = BinaryPredicate(name="predicate_by_id",
-                                            head=term1,
-                                            tail=term2,
-                                            alpha = alpha,
-                                            beta = beta)
-                predicate.relation_id_list.append(predicate_id)
-            else:
-                predicate = BinaryPredicate(name=predicate_name,
-                                            head=term1,
-                                            tail=term2,
-                                            alpha = alpha,
-                                            beta = beta)
-=======
                 predicate = Atomic(name="predicate_by_id",
-                                   head=term1,
-                                   tail=term2)
+                                            head=term1,
+                                            tail=term2,
+                                            alpha = alpha,
+                                            beta = beta)
                 predicate.relation_id_list.append(predicate_id)
             else:
                 predicate = Atomic(name=predicate_name,
-                                   head=term1,
-                                   tail=term2)
->>>>>>> ttorch_geometric
+                                            head=term1,
+                                            tail=term2,
+                                            alpha = alpha,
+                                            beta = beta)
             return predicate
     else:  # compute the connective in the outer
         assert _lstr[finish_index + 1] in "&|"
