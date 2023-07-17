@@ -637,8 +637,8 @@ def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now
             *[sub_graph.h2t[node], sub_graph.t2h[node], neg_sub_graph.h2t[node],
               neg_sub_graph.t2h[node]])
         if len(adjacency_node_set) == 1:
-            if not return_candidate[0] or len(now_candidate[node]) < return_candidate[2]:
-                return_candidate = [node, list(adjacency_node_set)[0], len(now_candidate[node])]
+            if not return_candidate[0] or now_candidate[node].getnnz() < return_candidate[2]:
+                return_candidate = [node, list(adjacency_node_set)[0], now_candidate[node].getnnz()] #FIX: lenghth of 
     return return_candidate[0], return_candidate[1]
 
 

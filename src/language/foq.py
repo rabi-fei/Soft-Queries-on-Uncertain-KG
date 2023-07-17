@@ -48,6 +48,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 
+from scipy.sparse import coo_array
 from src.language.tnorm import Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.structure.knowledge_graph import KnowledgeGraph, csp_efo1, ground_variable, kg2matrix, \
@@ -675,9 +676,12 @@ class ConjunctiveFormula:
         for term_name in self.term_dict:
             if self.has_term_grounded_entity_id_list(term_name) and \
                     len(self.term_grounded_entity_id_dict[term_name]) > index:
-                now_term_candidate[term_name] = {self.term_grounded_entity_id_dict[term_name][index]}
+                grounded_entity = self.term_grounded_entity_id_dict[term_name][index]
+                vector4grounded_entity = np.zeros(kg_graph.num_entities)
+                vector4grounded_entity[grounded_entity] = -1
+                now_term_candidate[term_name] = coo_array(vector4grounded_entity, (1,kg_graph.num_entities), dtype=np.float16)
             else:
-                now_term_candidate[term_name] = set(range(kg_graph.num_entities))
+                now_term_candidate[term_name] = coo_array((1,kg_graph.num_entities), dtype=np.float16)
             if 'f' in term_name:
                 free_variable_list.append(term_name)
         free_variable_list.sort()
@@ -712,7 +716,7 @@ class ConjunctiveFormula:
         """
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
-        if len(free_variable_list) == 1 or return_full_match:
+        if len(free_variable_list) == 1 or return_full_match: 
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
             if return_full_match:
                 to_return_dict = answer_dict if exist_answer else defaultdict(set)
