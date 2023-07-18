@@ -8,6 +8,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from scipy.sparse import coo_array
 
 from src.utils.config import KnowledgeGraphConfig
 from .knowledge_graph_index import KGIndex
@@ -30,6 +31,8 @@ class KnowledgeGraph:
         self.device = device
         self.hrt2p = defaultdict(set)
         self.hr2tp = defaultdict(list)
+        self.tr2hp = defaultdict(list)
+        self.ht2ab = defaultdict(tuple)
 
         self.hr2t = defaultdict(set)
         self.tr2h = defaultdict(set)
@@ -45,10 +48,14 @@ class KnowledgeGraph:
         for fact in self.facts:
             if len(fact) == 3:
                 h, r, t = fact
-            else:
+            elif len(fact) == 4:
                 h, r, t, p = fact
                 self.hrt2p[(h, r, t)].add(p)
                 self.hr2tp[(h, r)].append((t, p))
+                self.tr2hp[(h, r)].append((t, p))
+            elif len(fact) == 5:
+                h, r, t, alpha, beta = fact
+                self.ht2ab[h, r, t] = (alpha, beta)
             self.hr2t[(h, r)].add(t)
             self.tr2h[(t, r)].add(h)
             self.r2ht[r].add((h, t))
@@ -550,9 +557,9 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     node_pair, reverse_node_pair = (now_node, to_change_node), (to_change_node, now_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
-    all_successor = set()
-    if len(now_candidate_set[now_node]) == data_graph.num_entities:  # Special speed up for whole set.
-        if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1:
+    all_successor = coo_array((1, data_graph.num_entities), dtype=np.float16)
+    if now_candidate_set[now_node].getnnz() == data_graph.num_entities:  # Special speed up for whole set.
+        if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1: #TODO: Fix when meet this situation!
             if len(h2t_relation) == 1:
                 now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
                     data_graph.r2t[list(h2t_relation)[0]])
@@ -563,40 +570,41 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
                 pass  # Do nothing because it is negation.
             exist_answer = (len(now_candidate_set[to_change_node]) != 0)
             return now_candidate_set, exist_answer
-    for candidate_leaf in now_candidate_set[now_node]:
-        single_node_successor = set(range(data_graph.num_entities))
+    for candidate_leaf in now_candidate_set[now_node].col:
+        single_node_successor = coo_array((1, data_graph.num_entities), dtype=np.float16)
         if h2t_relation:
             target = defaultdict(float) 
+#            for rel in h2t_relation:
+#                for t, p in data_graph.hr2tp[(candidate_leaf, rel)]:
+#                    if f"{now_node}_scores" in now_candidate_set:
+#                        impt_value =  p + now_candidate_set[f"{now_node}_scores"][candidate_leaf]
+#                    else:
+#                        impt_value = p
+#                    target[t] = impt_value
             for rel in h2t_relation:
-                for t, p in data_graph.hr2tp[(candidate_leaf, rel)]:
-                    if f"{now_node}_scores" in now_candidate_set:
-                        impt_value =  p + now_candidate_set[f"{now_node}_scores"][candidate_leaf]
-                    else:
-                        impt_value = p
-                    target[t] = impt_value
-            h2t_constraint = set.intersection(*[data_graph.hr2t[(candidate_leaf, rel)] for rel in h2t_relation])
-            single_node_successor = h2t_constraint
+                tp = np.array(data_graph.hr2tp[(candidate_leaf, rel)])
+                alpha, beta = sub_graph.ht2ab[(now_node, rel, to_change_node)]
+                single_node_successor += beta * coo_array((tp[:,1], (np.zeros(len(tp[:,0])), tp[:,0])), shape=(1,data_graph.num_entities))
+                single_node_successor = coo_array(single_node_successor)
         if t2h_relation:
-            t2h_constraint = set.intersection(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_relation])
-            single_node_successor = single_node_successor.intersection(t2h_constraint)
+            for rel in t2h_relation:
+                hp = np.array(data_graph.tr2hp[(candidate_leaf, rel)])
+                alpha, beta = sub_graph.ht2ab[{to_change_node, rel, now_node}]
+                single_node_successor += coo_array((hp[:,1], (np.zeros(len(hp[:,0])), hp[:,0])), shape=(1,data_graph.num_entities))
+                single_node_successor = coo_array(single_node_successor)
+#            t2h_constraint = set.intersection(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_relation])
+#            single_node_successor = single_node_successor.intersection(t2h_constraint)
         if h2t_negation:
             h2t_negation_exclude = set.union(*[data_graph.hr2t[(candidate_leaf, rel)] for rel in h2t_negation])
             single_node_successor = single_node_successor.difference(h2t_negation_exclude)
         if t2h_negation:
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
             single_node_successor = single_node_successor.difference(t2h_negation_exclude)
-        all_successor.update(single_node_successor)
-    if f"{to_change_node}_scores" not in now_candidate_set:
-        now_candidate_set[f"{to_change_node}_scores"] = target
-        now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(all_successor)
-    else:
-        for candidate in target.keys():
-            if candidate in now_candidate_set[f"{to_change_node}_scores"]:
-                now_candidate_set[f"{to_change_node}_scores"][candidate] += target[candidate]
-            else:
-                now_candidate_set[f"{to_change_node}_scores"][candidate] = target[candidate]
-        now_candidate_set[to_change_node] = now_candidate_set[to_change_node].union(all_successor)
-    exist_answer = (len(now_candidate_set[to_change_node]) != 0)
+        all_successor += single_node_successor
+        all_successor = coo_array(all_successor)
+
+    now_candidate_set[to_change_node] = coo_array(now_candidate_set[to_change_node] + all_successor)
+    exist_answer = (now_candidate_set[to_change_node].getnnz() != 0)
     return now_candidate_set, exist_answer
 
 
@@ -637,7 +645,11 @@ def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now
             *[sub_graph.h2t[node], sub_graph.t2h[node], neg_sub_graph.h2t[node],
               neg_sub_graph.t2h[node]])
         if len(adjacency_node_set) == 1:
-            if not return_candidate[0] or now_candidate[node].getnnz() < return_candidate[2]:
+            if now_candidate[node].getnnz() == 0:
+                now_candidate_num = now_candidate[node].shape[1]
+            else:
+                now_candidate_num = now_candidate[node].getnnz()
+            if not return_candidate[0] or now_candidate_num < return_candidate[2] or "s" in node:
                 return_candidate = [node, list(adjacency_node_set)[0], now_candidate[node].getnnz()] #FIX: lenghth of 
     return return_candidate[0], return_candidate[1]
 
@@ -675,7 +687,7 @@ def cut_node_sub_problem(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGr
                                             data_graph)
     if sub_exist_answer:
         sub_answer[to_cut_node] = cut_node_candidate_set
-        if len(cut_node_candidate_set) != 1:  # In this case, the reason to cut is leaf node, we double check the ans.
+        if cut_node_candidate_set.getnnz() != 1:  # In this case, the reason to cut is leaf node, we double check the ans.TODO:FIX it1
             assert len(adjacency_node_set) == 1
             adjacency_node = list(adjacency_node_set)[0]
             extended_answer, exist_answer = node_pair_filtering(adjacency_node, to_cut_node, sub_graph, neg_sub_graph,
