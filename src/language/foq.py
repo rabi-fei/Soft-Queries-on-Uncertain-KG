@@ -523,7 +523,7 @@ class ConjunctiveFormula:
             negation_pred_list = [negation_edge[1] for negation_edge in sub_graph_negation_edge]
             full_answer = self.deterministic_query_set(now_index, data_kg, negation_pred_list, True)
             if full_answer and (max_answer_size is None
-                                or max([len(full_answer[free]) for free in free_variable_list]) <= max_answer_size):
+                                or max([full_answer[free].getnnz() for free in free_variable_list]) <= max_answer_size):
                 proper_answer_got = True
             else:
                 self.pop_relation_and_symbols(now_index, grounded_dict)
@@ -531,8 +531,9 @@ class ConjunctiveFormula:
             if len(free_variable_list) == 1:
                 free_variable = free_variable_list[0]
                 epfo_answer_tuple = set()
-                for ans in full_answer[free_variable]:
-                    epfo_answer_tuple.add((ans,))
+                answers = np.concatenate((full_answer[free_variable].col[:,None], full_answer[free_variable].data[:,None],), axis=1)
+                for ans in answers:
+                    epfo_answer_tuple.add((int(ans[0]), ans[1]))
             else:
                 epfo_answer_tuple = self.deterministic_query_set_with_initialization(
                     now_index, data_kg, negation_pred_list, False, full_answer)
@@ -583,14 +584,14 @@ class ConjunctiveFormula:
                 if now_head in node2index:  # Tail is ungrounded anchor node
                     head_candidate = full_answer[now_head]
                     for now_try_time in range(10):
-                        if len(head_candidate) > 1:
-                            to_delete_head = random.sample(head_candidate, 1)[0]
+                        if head_candidate.getnnz() > 1:
+                            to_delete_head = random.sample(head_candidate.col.tolist(), 1)[0]
                             guess_predicate = random.sample(data_kg.node2or[to_delete_head].keys(), 1)[0]
                             guess_tail = random.sample(data_kg.hr2t[(to_delete_head, guess_predicate)], 1)[0]
                         else:
                             guess_tail = random.randint(0, data_kg.num_entities - 1)
                             guess_predicate = random.sample(data_kg.node2ir[guess_tail].keys(), 1)[0]
-                        if len(head_candidate - data_kg.tr2h[(guess_tail, guess_predicate)]) > 0:
+                        if len(set(head_candidate.col) - data_kg.tr2h[(guess_tail, guess_predicate)]) > 0:
                             grounded_dict[now_tail] = guess_tail
                             grounded_dict[now_predicate] = guess_predicate
                             grounded_neg_pred[now_predicate] = True
@@ -696,7 +697,8 @@ class ConjunctiveFormula:
         skip_predicate = [] if not skip_predicate else skip_predicate
         for pred in self.predicate_dict.values():
             if pred.name not in skip_predicate:
-                pred_triples = (pred.head.name, self.pred_grounded_relation_id_dict[pred.name][index], pred.tail.name)
+                pred_triples = (pred.head.name, self.pred_grounded_relation_id_dict[pred.name][index], pred.tail.name, \
+                                 pred.alpha, pred.beta)
                 if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
@@ -746,8 +748,7 @@ class ConjunctiveFormula:
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
         if initialization:
             for term_name in initialization:
-                if "scores" not in term_name:
-                    now_term_candidate[term_name] = initialization[term_name].intersection(now_term_candidate[term_name])
+                now_term_candidate[term_name] = coo_array(initialization[term_name] + now_term_candidate[term_name])
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
