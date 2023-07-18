@@ -52,7 +52,7 @@ class KnowledgeGraph:
                 h, r, t, p = fact
                 self.hrt2p[(h, r, t)].add(p)
                 self.hr2tp[(h, r)].append((t, p))
-                self.tr2hp[(h, r)].append((t, p))
+                self.tr2hp[(t, r)].append((h, p))
             elif len(fact) == 5:
                 h, r, t, alpha, beta = fact
                 self.ht2ab[h, r, t] = (alpha, beta)
@@ -589,7 +589,7 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
         if t2h_relation:
             for rel in t2h_relation:
                 hp = np.array(data_graph.tr2hp[(candidate_leaf, rel)])
-                alpha, beta = sub_graph.ht2ab[{to_change_node, rel, now_node}]
+                alpha, beta = sub_graph.ht2ab[(to_change_node, rel, now_node)]
                 single_node_successor += coo_array((hp[:,1], (np.zeros(len(hp[:,0])), hp[:,0])), shape=(1,data_graph.num_entities))
                 single_node_successor = coo_array(single_node_successor)
 #            t2h_constraint = set.intersection(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_relation])
