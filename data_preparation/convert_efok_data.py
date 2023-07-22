@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--data_folder", type=str, default='data/FB15k-EFO1')
-parser.add_argument("--output_folder", type=str, default='data/FB15k-EFOX-final')
+parser.add_argument("--data_folder", type=str, default='data/FB15k-237-EFO1ex')
+parser.add_argument("--output_folder", type=str, default='data/FB15k-237-EFO1ex')
 
 formula_correspondence = {
     'r1(s1,f)': 'r1(s1,f1)',
@@ -50,8 +50,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     for mode in ['train', 'valid', 'test']:
-        old_data_file = osp.join(args.data_folder, f'{mode}-qaa.json')
-        new_data_file = osp.join(args.output_folder, f'{mode}-qaa.json')
+        old_data_file = osp.join(args.data_folder, f'{mode}_qaa.json')
+        new_data_file = osp.join(args.output_folder, f'{mode}_qaa.json')
         with open(old_data_file, 'rt') as f:
             old_data = json.load(f)
         new_data = defaultdict(list)
