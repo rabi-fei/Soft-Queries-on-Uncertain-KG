@@ -680,9 +680,9 @@ class ConjunctiveFormula:
                 grounded_entity = self.term_grounded_entity_id_dict[term_name][index]
                 vector4grounded_entity = np.zeros(kg_graph.num_entities)
                 vector4grounded_entity[grounded_entity] = -1
-                now_term_candidate[term_name] = coo_array(vector4grounded_entity, (1,kg_graph.num_entities), dtype=np.float16)
+                now_term_candidate[term_name] = coo_array(vector4grounded_entity, (1,kg_graph.num_entities))
             else:
-                now_term_candidate[term_name] = coo_array((1,kg_graph.num_entities), dtype=np.float16)
+                now_term_candidate[term_name] = coo_array((1,kg_graph.num_entities))
             if 'f' in term_name:
                 free_variable_list.append(term_name)
         free_variable_list.sort()

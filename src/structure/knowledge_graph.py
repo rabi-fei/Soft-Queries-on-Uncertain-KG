@@ -8,7 +8,7 @@ from copy import deepcopy
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from scipy.sparse import coo_array
+from scipy.sparse import coo_array, csr_array
 
 from src.utils.config import KnowledgeGraphConfig
 from .knowledge_graph_index import KGIndex
@@ -557,21 +557,31 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     node_pair, reverse_node_pair = (now_node, to_change_node), (to_change_node, now_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
-    all_successor = coo_array((1, data_graph.num_entities), dtype=np.float16)
-    if now_candidate_set[now_node].getnnz() == data_graph.num_entities:  # Special speed up for whole set.
-        if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1: #TODO: Fix when meet this situation!
-            if len(h2t_relation) == 1:
-                now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
-                    data_graph.r2t[list(h2t_relation)[0]])
-            elif len(t2h_relation) == 1:
-                now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
-                    data_graph.r2h[list(t2h_relation)[0]])
-            else:
-                pass  # Do nothing because it is negation.
-            exist_answer = (len(now_candidate_set[to_change_node]) != 0)
-            return now_candidate_set, exist_answer
-    for candidate_leaf in now_candidate_set[now_node].col:
-        single_node_successor = coo_array((1, data_graph.num_entities), dtype=np.float16)
+
+    if "s" in now_node:
+        candidate_set = set(now_candidate_set[now_node].col)
+    else:
+        if now_candidate_set[now_node].getnnz() == 0:  # Special speed up for whole set.
+            if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1: #TODO: Fix when meet this situation!
+                if len(h2t_relation) == 1:
+                    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
+                        data_graph.r2t[list(h2t_relation)[0]])
+                elif len(t2h_relation) == 1:
+                    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
+                        data_graph.r2h[list(t2h_relation)[0]])
+                else:
+                    pass  # Do nothing because it is negation.
+                exist_answer = (len(now_candidate_set[to_change_node]) != 0)
+                return now_candidate_set, exist_answer
+        else:
+            candidate_set = set.union(
+                    *[data_graph.r2h[r] for r in h2t_relation] + [data_graph.r2t[r] for r in t2h_relation]
+                    )
+    single_node_successor = csr_array((len(candidate_set), data_graph.num_entities))
+    index = -1
+    for candidate_leaf in candidate_set:
+        index += 1
+        record_value = 0 if "s" in now_node else now_candidate_set[now_node].tocsr()[0, candidate_leaf]
         if h2t_relation:
             target = defaultdict(float) 
 #            for rel in h2t_relation:
@@ -582,10 +592,16 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
 #                        impt_value = p
 #                    target[t] = impt_value
             for rel in h2t_relation:
-                tp = np.array(data_graph.hr2tp[(candidate_leaf, rel)])
                 alpha, beta = sub_graph.ht2ab[(now_node, rel, to_change_node)]
-                single_node_successor += beta * coo_array((tp[:,1], (np.zeros(len(tp[:,0])), tp[:,0])), shape=(1,data_graph.num_entities))
-                single_node_successor = coo_array(single_node_successor)
+                if data_graph.hr2tp[(candidate_leaf, rel)]:
+                    tp = np.array(data_graph.hr2tp[(candidate_leaf, rel)])
+                    indices, value = tp[:,0], tp[:,1]
+                else:
+                    continue
+                single_node_successor[np.array([index]),:] += csr_array(
+                                    (beta * value + record_value, (np.zeros(len(indices)), indices)), 
+                                    shape=(1,data_graph.num_entities)
+                                                )
         if t2h_relation:
             for rel in t2h_relation:
                 hp = np.array(data_graph.tr2hp[(candidate_leaf, rel)])
@@ -600,10 +616,10 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
         if t2h_negation:
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
             single_node_successor = single_node_successor.difference(t2h_negation_exclude)
-        all_successor += single_node_successor
-        all_successor = coo_array(all_successor)
 
-    now_candidate_set[to_change_node] = coo_array(now_candidate_set[to_change_node] + all_successor)
+    single_node_successor = single_node_successor.max(axis=0).tocoo()
+
+    now_candidate_set[to_change_node] = coo_array(single_node_successor + now_candidate_set[to_change_node])
     exist_answer = (now_candidate_set[to_change_node].getnnz() != 0)
     return now_candidate_set, exist_answer
 
