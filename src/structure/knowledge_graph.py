@@ -577,7 +577,13 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
             candidate_set = set.union(
                     *[data_graph.r2h[r] for r in h2t_relation] + [data_graph.r2t[r] for r in t2h_relation]
                     )
-    single_node_successor = csr_array((len(candidate_set), data_graph.num_entities))
+    single_node_successor = csr_array((len(candidate_set)+1, data_graph.num_entities))
+    if "s" not in now_node:
+        initial_vecotor = now_candidate_set[now_node].data.max() * np.ones(data_graph.num_entities)
+        single_node_successor[-1, :] = csr_array(
+                                    (initial_vecotor, (np.zeros(len(initial_vecotor)), np.arange(data_graph.num_entities))), 
+                                    shape=(1,data_graph.num_entities)
+                                                )
     index = -1
     for candidate_leaf in candidate_set:
         index += 1
@@ -617,7 +623,7 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
             single_node_successor = single_node_successor.difference(t2h_negation_exclude)
 
-    single_node_successor = single_node_successor.max(axis=0).tocoo()
+    single_node_successor = single_node_successor.max(axis=0)
 
     now_candidate_set[to_change_node] = coo_array(single_node_successor + now_candidate_set[to_change_node])
     exist_answer = (now_candidate_set[to_change_node].getnnz() != 0)
