@@ -315,6 +315,14 @@ class KnowledgeGraph:
     def get_non_neightbor_triples_by_tail(self, entities, k) -> RaggedBatch:
         return self._get_non_neightbor_triples(entities, k=k, reverse=True)
 
+def update_now_candidate_set(now_candidate_set):
+        now_term_candidate = defaultdict(set)
+        for node in now_candidate_set:
+            if len(now_candidate_set[node].col):
+                now_term_candidate[node] = set(now_candidate_set[node].col)
+            else:
+                now_term_candidate[node] = set(now_candidate_set[node].col)
+        return now_term_candidate
 
 def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
              data_graph: KnowledgeGraph):
@@ -331,7 +339,8 @@ def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
                                                     now_candidate_set, data_graph)
         return answer, exist_answer
     else:
-        before_topology_set = node_filter(sub_graph, now_candidate_set, data_graph)
+        now_candidate_set_ = update_now_candidate_set(now_candidate_set)
+        before_topology_set = node_filter(sub_graph, now_candidate_set_, data_graph)
         topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
         while before_topology_set != topology_filtered_set:
             before_topology_set = topology_filtered_set
@@ -504,7 +513,7 @@ def cut_node_final_answer(to_cut_node, adjacency_node_set, sub_graph: KnowledgeG
 def node_filter(sub_graph, now_candidate_set, data_graph):  # negation is useless here.
     for node in sub_graph.node2or:
         for out_edge in sub_graph.node2or[node]:
-            now_candidate_set[node] = now_candidate_set[node].intersection(data_graph.r2h[out_edge])
+            now_candidate_set[node] = now_candidate_set[node].union(data_graph.r2h[out_edge])
             '''
             if sub_graph.node2or[node][out_edge] > 1:
                 for data_node in data_graph.r2h[out_edge]:
@@ -514,7 +523,7 @@ def node_filter(sub_graph, now_candidate_set, data_graph):  # negation is useles
             '''
     for node in sub_graph.node2ir:
         for in_edge in sub_graph.node2ir[node]:
-            now_candidate_set[node] = now_candidate_set[node].intersection(data_graph.r2t[in_edge])
+            now_candidate_set[node] = now_candidate_set[node].union(data_graph.r2t[in_edge])
             '''
             if sub_graph.node2ir[node][in_edge] > 1:
                 for data_node in data_graph.r2h[in_edge]:
