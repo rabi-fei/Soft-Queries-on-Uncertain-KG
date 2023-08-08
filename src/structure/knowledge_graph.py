@@ -318,10 +318,9 @@ class KnowledgeGraph:
 def update_now_candidate_set(now_candidate_set):
         now_term_candidate = defaultdict(set)
         for node in now_candidate_set:
-            if len(now_candidate_set[node].col):
-                now_term_candidate[node] = set(now_candidate_set[node].col)
-            else:
-                now_term_candidate[node] = set(now_candidate_set[node].col)
+            if "domain" in node or "f" in node:
+                continue
+            now_term_candidate[node] = set(now_candidate_set[node].col)
         return now_term_candidate
 
 def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
@@ -333,6 +332,7 @@ def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
         exist_answer = bool(now_candidate_set[final_node])
         return now_candidate_set, exist_answer
     now_leaf_node, adjacency_node = find_leaf_node(sub_graph, neg_sub_graph, now_candidate_set)
+    #TODO: the situation when f is cutted
     if now_leaf_node:  # If there exists leaf node in the query graph, always possible to shrink into a sub_problem.
         adjacency_node_set = {adjacency_node}
         answer, exist_answer = cut_node_sub_problem(now_leaf_node, adjacency_node_set, sub_graph, neg_sub_graph,
@@ -340,11 +340,7 @@ def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
         return answer, exist_answer
     else:
         now_candidate_set_ = update_now_candidate_set(now_candidate_set)
-        before_topology_set = node_filter(sub_graph, now_candidate_set_, data_graph)
-        topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
-        while before_topology_set != topology_filtered_set:
-            before_topology_set = topology_filtered_set
-            topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
+        topology_filtered_set = node_filter(sub_graph, now_candidate_set_, data_graph)
         fixed_node, exist_answer = check_candidate_set(topology_filtered_set)
         if not exist_answer:
             return None, False
@@ -355,20 +351,18 @@ def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
                                                         now_candidate_set, data_graph)
             return answer, exist_answer
         else:  # Has to take a guess here.
-            guess_node = min(now_candidate_set.items(), key=lambda x: len(x[1]))[0]
-            collect_guess_ans = defaultdict(set)
-            for candidate in now_candidate_set[guess_node]:
-                new_candidate_set = deepcopy(now_candidate_set)
-                new_candidate_set[guess_node] = {candidate}
+            guess_node = min(now_candidate_set_.items(), key=lambda x: len(x[1]))[0]
+            collect_guess_ans = []
+            for candidate in now_candidate_set_[guess_node]:
+                new_candidate_set_ = deepcopy(now_candidate_set)
+                new_candidate_set_[f"{guess_node}_domain"] = {candidate}
                 adjacency_node_set = set.union(*[sub_graph.h2t[guess_node], sub_graph.t2h[guess_node],
                                                  neg_sub_graph.h2t[guess_node], neg_sub_graph.t2h[guess_node]])
                 answer, exist_answer = cut_node_sub_problem(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                            new_candidate_set, data_graph)
+                                                            new_candidate_set_, data_graph)
                 if exist_answer:
-                    collect_guess_ans[guess_node].add(candidate)
-                    for sub_node in answer:
-                        collect_guess_ans[sub_node].update(answer[sub_node])
-            exist_final_answer = bool(collect_guess_ans[guess_node])
+                    collect_guess_ans.append(answer["f1"].toarray().squeeze())
+            exist_final_answer = np.array(collect_guess_ans).mean(axis=0)
             return collect_guess_ans, exist_final_answer
 
 
@@ -406,10 +400,6 @@ def csp_efox(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
         return answer, exist_answer
     else:
         before_topology_set = node_filter(sub_graph, now_candidate_set, data_graph)
-        topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
-        while before_topology_set != topology_filtered_set:
-            before_topology_set = topology_filtered_set
-            topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
         guess_node = min(now_candidate_set.items(), key=lambda x: len(x[1]))[0]   # Has to take a guess here.
         collect_guess_ans = []
         for candidate in now_candidate_set[guess_node]:
@@ -512,6 +502,8 @@ def cut_node_final_answer(to_cut_node, adjacency_node_set, sub_graph: KnowledgeG
 
 def node_filter(sub_graph, now_candidate_set, data_graph):  # negation is useless here.
     for node in sub_graph.node2or:
+        if "f" in node:
+            continue
         for out_edge in sub_graph.node2or[node]:
             now_candidate_set[node] = now_candidate_set[node].union(data_graph.r2h[out_edge])
             '''
@@ -522,6 +514,8 @@ def node_filter(sub_graph, now_candidate_set, data_graph):  # negation is useles
                         now_candidate_set[node].remove(data_node)
             '''
     for node in sub_graph.node2ir:
+        if "f" in node:
+            continue
         for in_edge in sub_graph.node2ir[node]:
             now_candidate_set[node] = now_candidate_set[node].union(data_graph.r2t[in_edge])
             '''
@@ -567,8 +561,8 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
 
-    if "s" in now_node:
-        candidate_set = set(now_candidate_set[now_node].col)
+    if f"{now_node}_domain" in now_candidate_set:
+        candidate_set = now_candidate_set[f"{now_node}_domain"]
     else:
         if now_candidate_set[now_node].getnnz() == 0:  # Special speed up for whole set.
             if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1: #TODO: Fix when meet this situation!
@@ -587,7 +581,7 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
                     *[data_graph.r2h[r] for r in h2t_relation] + [data_graph.r2t[r] for r in t2h_relation]
                     )
     single_node_successor = csr_array((len(candidate_set)+1, data_graph.num_entities))
-    if "s" not in now_node:
+    if f"{now_node}_domain" not in now_candidate_set:
         initial_vecotor = now_candidate_set[now_node].data.max() * np.ones(data_graph.num_entities)
         single_node_successor[-1, :] = csr_array(
                                     (initial_vecotor, (np.zeros(len(initial_vecotor)), np.arange(data_graph.num_entities))), 
@@ -616,13 +610,19 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
                 single_node_successor[np.array([index]),:] += csr_array(
                                     (beta * value + record_value, (np.zeros(len(indices)), indices)), 
                                     shape=(1,data_graph.num_entities)
-                                                )
+                )
         if t2h_relation:
             for rel in t2h_relation:
-                hp = np.array(data_graph.tr2hp[(candidate_leaf, rel)])
                 alpha, beta = sub_graph.ht2ab[(to_change_node, rel, now_node)]
-                single_node_successor += coo_array((hp[:,1], (np.zeros(len(hp[:,0])), hp[:,0])), shape=(1,data_graph.num_entities))
-                single_node_successor = coo_array(single_node_successor)
+                if data_graph.tr2hp[(candidate_leaf, rel)]:
+                    hp = np.array(data_graph.tr2hp[(candidate_leaf, rel)])
+                    indices, value = hp[:,0], hp[:,1]
+                else:
+                    continue
+                single_node_successor[np.array([index]),:] += csr_array(
+                                    (beta * value + record_value, (np.zeros(len(indices)), indices)), 
+                                    shape=(1,data_graph.num_entities)
+                )
 #            t2h_constraint = set.intersection(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_relation])
 #            single_node_successor = single_node_successor.intersection(t2h_constraint)
         if h2t_negation:
@@ -668,7 +668,9 @@ def node_pair_correspondence(now_node, to_change_node, sub_graph: KnowledgeGraph
 
 def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate):
     """
-    Find a leaf node with least possible candidate.
+    Find a leaf node with least possible candidate. 
+    First return constant if it exists.
+    only return f when no other leaf!
     """
     return_candidate = [None, None, 0]
     for node in now_candidate:
@@ -680,8 +682,13 @@ def find_leaf_node(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now
                 now_candidate_num = now_candidate[node].shape[1]
             else:
                 now_candidate_num = now_candidate[node].getnnz()
-            if not return_candidate[0] or now_candidate_num < return_candidate[2] or "s" in node:
-                return_candidate = [node, list(adjacency_node_set)[0], now_candidate[node].getnnz()] #FIX: lenghth of 
+            if "s" in node:
+                return node, list(adjacency_node_set)[0]
+            if "f" in node and not return_candidate[0]:
+                return_candidate = [node, list(adjacency_node_set)[0], now_candidate[node].getnnz()] 
+            if "e" in node:
+                if not return_candidate[0] or "f" in return_candidate[0] or now_candidate_num < return_candidate[2]:
+                    return_candidate = [node, list(adjacency_node_set)[0], now_candidate[node].getnnz()] #FIX: lenghth of 
     return return_candidate[0], return_candidate[1]
 
 
@@ -708,24 +715,18 @@ def cut_node_sub_problem(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGr
     for adjacency_node in adjacency_node_set:
         new_candidate_set, adj_exist_ans = node_pair_filtering(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
                                                                new_candidate_set, data_graph)
-        all_adj_exist_ans = adj_exist_ans and all_adj_exist_ans
+        all_adj_exist_ans = adj_exist_ans or all_adj_exist_ans
     if not all_adj_exist_ans:
         return None, False
     new_sub_graph, new_sub_neg_graph = kg_remove_node(sub_graph, to_cut_node), \
                                        kg_remove_node(neg_sub_graph, to_cut_node)
     cut_node_candidate_set = new_candidate_set.pop(to_cut_node)
+    if f"{to_cut_node}_domain" in new_candidate_set:
+        new_candidate_set.pop(f"{to_cut_node}_domain")
     sub_answer, sub_exist_answer = csp_efo1(new_sub_graph, new_sub_neg_graph, new_candidate_set,
                                             data_graph)
     if sub_exist_answer:
-        sub_answer[to_cut_node] = cut_node_candidate_set
-        if cut_node_candidate_set.getnnz() != 1:  # In this case, the reason to cut is leaf node, we double check the ans.TODO:FIX it1
-            assert len(adjacency_node_set) == 1
-            adjacency_node = list(adjacency_node_set)[0]
-            extended_answer, exist_answer = node_pair_filtering(adjacency_node, to_cut_node, sub_graph, neg_sub_graph,
-                                                                sub_answer, data_graph)
-            return extended_answer, exist_answer
-        else:
-            return sub_answer, True
+        return sub_answer, sub_exist_answer
     else:
         return None, False
 
