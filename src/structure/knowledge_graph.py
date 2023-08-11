@@ -564,29 +564,32 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     if f"{now_node}_domain" in now_candidate_set:
         candidate_set = now_candidate_set[f"{now_node}_domain"]
     else:
-        if now_candidate_set[now_node].getnnz() == 0:  # Special speed up for whole set.
-            if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1: #TODO: Fix when meet this situation!
-                if len(h2t_relation) == 1:
-                    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
-                        data_graph.r2t[list(h2t_relation)[0]])
-                elif len(t2h_relation) == 1:
-                    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
-                        data_graph.r2h[list(t2h_relation)[0]])
-                else:
-                    pass  # Do nothing because it is negation.
-                exist_answer = (len(now_candidate_set[to_change_node]) != 0)
-                return now_candidate_set, exist_answer
-        else:
-            candidate_set = set.union(
+#        if now_candidate_set[now_node].getnnz() == 0:  # Special speed up for whole set.
+#            if len(h2t_relation) + len(t2h_relation) + len(h2t_negation) + len(t2h_negation) == 1: #TODO: Fix when meet this situation!
+#                if len(h2t_relation) == 1:
+#                    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
+#                        data_graph.r2t[list(h2t_relation)[0]])
+#                elif len(t2h_relation) == 1:
+#                    now_candidate_set[to_change_node] = now_candidate_set[to_change_node].intersection(
+#                        data_graph.r2h[list(t2h_relation)[0]])
+#                else:
+#                    pass  # Do nothing because it is negation.
+#                exist_answer = (len(now_candidate_set[to_change_node]) != 0)
+#                return now_candidate_set, exist_answer
+#        else:
+        candidate_set = set.union(
                     *[data_graph.r2h[r] for r in h2t_relation] + [data_graph.r2t[r] for r in t2h_relation]
                     )
     single_node_successor = csr_array((len(candidate_set)+1, data_graph.num_entities))
     if f"{now_node}_domain" not in now_candidate_set:
-        initial_vecotor = now_candidate_set[now_node].data.max() * np.ones(data_graph.num_entities)
-        single_node_successor[-1, :] = csr_array(
-                                    (initial_vecotor, (np.zeros(len(initial_vecotor)), np.arange(data_graph.num_entities))), 
-                                    shape=(1,data_graph.num_entities)
-                                                )
+        if len(now_candidate_set[now_node].data):
+            initial_vecotor = now_candidate_set[now_node].data.max() * np.ones(data_graph.num_entities)
+            single_node_successor[-1, :] = csr_array(
+                                        (initial_vecotor, (np.zeros(len(initial_vecotor)), np.arange(data_graph.num_entities))), 
+                                        shape=(1,data_graph.num_entities)
+                                                    )
+        else:
+            single_node_successor[-1, :] = csr_array((1,data_graph.num_entities))
     index = -1
     for candidate_leaf in candidate_set:
         index += 1
