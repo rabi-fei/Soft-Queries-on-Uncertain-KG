@@ -22,7 +22,7 @@ from src.utils.data import QueryAnsweringSeqDataLoader
 
 torch.autograd.set_detect_anomaly(True)
 
-from convert_beta_dataset import beta_lstr2name
+#from convert_beta_dataset import beta_lstr2name
 
 # lstr2name = {parse_lstr_to_lformula(k).lstr: v for k, v in beta_lstr2name.items()}
 

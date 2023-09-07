@@ -163,20 +163,29 @@ def parse_lstr_to_lformula_v2(lstr: str) -> Formula:
             assert _lstr[-1] == ')'
             predicate_name, right_lstr = _lstr.split('(')
             right_lstr = right_lstr[:-1]
-            term1_name, term2_name = right_lstr.split(',')
+            right_lstr_list = right_lstr.split(',')
+            if len(right_lstr_list) > 2:
+                term1_name, term2_name, alpha, beta = right_lstr.split(',')
+            else:
+                term1_name, term2_name = right_lstr.split(',')
+                alpha, beta = "0.0", "1.0"
 
             term1 = parse_term(term1_name)
             term2 = parse_term(term2_name)
             if predicate_name.isnumeric():
                 predicate_id = int(predicate_name)
                 predicate = Atomic(name="predicate_by_id",
-                                   head=term1,
-                                   tail=term2)
+                                            head=term1,
+                                            tail=term2,
+                                            alpha = alpha,
+                                            beta = beta)
                 predicate.relation_id_list.append(predicate_id)
             else:
                 predicate = Atomic(name=predicate_name,
-                                   head=term1,
-                                   tail=term2)
+                                            head=term1,
+                                            tail=term2,
+                                            alpha = alpha,
+                                            beta = beta)
             return predicate
     else:  # compute the connective in the outer
         assert _lstr[finish_index + 1] in "&|"

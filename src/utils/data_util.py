@@ -5,18 +5,20 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 
-def _iter_triple_from_tsv(triple_file, to_int, check_size):
-    with open(triple_file, 'rt') as f:
+def _iter_triple_from_tsv(quadruple_file, to_int, check_size):
+    with open(quadruple_file, 'rt') as f:
         for line in f.readlines():
-            triple = line.strip().split()
+            quadruple = line.strip().split()
             if check_size:
-                assert len(triple) == check_size
+                assert len(quadruple) == check_size
             if to_int:
-                triple = [int(t) for t in triple]
-            yield triple
+                uncertain_value = float(quadruple[-1])
+                quadruple = [int(t) for t in quadruple[:3]]
+                quadruple.append(uncertain_value)
+            yield quadruple
 
 
-def iter_triple_from_tsv(triple_files, to_int: bool=True, check_size: int=3):
+def iter_triple_from_tsv(triple_files, to_int: bool=True, check_size: int=4):
     if isinstance(triple_files, list):
         return chain(*[iter_triple_from_tsv(tfile) for tfile in triple_files])
     elif isinstance(triple_files, str):
