@@ -323,8 +323,56 @@ class KnowledgeGraph:
         return self._get_non_neightbor_triples(entities, k=k, reverse=True)
 
 
+def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
+             data_graph: KnowledgeGraph):
+    if not sub_graph.triples and not neg_sub_graph.triples:
+        return now_candidate_set, True
+    if len(now_candidate_set) == 1:
+        final_node = list(now_candidate_set)[0]
+        exist_answer = bool(now_candidate_set[final_node])
+        return now_candidate_set, exist_answer
+    now_leaf_node, adjacency_node = find_leaf_node(sub_graph, neg_sub_graph, now_candidate_set)
+    if now_leaf_node:  # If there exists leaf node in the query graph, always possible to shrink into a sub_problem.
+        adjacency_node_set = {adjacency_node}
+        answer, exist_answer = cut_node_sub_problem(now_leaf_node, adjacency_node_set, sub_graph, neg_sub_graph,
+                                                    now_candidate_set, data_graph)
+        return answer, exist_answer
+    else:
+        before_topology_set = node_filter(sub_graph, now_candidate_set, data_graph)
+        topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
+        while before_topology_set != topology_filtered_set:
+            before_topology_set = topology_filtered_set
+            topology_filtered_set = topology_filter(sub_graph, neg_sub_graph, before_topology_set, data_graph)
+        fixed_node, exist_answer = check_candidate_set(topology_filtered_set)
+        if not exist_answer:
+            return None, False
+        if fixed_node:
+            adjacency_node_set = set.union(*[sub_graph.h2t[fixed_node], sub_graph.t2h[fixed_node],
+                                             neg_sub_graph.h2t[fixed_node], neg_sub_graph.t2h[fixed_node]])
+            answer, exist_answer = cut_node_sub_problem(fixed_node, adjacency_node_set, sub_graph, neg_sub_graph,
+                                                        now_candidate_set, data_graph)
+            return answer, exist_answer
+        else:  # Has to take a guess here.
+            guess_node = min(now_candidate_set.items(), key=lambda x: len(x[1]))[0]
+            collect_guess_ans = defaultdict(set)
+            for candidate in now_candidate_set[guess_node]:
+                new_candidate_set = deepcopy(now_candidate_set)
+                new_candidate_set[guess_node] = {candidate}
+                adjacency_node_set = set.union(*[sub_graph.h2t[guess_node], sub_graph.t2h[guess_node],
+                                                 neg_sub_graph.h2t[guess_node], neg_sub_graph.t2h[guess_node]])
+                answer, exist_answer = cut_node_sub_problem(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
+                                                            new_candidate_set, data_graph)
+                if exist_answer:
+                    collect_guess_ans[guess_node].add(candidate)
+                    for sub_node in answer:
+                        collect_guess_ans[sub_node].update(answer[sub_node])
+            exist_final_answer = bool(collect_guess_ans[guess_node])
+            return collect_guess_ans, exist_final_answer
+
+
 def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
              data_graph: KnowledgeGraph):
+    # solve soft queries.
     if not sub_graph.facts and not neg_sub_graph.facts:
         return now_candidate_set, True
     if len(now_candidate_set) == 1:
@@ -341,7 +389,7 @@ def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_
                                                         now_candidate_set, data_graph)
             return answer, exist_answer
     else:
-        if sub_graph.facts[0][3]:
+        if int(sub_graph.facts[0][3][:-1]):
             now_candidate_set_ = {}
             for node, candidate in now_candidate_set.items():
                 if now_candidate_set[node].getnnz():
@@ -374,18 +422,16 @@ def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_
                 answer, exist_answer = cut_node_sub_problem_soft(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
                                                             new_candidate_set, data_graph)
                 if exist_answer:
-                    if sub_graph.facts[0][3]:
+                    if int(sub_graph.facts[0][3][:-1]):
                         collect_guess_ans.append(answer["f1"].toarray().squeeze() * guess_node_candidate_value[candidate])
                     else:
                         collect_guess_ans.append(answer["f1"].toarray().squeeze() + guess_node_candidate_value[candidate])
             final_answer = np.array(collect_guess_ans).max(axis=0)
+            cols = np.nonzero(final_answer)[0]
+            final_answer = coo_array((final_answer[cols], (np.zeros(cols.shape[0]), cols)), shape=(1, final_answer.shape[0]))
             exist_final_answer = final_answer.max() > 0
-            return final_answer, exist_final_answer
+            return {"f1": final_answer}, exist_final_answer
 
-
-def csp_soft_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
-             data_graph: KnowledgeGraph):
-    pass
 
 
 def csp_efox(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
@@ -551,6 +597,7 @@ def node_filter(sub_graph, now_candidate_set, data_graph):  # negation is useles
 
 
 def node_filter_v2(sub_graph, now_candidate_set, data_graph):  # negation is useless here.
+    #For zero requirements
     for node in sub_graph.node2or:
         for out_edge in sub_graph.node2or[node]:
             now_candidate_set[node] = now_candidate_set[node].union(data_graph.r2h[out_edge])
@@ -640,12 +687,21 @@ def node_pair_filtering(now_node, to_change_node, sub_graph: KnowledgeGraph, neg
     return now_candidate_set, exist_answer
 
 
-def node_pair_cutting_v2(now_node, to_change_node, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
+def merge_indice_value(tp):#or hp
+    indice2value = defaultdict(list)
+    for indice, value in tp:
+        indice2value[indice].append(value)
+    merge_indice2map = {indice:np.mean(indice2value[indice]) for indice in indice2value}
+    array_list = [np.array(list(merge_indice2map.keys())), np.array(list(merge_indice2map.values()))]
+    tp = np.vstack((array_list[0], array_list[1]))
+    return tp
+
+def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph,
                         now_candidate_set, data_graph: KnowledgeGraph) -> Tuple[defaultdict, bool]:
     """
     Use now node to change to_change node
     """
-    necess_flag = True if sub_graph.facts[0][3] else False
+    necess_flag = True if int(sub_graph.facts[0][3][:-1]) else False
     kg_num = data_graph.num_entities
     node_pair, reverse_node_pair = (now_node, to_change_node), (to_change_node, now_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
@@ -655,7 +711,7 @@ def node_pair_cutting_v2(now_node, to_change_node, sub_graph: KnowledgeGraph, ne
     else:
         Leaf_values = now_candidate_set[now_node].toarray().squeeze()
         now_node_candidate_list = [data_graph.r2h[r] for r in h2t_relation] + [data_graph.r2t[r] for r in t2h_relation]
-        if necess_flag == 0.0:
+        if not necess_flag:
             now_node_candidate = set.union(*now_node_candidate_list)
         else:
             if len(now_candidate_set[now_node].col) > 0: # change the intitial values
@@ -677,36 +733,38 @@ def node_pair_cutting_v2(now_node, to_change_node, sub_graph: KnowledgeGraph, ne
         if h2t_relation:
             for rel in h2t_relation:
                 node_pair_ = sub_graph.ht2rab[(now_node, to_change_node)]
-                alpha, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                alpha = data_graph.r2percentile[f"{rel}"][1]
                 if (candidate_leaf, rel) not in data_graph.hr2tp:
                     continue
-                tp = np.array(data_graph.hr2tp[(candidate_leaf, rel)])
+                tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
                 if necess_flag:
-                    tp = tp[tp[:, 1]>=alpha]
-                    indices, value = tp[:,0], tp[:,1]
+                    tp = tp[:, tp[1]>=alpha]
+                    indices, value = tp[0], tp[1]
                     candidate_values *= csr_array(
                                     (np.exp(beta * value) , (np.zeros(len(indices)), indices)), 
                                     shape=(1,kg_num))
                 else:
-                    indices, value = tp[:,0], tp[:,1]
+                    indices, value = tp[0], tp[1]
                     candidate_values += csr_array(
                                     (beta * value , (np.zeros(len(indices)), indices)), 
                                     shape=(1,kg_num))
         if t2h_relation:
             for rel in t2h_relation:
                 node_pair_ = sub_graph.ht2rab[(to_change_node, now_node)]
-                alpha, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                alpha = data_graph.r2percentile[f"{rel}"][1]
                 if (candidate_leaf, rel) not in data_graph.tr2hp:
                     continue
-                hp = np.array(data_graph.tr2hp[(candidate_leaf, rel)])
+                hp = merge_indice_value(data_graph.tr2hp[(candidate_leaf, rel)])
                 if necess_flag:
-                    hp = hp[hp[:, 1]>=alpha]
-                    indices, value = hp[:,0], hp[:,1]
+                    hp = hp[hp[1]>=alpha]
+                    indices, value = hp[0], hp[1]
                     candidate_values *= csr_array(
                                     (np.exp(beta * value), (np.zeros(len(indices)), indices)), 
                                     shape=(1, kg_num))
                 else:
-                    indices, value = tp[:,0], tp[:,1]
+                    indices, value = tp[0], tp[1]
                     candidate_values += csr_array(
                                     (beta * value , (np.zeros(len(indices)), indices)), 
                                     shape=(1, kg_num))
@@ -716,20 +774,22 @@ def node_pair_cutting_v2(now_node, to_change_node, sub_graph: KnowledgeGraph, ne
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
                 alpha = data_graph.r2percentile[f"{rel}"][1]
                 tp_init = np.zeros(kg_num)
-                tp = np.array(data_graph.hr2tp[(candidate_leaf, rel)])
-                indices, value = tp[:,0], tp[:,1]
+                tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
+                indices, value = tp[0], tp[1]
                 tp_init[indices.astype(int)] = value
                 
                 if necess_flag:
                     filted_tp = (1 - tp_init) * ((1-tp_init) > alpha)
-                    indices, value = tp[:,0], tp[:,1]
+                    indices, value = tp[0], tp[1]
                     candidate_values *= csr_array(
                                     (np.exp(beta * filted_tp), (np.zeros(kg_num), np.arange(kg_num))), 
                                     shape=(1,kg_num))
                 else:
-                    indices, value = tp[:,0], tp[:,1]
+                    indices, value = tp[0], tp[1]
+                    all_value = np.zeros(kg_num)
+                    all_value[indices.astype(int)] = value
                     candidate_values += csr_array(
-                                    (beta * value + leaf_value, (np.zeros(len(indices)), indices)), 
+                                    (beta * (1-all_value) + leaf_value, (np.zeros(kg_num), np.arange(kg_num))), 
                                     shape=(1,kg_num))
         if t2h_negation:
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
@@ -746,8 +806,8 @@ def node_pair_cutting_v2(now_node, to_change_node, sub_graph: KnowledgeGraph, ne
             now_candidate_set[to_change_node] = coo_array(Candidate_values.max(axis=0) * now_candidate_set[to_change_node])
     else:
         if isinstance(now_candidate_set[now_node], set):
-            now_candidate_set[to_change_node] = coo_array(Candidate_values)
-        else:
+            now_candidate_set[to_change_node] = coo_array(Candidate_values + now_candidate_set[to_change_node])
+        else:#TODO:Wong compute!
             All_Candidate_values = csr_array((Candidate_values.shape[0]+1, Candidate_values.shape[1]))
             All_Candidate_values[np.arange(Candidate_values.shape[0]), :] = Candidate_values
             All_Candidate_values[[Candidate_values.shape[0]], :] = csr_array(
@@ -842,13 +902,41 @@ def check_candidate_set(candidate_set):
             fixed_node = node
     return fixed_node, True
 
+    
+def cut_node_sub_problem(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGraph,
+                         neg_sub_graph: KnowledgeGraph, now_candidate_set, data_graph: KnowledgeGraph):
+    new_candidate_set = copy.deepcopy(now_candidate_set)
+    all_adj_exist_ans = True
+    for adjacency_node in adjacency_node_set:
+        new_candidate_set, adj_exist_ans = node_pair_filtering(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
+                                                               new_candidate_set, data_graph)
+        all_adj_exist_ans = adj_exist_ans and all_adj_exist_ans
+    if not all_adj_exist_ans:
+        return None, False
+    new_sub_graph, new_sub_neg_graph = kg_remove_node(sub_graph, to_cut_node), \
+                                       kg_remove_node(neg_sub_graph, to_cut_node)
+    cut_node_candidate_set = new_candidate_set.pop(to_cut_node)
+    sub_answer, sub_exist_answer = csp_efo1(new_sub_graph, new_sub_neg_graph, new_candidate_set,
+                                            data_graph)
+    if sub_exist_answer:
+        sub_answer[to_cut_node] = cut_node_candidate_set
+        if len(cut_node_candidate_set) != 1:  # In this case, the reason to cut is leaf node, we double check the ans.
+            assert len(adjacency_node_set) == 1
+            adjacency_node = list(adjacency_node_set)[0]
+            extended_answer, exist_answer = node_pair_filtering(adjacency_node, to_cut_node, sub_graph, neg_sub_graph,
+                                                                sub_answer, data_graph)
+            return extended_answer, exist_answer
+        else:
+            return sub_answer, True
+    else:
+        return None, False
 
 def cut_node_sub_problem_soft(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGraph,
                          neg_sub_graph: KnowledgeGraph, now_candidate_set, data_graph: KnowledgeGraph):
     new_candidate_set = copy.deepcopy(now_candidate_set)
     all_adj_exist_ans = True
     for adjacency_node in adjacency_node_set:
-        new_candidate_set, adj_exist_ans = node_pair_cutting_v2(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
+        new_candidate_set, adj_exist_ans = node_pair_cutting_soft(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
                                                                new_candidate_set, data_graph)
         all_adj_exist_ans = adj_exist_ans and all_adj_exist_ans
     if not all_adj_exist_ans:
@@ -986,8 +1074,7 @@ def ground_variable(sample_matrix, data_matrix):
 
 def ground_variable_v2(sample_query, sample_matrix, path, data_matrix):
     """
-    This function does a extremely easy task: the graph contains multi edge but no edge type, M_ij = k means that there
-    is k edge form i to j.
+    For zero reqquirements, there is a path for reaoning chain. Other nodes are randomly select.
     """
     node_num = sample_matrix.shape[0]
     grounded_entities_list = [None for i in range(node_num)]
@@ -1013,8 +1100,7 @@ def ground_variable_v2(sample_query, sample_matrix, path, data_matrix):
 
 def ground_variable_v3(sample_query, sample_matrix, data_kg, index):
     """
-    This function does a extremely easy task: the graph contains multi edge but no edge type, M_ij = k means that there
-    is k edge form i to j.
+    For positive requirements, node assignment are connected with relation satifying the alpha-necessity.
     """
     if np.sum(sample_matrix) == 0:
         left_node_num = sample_matrix.shape[0]
@@ -1140,6 +1226,8 @@ def matrix_pair_filter_v2(node1, node2, candidate1_list, sample_query, sample_ma
 
 
 def ground_predicate_v3(grounded_entity_list: List, query_kg: KnowledgeGraph, data_kg: KnowledgeGraph):
+    # For positive requirements, the predcit of every pair meet the requirements
+    # Note. for multi-edge, the grounded predicate should be different.
     grounded_relation_dict = {}
     for (head, relation, tail, alpha, beta) in query_kg.facts:
         inner_relation_list = list(query_kg.ht2r[(head, tail)])
@@ -1155,14 +1243,12 @@ def ground_predicate_v3(grounded_entity_list: List, query_kg: KnowledgeGraph, da
                 chosed_r = {grounded_relation_dict[r] for r in query_kg.ht2r[head, tail] if r in grounded_relation_dict}
                 inner_relation_candidate = inner_relation_candidate.difference(chosed_r)
         inner_relation_choice = random.sample(inner_relation_candidate, 1)[0]
-        new_grounded_dict = {
-                relation: inner_relation_choice,
-                f"{relation}_necess": data_kg.r2percentile[f"{inner_relation_choice}"][1]
-                }
+        new_grounded_dict = {relation: inner_relation_choice}
         grounded_relation_dict.update(new_grounded_dict)
     return grounded_relation_dict
 
 def ground_predicate_v2(grounded_entity_list: List, path: List, query_kg: KnowledgeGraph, data_kg: KnowledgeGraph):
+    # For zero requirements, path is connected by relation, but other relations only connect the tail.
     path_pair = [(path[i], path[i+1]) for i in range(len(path)-1)]
     grounded_relation_dict = {}
     for (head, inner_relation, tail, alpha, beta) in query_kg.facts: #TODO: why data_keg is different with data_matrix.
@@ -1177,10 +1263,7 @@ def ground_predicate_v2(grounded_entity_list: List, path: List, query_kg: Knowle
                 chosed_r = {grounded_relation_dict[r] for r in query_kg.ht2r[head, tail] if r in grounded_relation_dict}
                 inner_relation_candidate = inner_relation_candidate.difference(chosed_r)
         inner_relation_choice = random.sample(inner_relation_candidate, 1)[0]
-        new_grounded_dict = {
-                inner_relation: inner_relation_choice,
-                f"{inner_relation}_necess": alpha
-                }
+        new_grounded_dict = {inner_relation: inner_relation_choice}
         grounded_relation_dict.update(new_grounded_dict)
     return grounded_relation_dict
 
