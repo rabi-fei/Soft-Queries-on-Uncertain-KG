@@ -163,18 +163,13 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
                 stored_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
                 fof.append_qa_instances(qa_dict)
                 now_index += 1
-                if sample_mode == 'train':
-                    if full_answer is None:
-                        full_answer = fof.formula_list[0].deterministic_query_set_with_initialization(
-                            now_index, full_kg, None, False, epfo_constraint)
-                    easy_answer = set()
-                else:
-                    if full_answer is None:
-                        full_answer = fof.formula_list[0].deterministic_query_set_with_initialization(
-                            now_index, full_kg, None, False, epfo_constraint)
-                    easy_answer = fof.formula_list[0].deterministic_query_set_with_initialization(
-                        now_index, part_kg, None, False, epfo_constraint)
-                if full_answer - easy_answer and (max_ans is None or len(full_answer - easy_answer) <= use_max_ans):
+
+                if full_answer is None:
+                    full_answer = fof.formula_list[0].deterministic_soft_query(
+                            now_index, full_kg, None, False)
+                easy_answer = fof.formula_list[0].deterministic_soft_query(
+                        now_index, part_kg, None, False)
+                if full_answer != easy_answer:
                     if random.random() < double_checking:
                         check_easy_ans = fof.deterministic_query(now_index, part_kg, 'solver')
                         check_full_ans = fof.deterministic_query(now_index, full_kg, 'solver')
@@ -187,9 +182,9 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
                         assert easy_answer == check_easy_ans, \
                             f"In {sample_mode}, the easy {fof.lstr, qa_dict, full_answer}, solver ans {check_full_ans}"
                     if sample_mode == 'train':
-                        new_query = [qa_dict, {f_str: list(full_answer)}, []]
+                        new_query = [qa_dict, {f"{f_str}_answers": list(full_answer.keys())}, {f"{f_str}_values": list(full_answer.values())}]
                     else:
-                        new_query = [qa_dict, {f_str: list(easy_answer)}, {f_str: list(full_answer - easy_answer)}]
+                        new_query = [qa_dict, {f"{f_str}_answers": list(full_answer.keys())}, {f"{f_str}_values": list(full_answer.values())}]
                     all_query_list.append(new_query)
                     pbar.update(1)
     return all_query_list, stored_qa_dict
@@ -229,6 +224,8 @@ if __name__ == "__main__":
     test_kg = KnowledgeGraph.create(
         quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt'), osp.join(args.data_folder, 'test.txt')],
         kgindex=kgidx)
+    train_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json'))
+    valid_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json'))
     test_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json')) #TODO: Consider differnent KG!
     """
     for lstr in DNF_lstr2name:

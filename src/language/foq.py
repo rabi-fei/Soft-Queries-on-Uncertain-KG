@@ -52,10 +52,10 @@ import torch
 
 from src.language.tnorm import Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
-from src.structure.knowledge_graph import KnowledgeGraph, csp_efo1_soft, ground_variable, ground_variable_v2, ground_variable_v3, kg2matrix, \
+from src.structure.knowledge_graph import KnowledgeGraph, csp_efo1, csp_efo1_soft, ground_variable, ground_variable_v2, ground_variable_v3, kg2matrix, \
     labeling_triples, label_triples_with_assign, ground_predicate_v2, ground_predicate_v3, csp_efox, candidate_set_to_ans
 from src.structure.knowledge_graph_index import KGIndex
-from FIT import solve_EFO1, solve_conjunctive
+from FIT import solve_EFO1, solve_conjunctive, solve_soft_EFO1
 
 
 # from src.utils.data import RaggexxdBatch
@@ -103,6 +103,25 @@ def recursion_update_ab(formula, append_dict):
     sub_formula_list = [formula.formula] if formula.op == "neg" else formula.formulas
     for sub_formula in sub_formula_list:
         recursion_update_ab(sub_formula, append_dict)
+
+
+def recursion_save_ab(formula, saved_dict):
+    if formula.op == "pred":
+        relation_necess = formula.alpha
+        saved_dict[formula.name] = relation_necess
+        return None
+    sub_formula_list = [formula.formula] if formula.op == "neg" else formula.formulas
+    for sub_formula in sub_formula_list:
+        recursion_save_ab(sub_formula, saved_dict)
+
+
+def recursion_back_ab(formula, saved_dict):
+    if formula.op == "pred":
+        formula.alpha = saved_dict[formula.name]
+        return None
+    sub_formula_list = [formula.formula] if formula.op == "neg" else formula.formulas
+    for sub_formula in sub_formula_list:
+        recursion_back_ab(sub_formula, saved_dict)
 
 class Lobject:
     op = "default"
@@ -497,7 +516,7 @@ class ConjunctiveFormula:
 
         We return two things, 1.the grounding dict, 2. the list of answer tuple
         """
-        grounded_dict = {}
+        grounded_dict, saved_a_dict = {}, {}
         sub_graph_edge, sub_graph_negation_edge, pos_graph_nodes, pos_graph_edge = [], [], set(), set()
         free_variable_list = list(self.free_variable_dict.keys())
         for pred in self.predicate_dict.values():
@@ -528,7 +547,7 @@ class ConjunctiveFormula:
         node_be_anchor = [True if 's' in index2node[index] else False for index in index2node]
         proper_answer_got = False
         while not proper_answer_got:
-            if np.all([r.alpha==0 for r in self.predicate_dict.values()]):
+            if np.all([int(r.alpha[:-1]) == 0 for r in self.predicate_dict.values()]):
                 graph = nx.from_numpy_array(connect_kg_matrix)
                 archor_nodes = [i for i in range(len(node_be_anchor)) if node_be_anchor[i]]
                 start_node = random.choices(archor_nodes)[0]
@@ -539,7 +558,7 @@ class ConjunctiveFormula:
                 while not exist_grounding:
                     grounded_entity_list, exist_grounding = ground_variable_v2(connected_kg, connect_kg_matrix, path, original_kg_matrix)
                 grounded_relation_dict = ground_predicate_v2(grounded_entity_list, path, sub_kg, data_kg)
-            elif np.all([isinstance(r.alpha, str) for r in self.predicate_dict.values()]):
+            elif np.all([int(r.alpha[:-1]) > 0 for r in self.predicate_dict.values()]):
                 grounded_entity_list, exist_grounding = ground_variable(connect_kg_matrix, original_kg_matrix)
                 grounded_entity_list, exist_grounding = ground_variable_v3(connected_kg, connect_kg_matrix, data_kg, index=[i for i in range(connected_kg.num_entities)])
                 while not exist_grounding:
@@ -552,7 +571,6 @@ class ConjunctiveFormula:
                                     for index in range(len(grounded_entity_list)) if node_be_anchor[index]}
             grounded_dict.update(grounded_relation_dict)
             grounded_dict.update(grounded_entity_dict)
-            recursion_update_ab(self.formula, grounded_dict)
             self.append_relation_and_symbols(grounded_dict)
             now_index = max([len(grounded) for grounded in self.term_grounded_entity_id_dict.values()]) - 1
             negation_pred_list = [negation_edge[1] for negation_edge in sub_graph_negation_edge]
@@ -566,9 +584,6 @@ class ConjunctiveFormula:
             if len(free_variable_list) == 1:
                 free_variable = free_variable_list[0]
                 epfo_answer_dict = full_answer[f"final_{free_variable}"]
-            else:
-                epfo_answer_dict = self.deterministic_query_set_with_initialization(
-                    now_index, data_kg, negation_pred_list, False, full_answer)
             self.pop_relation_and_symbols(now_index, grounded_dict)
         final_answer_tuple = deepcopy(epfo_answer_dict)
         answer_has_changed = False #TODO: how to sample negative edge for soft queries?
@@ -643,8 +658,7 @@ class ConjunctiveFormula:
                         guess_head = random.sample(data_kg.tr2h[(to_change_tail, guess_predicate)], 1)[0]
                         h_r = (guess_head, guess_predicate)
                         p = np.array(data_kg.hr2tp[h_r])[:, -1] #TODO: change the useful answers.
-                        if len(tail_candidate - data_kg.hr2t[h_r]) > 0 or \
-                            np.any(1 - p > data_kg.r2percentile[f"{guess_predicate}"][1]):
+                        if len(tail_candidate - data_kg.hr2t[h_r]) > 0:
                             grounded_dict[now_head] = guess_head
                             grounded_dict[now_predicate] = guess_predicate
                             grounded_neg_pred[now_predicate] = True
@@ -713,7 +727,7 @@ class ConjunctiveFormula:
         return now_term_candidate, free_variable_list
 
 
-    def construct_now_candidate_set_v2(self, index, kg_graph: KnowledgeGraph):
+    def construct_now_candidate_set_soft(self, index, kg_graph: KnowledgeGraph):
         now_term_candidate = defaultdict(set)
         free_variable_list = []
         for term_name in self.term_dict:
@@ -751,7 +765,7 @@ class ConjunctiveFormula:
         return sub_kg, neg_kg
 
 
-    def construct_query_graph_v2(self, index, skip_predicate: List = None) -> \
+    def construct_query_graph_soft(self, index, skip_predicate: List = None) -> \
             [KnowledgeGraph, KnowledgeGraph]:
         """
         Construct the query graph, for simplicity, it is split into two graphs, positive one and negative one.
@@ -816,8 +830,8 @@ class ConjunctiveFormula:
         The skip predicate is used in grounding the predicate, it can avoid creating new instance of Formula.
         The return full match is used in query sampling, if it is set to True, we use solve_EFO1 as the CSP problem.
         """
-        now_term_candidate, free_variable_list = self.construct_now_candidate_set_v2(index, kg_graph)
-        sub_kg, neg_kg = self.construct_query_graph_v2(index, skip_predicate)
+        now_term_candidate, free_variable_list = self.construct_now_candidate_set_soft(index, kg_graph)
+        sub_kg, neg_kg = self.construct_query_graph_soft(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
             answer_dict, exist_answer = csp_efo1_soft(sub_kg, neg_kg, now_term_candidate, kg_graph)
             nonzero_values, nonzero_index = answer_dict["f1"].data, answer_dict["f1"].col
@@ -826,7 +840,9 @@ class ConjunctiveFormula:
                 useful_values, useful_index, = sorted_values[-100:], sorted_index[-100:]
             else:
                 useful_values, useful_index, = sorted_values, sorted_index
-
+            if int(sub_kg.facts[0][3][:-1]) > 0:
+                useful_values = np.log(useful_values)
+            useful_values = np.round(useful_values, decimals=4)
             if return_full_match:
                 answer_dict.update({"final_f1": dict(zip(useful_index, useful_values))})
                 return answer_dict
@@ -845,6 +861,74 @@ class ConjunctiveFormula:
                     tuple_answer_set.add(tuple(new_ans))
             return tuple_answer_set
 
+
+    def deterministic_soft_query_brute_test(self, index, kg_graph: KnowledgeGraph, to_test):
+        #Brute solve soft queries, for testing csp solver.
+
+        def get_score_with_grouned_dict(grouned_dict, sub_kg, neg_kg, data_kg):
+            #All the nodes are grouned, directly get the score of the assigments.
+            score = 0
+            for facts in sub_kg.facts:
+                head, predict, tail, a, b = facts
+                h,  t = grouned_dict[head][0], grouned_dict[tail][0]
+                if (h, predict, t) in data_kg.hrt2p:
+                    p = np.mean(data_kg.hrt2p[(h, predict, t)]) 
+                else:
+                    p = 0
+                if int(a[:-1]) > 0:
+                    alpha = data_kg.r2percentile[f"{predict}"][1]
+                    if p >= alpha:
+                        score += float(b) * p
+                    else:
+                        score += - np.inf
+                else:
+                    if data_kg.hrt2p[(h, predict, t)]:
+                        score += float(b) * p
+
+            for facts in neg_kg.facts:
+                head, predict, tail, a, b = facts
+                h, t = grouned_dict[head][0], grouned_dict[tail][0]
+                if (h, predict, t) in data_kg.hrt2p:
+                    p = np.mean(data_kg.hrt2p[(h, predict, t)]) 
+                else:
+                    p = 0
+                if int(a[:-1]) > 0:
+                    if (1-p) >= alpha:
+                        score += float(b) * (1-p)
+                    else:
+                        score += - np.inf
+                else:
+                    score += float(b) * (1-p)
+            return score
+    
+        sub_kg, neg_kg = self.construct_query_graph_soft(index)
+        grouned_dict = {}
+        grouned_dict.update(self.term_grounded_entity_id_dict)
+        grouned_dict.update(self.pred_grounded_relation_id_dict)
+        
+        for grouned_free in to_test:
+            grouned_dict.update({"f1": [grouned_free]})
+            ungrouned_nodes = [key for key in grouned_dict if len(grouned_dict[key])==0]
+            if len(ungrouned_nodes) == 0:
+                score = get_score_with_grouned_dict(grouned_dict, sub_kg, neg_kg, kg_graph)
+            elif len(ungrouned_nodes) == 1:
+                scores = []
+                for e1 in range(kg_graph.num_entities):
+                    grouned_dict.update({"e1": [e1]})
+                    candi_score = get_score_with_grouned_dict(grouned_dict, sub_kg, neg_kg, kg_graph)
+                    scores.append(candi_score)
+                score = np.max(scores)
+                grouned_dict.update({"e1": []})
+            elif len(ungrouned_nodes) == 2:
+                from itertools import product
+                scores = []
+                for e1, e2 in product(range(kg_graph.num_entities), range(kg_graph.num_entities)):
+                    grouned_dict.update({"e1": [e1], "e2": [e2]})
+                    candi_score = get_score_with_grouned_dict(grouned_dict, sub_kg, neg_kg, kg_graph)
+                    scores.append(candi_score)
+                score = np.max(scores)
+                grouned_dict.update({"e1": [], "e2": []})
+            assert abs(score - to_test[grouned_free]) < 0.01
 
     def deterministic_query_set_with_initialization(self, index, kg_graph: KnowledgeGraph, skip_predicate: List = None,
                                 return_full_match: bool = False, initialization: Dict = None):
@@ -1169,7 +1253,7 @@ class DisjunctiveFormula:
     def sample_query(self, kg: KnowledgeGraph, strict_meaningful_negation: bool, kg_matrix=None, max_ans: int = None):
         selected_sub_formula_index = random.randint(0, len(self.formula_list) - 1)
         selected_sub_formula = self.formula_list[selected_sub_formula_index]
-        grounded_dict, sub_answer, epfo_constraint = selected_sub_formula.sample_query(
+        grounded_dict, sub_answer, epfo_intern = selected_sub_formula.sample_query(
             kg, strict_meaningful_negation, kg_matrix, max_ans)
         if not grounded_dict:
             return None, None, None
@@ -1177,9 +1261,9 @@ class DisjunctiveFormula:
             if index != selected_sub_formula_index:
                 grounded_dict = self.formula_list[index].sample_other_query(kg, grounded_dict)
         if len(self.formula_list) == 1:
-            return grounded_dict, sub_answer, epfo_constraint
+            return grounded_dict, sub_answer, epfo_intern
         else:
-            return grounded_dict, None, epfo_constraint
+            return grounded_dict, None, epfo_intern
 
     def deterministic_query(self, index, kg: Union[KnowledgeGraph, List], method: str = 'set', device='cpu'):
         if method == 'vec':
@@ -1190,6 +1274,19 @@ class DisjunctiveFormula:
         for sub_formula in self.formula_list:
             sub_answer = sub_formula.deterministic_query(index, kg, method)
             all_answer.update(sub_answer)
+        return all_answer
+
+    def deterministic_soft_query(self, index, kg: Union[KnowledgeGraph, List], method: str = 'set', device='cpu'):
+        if method == 'vec':
+            vec_ans = solve_soft_EFO1(self, kg, 'Godel', 'Godel', index, device, 1)
+            set_ans = {(ans,) for ans in range(len(vec_ans)) if vec_ans[ans] == 1}
+            return set_ans
+        all_answer, all_brute_answer = [], []
+        for sub_formula in self.formula_list:
+            sub_answer = sub_formula.deterministic_soft_query(index, kg)
+            brute_sub_answer = sub_formula.deterministic_soft_query_brute_test(index, kg, sub_answer)
+            all_answer.append(sub_answer)
+            all_brute_answer.append(brute_sub_answer)
         return all_answer
 
     @property
