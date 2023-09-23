@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import pickle
 import os
 import os.path as osp
 import random
@@ -19,13 +20,14 @@ from src.structure.geometric_graph import QueryGraph
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
+from src.structure.nbp_ukge import UKGE_rect_numpy
 from train_lmpnn import name2lstr, newlstr2name, lstr2name, DNF_lstr2name, EFOXlstr
 from src.language.grammar import parse_lstr_to_lformula, parse_lstr_to_lformula_v2, DNF_Transformation, concate_iu_chains, parse_lstr_to_disjunctive_formula
 from src.language.foq import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import QueryAnsweringSeqDataLoader, QueryAnsweringSeqDataLoader_v2
 
 
-data_folder = 'data/processed/ppi5k'
+data_folder = 'data/ppi5k'
 train_queries = list(name2lstr.values())
 query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
@@ -80,14 +82,15 @@ def test_deterministic_query(data_loader: QueryAnsweringSeqDataLoader_v2, kg: Kn
             print(f'batch formula of {fof.lstr} verified')
 
 
-def test_deterministic_query_instance(lstr, qa_dict, kg: KnowledgeGraph):
+def test_deterministic_query_instance(lstr, qa_dict, model,  kg: KnowledgeGraph):
     """
     Test the deterministic soft query by given an instance
     """
     fof_instance = parse_lstr_to_disjunctive_formula(lstr)
     fof_instance.append_qa_instances(qa_dict)
-    set_ans = fof_instance.deterministic_soft_query(0, kg)
+    ans = fof_instance.deterministic_soft_query(0, kg)
 
+    print("test")
 
 
 def test_sample_query(given_lstr, kg: KnowledgeGraph, meaningful_negation):
@@ -112,14 +115,18 @@ def test_query_graph(conj_formula):
 if __name__ == "__main__":
 
     kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
-    train_kg = KnowledgeGraph.create(
-        quadruple_files=osp.join(data_folder, 'train.txt'),
+    valid_kg = KnowledgeGraph.create(
+        quadruple_files=[osp.join(data_folder, 'train.tsv'), osp.join(data_folder, 'train.tsv')],
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(data_folder, 'train.txt'), osp.join(data_folder, 'valid.txt'), osp.join(data_folder, 'test.txt')],
+        quadruple_files=[osp.join(data_folder, 'train.tsv'), osp.join(data_folder, 'valid.tsv'), osp.join(data_folder, 'test.tsv')],
         kgindex=kgidx)
-    train_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json'))
+    valid_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json'))
     test_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json')) 
+    with open("checkpoints/ppi5k/params_numpy", "rb") as handle:
+        params_dict = pickle.load(handle)
+    model = UKGE_rect_numpy(params_dict["entity_embedding"].shape[1], params_dict["entity_embedding"].shape[0], params_dict["relation_embedding"].shape[0])
+    model.load_params(params_dict)
     """
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
@@ -145,9 +152,14 @@ if __name__ == "__main__":
 #    qa_dict = {'r1': 2, 'r2': 1, 'r3': 0, 's1': 2453, 's2': 2276}
 #    lstr = "(!(r1(s1,e1,50%,1.0)))&((r2(s2,e1,50%,1.0))&(r3(e1,f1,50%,1.0)))"
 
-    qa_dict = {'r1': 0, 'r2': 0, 'r3': 0, 'r4': 0, 'r5': 0, 's1': 1157, 's2': 1114}
-    lstr = "(r1(s1,e1,50%,1.0))&((r2(s2,e2,50%,1.0))&((r3(e1,e2,50%,1.0))&((r4(e1,f1,50%,1.0))&(r5(e2,f1,50%,1.0)))))"
-    test_deterministic_query_instance(lstr, qa_dict, test_kg)
+#    qa_dict = {'r1': 0, 'r2': 0, 'r3': 0, 'r4': 0, 'r5': 0, 's1': 1157, 's2': 1114}
+#    lstr = "(r1(s1,e1,50%,1.0))&((r2(s2,e2,50%,1.0))&((r3(e1,e2,50%,1.0))&((r4(e1,f1,50%,1.0))&(r5(e2,f1,50%,1.0)))))"
+#    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
+#    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
+
+    qa_dict ={'s1': 1932, 'r1': 0, 'r2': 0}
+    lstr = "(r1(s1,e1,25%,1.0))&(r2(e1,f1,25%,1.0))"
+    test_deterministic_query_instance(lstr, qa_dict, model, valid_kg)
 
 
 
