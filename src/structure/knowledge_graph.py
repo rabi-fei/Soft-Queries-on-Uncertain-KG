@@ -135,7 +135,7 @@ class KnowledgeGraph:
                    kgindex=kgindex,
                    **kwargs)
     def load_percentile(self, file_nmae):
-        with open('data/processed/ppi5k/percentile_25_50_75.json') as json_file:
+        with open(file_nmae) as json_file:
             self.r2percentile = json.load(json_file)
         
 
@@ -370,7 +370,7 @@ def csp_efo1(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candi
             return collect_guess_ans, exist_final_answer
 
 
-def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set: defaultdict,
+def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_candidate_set,
              data_graph: KnowledgeGraph):
     # solve soft queries.
     if not sub_graph.facts and not neg_sub_graph.facts:
@@ -701,7 +701,11 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
     """
     Use now node to change to_change node
     """
-    necess_flag = True if int(sub_graph.facts[0][3][:-1]) else False
+    necess_index = int(sub_graph.facts[0][3][:-1]) // 25 -1
+    if necess_index >= 0:
+        necess_flag = True 
+    else:
+         necess_flag = False
     kg_num = data_graph.num_entities
     node_pair, reverse_node_pair = (now_node, to_change_node), (to_change_node, now_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
@@ -734,62 +738,61 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
             for rel in h2t_relation:
                 node_pair_ = sub_graph.ht2rab[(now_node, to_change_node)]
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
-                alpha = data_graph.r2percentile[f"{rel}"][1]
+                alpha = data_graph.r2percentile[f"{rel}"][necess_index]
                 if (candidate_leaf, rel) not in data_graph.hr2tp:
+                    candidate_values *= 0 # for positive necess, don't need do something for zero necess
                     continue
                 tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
                 if necess_flag:
                     tp = tp[:, tp[1]>=alpha]
-                    indices, value = tp[0], tp[1]
+                    indices, values = tp[0], tp[1]
                     candidate_values *= csr_array(
-                                    (np.exp(beta * value) , (np.zeros(len(indices)), indices)), 
+                                    (np.exp(beta * values) , (np.zeros(len(indices)), indices)), 
                                     shape=(1,kg_num))
                 else:
-                    indices, value = tp[0], tp[1]
+                    indices, values = tp[0], tp[1]
                     candidate_values += csr_array(
-                                    (beta * value , (np.zeros(len(indices)), indices)), 
+                                    (beta * values , (np.zeros(len(indices)), indices)), 
                                     shape=(1,kg_num))
         if t2h_relation:
             for rel in t2h_relation:
                 node_pair_ = sub_graph.ht2rab[(to_change_node, now_node)]
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
-                alpha = data_graph.r2percentile[f"{rel}"][1]
+                alpha = data_graph.r2percentile[f"{rel}"][necess_index]
                 if (candidate_leaf, rel) not in data_graph.tr2hp:
+                    candidate_values *= 0 # for positive necess, don't need do something for zero necess
                     continue
                 hp = merge_indice_value(data_graph.tr2hp[(candidate_leaf, rel)])
                 if necess_flag:
-                    hp = hp[hp[1]>=alpha]
-                    indices, value = hp[0], hp[1]
+                    hp = hp[:, hp[1]>=alpha]
+                    indices, values = hp[0], hp[1]
                     candidate_values *= csr_array(
-                                    (np.exp(beta * value), (np.zeros(len(indices)), indices)), 
+                                    (np.exp(beta * values), (np.zeros(len(indices)), indices)), 
                                     shape=(1, kg_num))
                 else:
-                    indices, value = tp[0], tp[1]
+                    indices, values = tp[0], tp[1]
                     candidate_values += csr_array(
-                                    (beta * value , (np.zeros(len(indices)), indices)), 
+                                    (beta * values , (np.zeros(len(indices)), indices)), 
                                     shape=(1, kg_num))
         if h2t_negation:
             for rel in h2t_negation:
                 node_pair_ = neg_sub_graph.ht2rab[(now_node, to_change_node)]
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
-                alpha = data_graph.r2percentile[f"{rel}"][1]
-                tp_init = np.zeros(kg_num)
-                tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
-                indices, value = tp[0], tp[1]
-                tp_init[indices.astype(int)] = value
+                alpha = data_graph.r2percentile[f"{rel}"][necess_index]
+                all_values = np.zeros(kg_num)
+                if (candidate_leaf, rel) in data_graph.hr2tp:
+                    tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
+                    indices, values = tp[0], tp[1]
+                    all_values[indices.astype(int)] = values
                 
                 if necess_flag:
-                    filted_tp = (1 - tp_init) * ((1-tp_init) > alpha)
-                    indices, value = tp[0], tp[1]
+                    filted_tp = np.exp(beta * (1 - all_values)) * ((1-all_values) >= alpha)
                     candidate_values *= csr_array(
-                                    (np.exp(beta * filted_tp), (np.zeros(kg_num), np.arange(kg_num))), 
+                                    (filted_tp, (np.zeros(kg_num), np.arange(kg_num))), 
                                     shape=(1,kg_num))
                 else:
-                    indices, value = tp[0], tp[1]
-                    all_value = np.zeros(kg_num)
-                    all_value[indices.astype(int)] = value
                     candidate_values += csr_array(
-                                    (beta * (1-all_value) + leaf_value, (np.zeros(kg_num), np.arange(kg_num))), 
+                                    (beta * (1-all_values) + leaf_value, (np.zeros(kg_num), np.arange(kg_num))), 
                                     shape=(1,kg_num))
         if t2h_negation:
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
@@ -800,6 +803,8 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
             candidate_values.data += leaf_value
             Candidate_values[[index],:] = candidate_values
     if necess_flag:
+        if Candidate_values.getnnz() == 0:
+            return None, False
         if now_candidate_set[to_change_node].getnnz() == 0: #Why?
             now_candidate_set[to_change_node] = coo_array(Candidate_values.max(axis=0))
         else:
@@ -1088,7 +1093,7 @@ def ground_variable_v2(sample_query, sample_matrix, path, data_matrix):
         if len(adj_node_ans_list) == 0:
             return None, False
         adj_node_ans = random.choice(adj_node_ans_list)
-        grounded_entities_list[index-1] = adj_node_ans
+        grounded_entities_list[adjacency_node] = adj_node_ans
         grounded_ans = adj_node_ans
     for i in range(node_num):
         if not grounded_entities_list[i]:
@@ -1122,6 +1127,7 @@ def ground_variable_v3(sample_query, sample_matrix, data_kg, index):
                 adjacency_ans = sub_answer[adjacency_node]
                 leaf_in_edge_num = sample_matrix[adjacency_node][leaf_node]
                 necess_requirements = [tuple_[1] for tuple_ in sample_query.ht2rab[(index[adjacency_node], index[leaf_node])]]
+                necess_index = int(necess_requirements[0][:-1]) // 25 - 1 # In a query ,the requirements have equal level!
                 satisfy_leaf_candi = []
                 for leaf_ans_candi in data_kg.h2t[adjacency_ans]:
                     exist_rs = data_kg.ht2r[(adjacency_ans, leaf_ans_candi)]
@@ -1129,7 +1135,7 @@ def ground_variable_v3(sample_query, sample_matrix, data_kg, index):
                     for exist_r in exist_rs:#TODO: Check the necessary
                         p = np.mean(data_kg.hrt2p[(adjacency_ans, exist_r, leaf_ans_candi)])
                         for i in range(len(necess_requirements)):
-                            num_requirements[i] += (np.array(p).mean() >= data_kg.r2percentile[f"{exist_r}"][1]) #TODO: use percentile index!
+                            num_requirements[i] += (np.array(p).mean() >= data_kg.r2percentile[f"{exist_r}"][necess_index]) #TODO: use percentile index!
                     if np.all(num_requirements):
                         satisfy_leaf_candi.append(leaf_ans_candi)
                 if not len(satisfy_leaf_candi):
@@ -1146,10 +1152,11 @@ def ground_variable_v3(sample_query, sample_matrix, data_kg, index):
                 for leaf_ans_candi in data_kg.t2h[adjacency_ans]:
                     exist_rs = data_kg.ht2r[(leaf_ans_candi, adjacency_ans)]
                     num_requirements = [0 for require in necess_requirements]
+                    necess_index = int(necess_requirements[0][:-1]) // 25 - 1 # In a query ,the requirements have equal level!
                     for exist_r in exist_rs:#TODO: Check the necessary
                         p = np.mean(data_kg.hrt2p[(leaf_ans_candi, exist_r, adjacency_ans)])
                         for i in range(len(necess_requirements)):
-                            num_requirements[i] += (p >= data_kg.r2percentile[f"{exist_r}"][1]) #TODO: use percentile index!
+                            num_requirements[i] += (p >= data_kg.r2percentile[f"{exist_r}"][necess_index]) #TODO: use percentile index!
                     if np.all(np.array(num_requirements) >= len(necess_requirements)):
                         satisfy_leaf_candi.append(leaf_ans_candi)
                 if not len(satisfy_leaf_candi):
@@ -1231,13 +1238,14 @@ def ground_predicate_v3(grounded_entity_list: List, query_kg: KnowledgeGraph, da
     grounded_relation_dict = {}
     for (head, relation, tail, alpha, beta) in query_kg.facts:
         inner_relation_list = list(query_kg.ht2r[(head, tail)])
+        necess_index = int(alpha[:-1]) // 25 -1
         grounded_head, grounded_tail = grounded_entity_list[head], grounded_entity_list[tail]
 #        inner_relation_candidate = data_kg.ht2r[(grounded_head, grounded_tail)]
 
         inner_relation_candidate = set()
         for r in data_kg.ht2r[(grounded_head, grounded_tail)]:
                 p = np.mean(data_kg.hrt2p[(grounded_head, r, grounded_tail)])
-                if p >= data_kg.r2percentile[f"{r}"][1]:
+                if p >= data_kg.r2percentile[f"{r}"][necess_index]:
                     inner_relation_candidate.add(r)
         if len(query_kg.ht2r[head, tail]) > 1:
                 chosed_r = {grounded_relation_dict[r] for r in query_kg.ht2r[head, tail] if r in grounded_relation_dict}

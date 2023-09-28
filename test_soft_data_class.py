@@ -88,7 +88,7 @@ def test_deterministic_query_instance(lstr, qa_dict, model,  kg: KnowledgeGraph)
     """
     fof_instance = parse_lstr_to_disjunctive_formula(lstr)
     fof_instance.append_qa_instances(qa_dict)
-    ans = fof_instance.deterministic_soft_query(0, kg)
+    ans = fof_instance.deterministic_soft_query(0, kg, "sparse", True)
 
     print("test")
 
@@ -157,8 +157,8 @@ if __name__ == "__main__":
 #    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
 #    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
 
-    qa_dict ={'s1': 1932, 'r1': 0, 'r2': 0}
-    lstr = "(r1(s1,e1,25%,1.0))&(r2(e1,f1,25%,1.0))"
+    qa_dict = {'s1': 257, 'r1': 0, 'r2': 4, 'r3': 4}
+    lstr = "(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(!(r3(e1,f1,25%,1.0))))"
     test_deterministic_query_instance(lstr, qa_dict, model, valid_kg)
 
 

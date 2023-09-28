@@ -33,11 +33,11 @@ query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
-parser.add_argument("--double_check", type=float, default=0.1)
-parser.add_argument("--output_folder", type=str, default='data/ppi5k')
-parser.add_argument("--data_folder", type=str, default='data/ppi5k')
-parser.add_argument("--num_positive", type=int, default=5000)
-parser.add_argument("--num_negative", type=int, default=2500)
+parser.add_argument("--double_check", type=float, default=1)
+parser.add_argument("--output_folder", type=str, default='data/processed/nl27k')
+parser.add_argument("--data_folder", type=str, default='data/processed/nl27k')
+parser.add_argument("--num_positive", type=int, default=50)
+parser.add_argument("--num_negative", type=int, default=50)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
 parser.add_argument("--negation_tolerance", type=int, default=2)
@@ -165,10 +165,10 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
                 now_index += 1
 
                 if full_answer is None:
-                    full_answer = fof.formula_list[0].deterministic_soft_query(
-                            now_index, full_kg, None, False)
-                part_answer = fof.formula_list[0].deterministic_soft_query(
-                        now_index, part_kg, None, False)
+                    full_answer = fof.deterministic_soft_query(
+                            now_index, full_kg, 'sparse', False)
+                part_answer = fof.deterministic_soft_query(
+                        now_index, part_kg, 'sparse', False)
                 if full_answer and full_answer != part_answer:
                     if random.random() < double_checking:
                         if len(fof.formula_list) == 1: #Not disjunctive queries
@@ -214,13 +214,13 @@ if __name__ == "__main__":
     print(args)
     kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        quadruple_files=osp.join(args.data_folder, 'train.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'train.txt'),
         kgindex=kgidx)
     valid_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(args.data_folder, 'train.tsv'), osp.join(args.data_folder, 'valid.tsv')],
+        quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt')],
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(args.data_folder, 'train.tsv'), osp.join(args.data_folder, 'valid.tsv'), osp.join(args.data_folder, 'test.tsv')],
+        quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt'), osp.join(args.data_folder, 'test.txt')],
         kgindex=kgidx)
     train_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json'))
     valid_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json'))

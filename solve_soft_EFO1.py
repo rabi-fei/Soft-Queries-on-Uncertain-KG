@@ -39,7 +39,7 @@ parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'pr
 parser.add_argument("--c_norm", type=str, default='Product', choices=['Plus', 'Godel', 'Product'])
 parser.add_argument("--max", type=int, default=10)
 parser.add_argument("--data_type", type=str, default='soft_EFO1')
-parser.add_argument("--formula", type=list, default=["(r1(s1,f1,25%,1.0))&(r2(e1,f1,25%,1.0))"])
+parser.add_argument("--formula", type=list, default=["(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(!(r3(e1,f1,25%,1.0))))"])
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))',
                  '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))',
                  '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
@@ -289,7 +289,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in h2t_negation:
-        ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
+        ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
         alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
         transit_matrix_list.append(1 - relation_matrix_list[r].to_dense())
         alpha_list.append(alpha)
@@ -306,11 +306,11 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
             trans_matrix_i = transit_matrix_list[i].to_dense()
             all_prob_matrix += beta_list[i] * trans_matrix_i * (trans_matrix_i >= alpha_list[i])
     elif conj_tnorm == 'Product':
-        exp_pro_matrix = torch.exp(transit_matrix_list[0].to_dense())
-        all_prob_matrix = exp_pro_matrix * (beta_list[0] * exp_pro_matrix >= math.exp(alpha_list[0] * beta_list[0]))
+        exp_pro_matrix = torch.exp(beta_list[0] * transit_matrix_list[0].to_dense())
+        all_prob_matrix = exp_pro_matrix * (exp_pro_matrix >= math.exp(alpha_list[0] * beta_list[0]))
         for i in range(1, len(transit_matrix_list)):
             exp_pro_matrix = torch.exp(beta_list[i] * transit_matrix_list[i].to_dense())
-            all_prob_matrix = exp_pro_matrix * (exp_pro_matrix >= math.exp(alpha_list[0] * beta_list[0]))
+            all_prob_matrix = all_prob_matrix.multiply(exp_pro_matrix * (exp_pro_matrix >= math.exp(alpha_list[0] * beta_list[0])))
     else:
         raise NotImplementedError
 
@@ -358,18 +358,11 @@ def solve_soft_EFO1(DNF_formula: DisjunctiveFormula, relation_matrix, necess_con
         if len(sub_ans_list) == 1:
             return sub_ans_list[0]
         else:
-            if conjunctive_tnorm == 'product':
-                not_ans = 1 - sub_ans_list[0]
-                for i in range(1, len(sub_ans_list)):
-                    not_ans = not_ans * (1 - sub_ans_list[i])
-                return 1 - not_ans
-            if conjunctive_tnorm == 'Godel':
-                final_ans = sub_ans_list[0]
-                for i in range(1, len(sub_ans_list)):
-                    final_ans = torch.maximum(final_ans, sub_ans_list[i])
-                return final_ans
-            else:
-                raise NotImplementedError
+
+            final_ans = sub_ans_list[0]
+            for i in range(1, len(sub_ans_list)):
+                final_ans = torch.maximum(final_ans, sub_ans_list[i])
+            return final_ans
 
 
 @torch.no_grad()
@@ -430,7 +423,7 @@ if __name__ == "__main__":
         cuda_device = torch.device('cuda:{}'.format(args.cuda))
     for i in range(len(r_matrix_list)):
         r_matrix_list[i] = r_matrix_list[i].to(dtype=torch.float16).to(cuda_device)
-    formula_path = osp.join(args.data_folder, 'test_type0019_BetaE+real_EFO1_qaa.json')
+    formula_path = osp.join(args.data_folder, 'test_type0011_soft_efo1_qaa.json')
 
     test_dataloader = QueryAnsweringSeqDataLoader_v2(
         formula_path,
