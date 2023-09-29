@@ -13,4 +13,8 @@ In postive requirement, the strategy is similar as classical logical queries, th
 
 In zero requirement, part satified constraints also results in answers. We select the shortest path that originates from the anchor and terminates at the free node, ensuring the presence of a valid reasoning chain. The ohter grounded in query graph is valid for tail relation constraint. The other grounding of the query graph is valid, considering the tail relation constraint.
 
-For negative edges in the query graph, we begin by grounding the positive graph and then choose the negative edges which will change the final answers.
+For negative edges in the query graph, we begin by grounding the positive graph and then choose the negative edges which will change the final answers. Our goal is to get the ansers which meet the postive constraint and negative constraint both.
+
+## Metrics(Learning2rank)
+
+As the answers of our proposed queries have preference, we consider DCG to evaluate the positions of rankings.

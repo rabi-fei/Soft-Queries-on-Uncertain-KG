@@ -109,7 +109,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
     node_pair, reverse_node_pair = (head_node, tail_node), (tail_node, head_node)
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
-    transit_matrix_list = []
+    transit_matrix_list, alpha_list, beta_list = [], [], []
     for r in h2t_relation:
         transit_matrix_list.append(relation_matrix_list[r])
     for r in t2h_relation:

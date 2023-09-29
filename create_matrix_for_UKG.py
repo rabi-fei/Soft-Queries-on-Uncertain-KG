@@ -14,13 +14,13 @@ from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt", type=str, default='cqd_models')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-237-betae')
+parser.add_argument("--ckpt", type=str, default='ukge')
+parser.add_argument("--data_folder", type=str, default="data/processed/nl27k")
 parser.add_argument("--action", choices=['prob', 'sparse', 'change'], default='prob')
-parser.add_argument("--output_folder", type=str, default='sparse/237')
+parser.add_argument("--output_folder", type=str, default='sparse/nl27k')
 parser.add_argument("--threshold", type=float, default=0.05)
 parser.add_argument("--epsilon", type=float, default=0.001)
-parser.add_argument("--split_num", type=int, default=79)
+parser.add_argument("--split_num", type=int, default=417)
 
 
 def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent_kg: KnowledgeGraph):
@@ -49,20 +49,13 @@ def create_matrix_statistics(scoring_matrix, observed_kg: KnowledgeGraph, latent
 
 def create_matrix_from_ckpt(scoring_matrix, observed_kg: KnowledgeGraph, real_starting_r, threshold=0.01, epsilon=0.01):
     n_rel, n_entity = scoring_matrix.shape[0], scoring_matrix.shape[1]
-    full_tail_prob = torch.softmax(scoring_matrix, dim=2)
     sparse_matrix_list = []
     for rel_id in range(n_rel):
         for h_id in range(n_entity):
-            tail_prob = full_tail_prob[rel_id][h_id]
-            tail_set = observed_kg.hr2t[(h_id, rel_id + real_starting_r)]
-            observed_t_num = len(tail_set)
-            scailing = observed_t_num/torch.sum(tail_prob[list(tail_set)]) if observed_t_num else 1
-            full_tail_prob[rel_id][h_id] *= scailing
-            full_tail_prob[rel_id][h_id] = torch.where(full_tail_prob[rel_id][h_id] > threshold,
-                                                       full_tail_prob[rel_id][h_id], torch.zeros(n_entity))
-            full_tail_prob[rel_id][h_id] = full_tail_prob[rel_id][h_id].clamp(0, 1-epsilon)
-            full_tail_prob[rel_id][h_id][list(tail_set)] = 1
-        sparse_matrix_list.append(full_tail_prob[rel_id].to_sparse())
+            scoring_matrix[rel_id][h_id] = torch.where(scoring_matrix[rel_id][h_id] > threshold,
+                                                       scoring_matrix[rel_id][h_id], torch.zeros(n_entity))
+            scoring_matrix[rel_id][h_id] = scoring_matrix[rel_id][h_id].clamp(0, 1-epsilon)
+        sparse_matrix_list.append(scoring_matrix[rel_id].to_sparse())
     return sparse_matrix_list
 
 
@@ -87,7 +80,7 @@ if __name__ == "__main__":
     print(args)
     kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        quadruple_files=osp.join(args.data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'train.txt'),
         kgindex=kgidx)
     '''
     test_kg = KnowledgeGraph.create(
@@ -98,7 +91,7 @@ if __name__ == "__main__":
     split_num = args.split_num
     split_each_num = int(train_kg.num_relations / split_num)
     all_matrix_list = []
-    for split_id in range(0, split_num):
+    for split_id in range(409, split_num):
         matrix_path = osp.join(args.output_folder, f'split_{split_id}_matrix_{threshold}_{epsilon}.ckpt')
         # whole_prob_matrix = torch.zeros(split_each_num, train_kg.num_entities, train_kg.num_entities)
         score_matrix = torch.load(osp.join(args.ckpt, f'matrix_{split_id}.ckpt'), map_location=None)
