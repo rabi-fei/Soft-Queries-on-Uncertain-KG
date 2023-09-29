@@ -27,7 +27,7 @@ from src.language.foq import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import QueryAnsweringSeqDataLoader, QueryAnsweringSeqDataLoader_v2
 
 
-data_folder = 'data/ppi5k'
+data_folder = 'data/processed/nl27k'
 train_queries = list(name2lstr.values())
 query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
@@ -116,10 +116,10 @@ if __name__ == "__main__":
 
     kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
     valid_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(data_folder, 'train.tsv'), osp.join(data_folder, 'train.tsv')],
+        quadruple_files=[osp.join(data_folder, 'train.txt'), osp.join(data_folder, 'valid.txt')],
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        quadruple_files=[osp.join(data_folder, 'train.tsv'), osp.join(data_folder, 'valid.tsv'), osp.join(data_folder, 'test.tsv')],
+        quadruple_files=[osp.join(data_folder, 'train.txt'), osp.join(data_folder, 'valid.txt'), osp.join(data_folder, 'test.txt')],
         kgindex=kgidx)
     valid_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json'))
     test_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json')) 
@@ -157,9 +157,9 @@ if __name__ == "__main__":
 #    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
 #    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
 
-    qa_dict = {'s1': 257, 'r1': 0, 'r2': 4, 'r3': 4}
+    qa_dict = {'s1': 17458,  'r1': 313, 'r2': 313, 'r3': 313}
     lstr = "(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(!(r3(e1,f1,25%,1.0))))"
-    test_deterministic_query_instance(lstr, qa_dict, model, valid_kg)
+    test_deterministic_query_instance(lstr, qa_dict, model, test_kg)
 
 
 
