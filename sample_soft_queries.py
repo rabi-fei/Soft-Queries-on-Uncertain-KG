@@ -34,10 +34,10 @@ query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 parser.add_argument("--double_check", type=float, default=1)
-parser.add_argument("--output_folder", type=str, default='data/processed/nl27k')
-parser.add_argument("--data_folder", type=str, default='data/processed/nl27k')
-parser.add_argument("--num_positive", type=int, default=50)
-parser.add_argument("--num_negative", type=int, default=50)
+parser.add_argument("--output_folder", type=str, default='data/ppi5k/zero')
+parser.add_argument("--data_folder", type=str, default='data/ppi5k')
+parser.add_argument("--num_positive", type=int, default=200)
+parser.add_argument("--num_negative", type=int, default=200)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
 parser.add_argument("--negation_tolerance", type=int, default=2)
@@ -45,7 +45,7 @@ parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=False)
 parser.add_argument("--sample_formula_scope", type=str, default='soft_efo1')
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=0)
+parser.add_argument("--start_index", type=int, default=9)
 parser.add_argument("--end_index", type=int, default=13)
 parser.add_argument("--max_ans", type=int, default=100)
 parser.add_argument("--store_each", type=int, default=5)
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     if args.sample_formula_scope == 'part_soft_efo1':
         formula_scope = pd.read_csv(osp.join('data', 'DNF_train_part_soft_EFO1.csv'))
     elif args.sample_formula_scope == 'soft_efo1':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_soft_EFO1.csv'))
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_zero_soft_EFO1.csv'))
     else:
         raise NotImplementedError
     '''

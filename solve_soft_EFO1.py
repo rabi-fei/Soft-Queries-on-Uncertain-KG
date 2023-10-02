@@ -13,6 +13,7 @@ import numpy as np
 import scipy.sparse
 import torch
 import torch.nn.functional as F
+import scipy.stats as stats
 import tqdm
 import pickle
 from torch import nn
@@ -39,7 +40,7 @@ parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'pr
 parser.add_argument("--c_norm", type=str, default='Product', choices=['Plus', 'Godel', 'Product'])
 parser.add_argument("--max", type=int, default=10)
 parser.add_argument("--data_type", type=str, default='soft_EFO1')
-parser.add_argument("--formula", type=list, default=["(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(!(r3(e1,f1,25%,1.0))))"])
+parser.add_argument("--formula", type=list, default=["r1(s1,f1,25%,1.0)"])
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))',
                  '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))',
                  '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
@@ -378,14 +379,15 @@ def compute_single_evaluation(fof, batch_ans_tensor, n_entity):
 
         ans = fof.easy_answer_list[i][f"{k}_answers"]
         value = fof.hard_answer_list[i][f"{k}_values"]
-
-
         num_ans = len(ans)
-
+        
+        ans = torch.tensor(ans).to(ranking.device)
         range_to_num = torch.arange(1, num_ans+1).to(torch.float32).to(ranking.device)
 
         cur_ranking = ranking[i, ans] + 1
         rr_score = 1. / cur_ranking
+        predict_exist_ele = argsort[i][:num_ans].unsqueeze(-1) == ans.squeeze(0)
+        predict_exist = torch.any(predict_exist_ele, dim=-1)
 
         '''
         if easy_ans:
@@ -398,11 +400,18 @@ def compute_single_evaluation(fof, batch_ans_tensor, n_entity):
         dcg = torch.sum(rr_score / torch.log2(range_to_num+1), dim=-1).item()
         idcg = torch.sum(1 / (range_to_num * torch.log2(range_to_num+1)), dim=-1).item()
         ndcg = dcg / idcg
-        map = torch.sum(rr_score / (range_to_num+1), dim=-1).item()
+        map = torch.mean((torch.cumsum(predict_exist, dim=-1)  / range_to_num) * predict_exist, -1).item()
+
+        kendalltau = stats.kendalltau(range_to_num.cpu(), cur_ranking.cpu())
 
         metrics['MAP'] += map
         metrics['DCG'] += dcg
         metrics['NDCG'] += ndcg
+        if  not -1 <= kendalltau[0] <= 1:
+            print(cur_ranking.item())
+            metrics['tau'] += 1 / cur_ranking.item()
+        else:
+            metrics['tau'] += kendalltau[0]
 
     metrics['num_queries'] += batch_ans_tensor.shape[0]
     return metrics
@@ -423,7 +432,7 @@ if __name__ == "__main__":
         cuda_device = torch.device('cuda:{}'.format(args.cuda))
     for i in range(len(r_matrix_list)):
         r_matrix_list[i] = r_matrix_list[i].to(dtype=torch.float16).to(cuda_device)
-    formula_path = osp.join(args.data_folder, 'test_type0011_soft_efo1_qaa.json')
+    formula_path = osp.join(args.data_folder, 'test_type0000_soft_efo1_qaa.json')
 
     test_dataloader = QueryAnsweringSeqDataLoader_v2(
         formula_path,
