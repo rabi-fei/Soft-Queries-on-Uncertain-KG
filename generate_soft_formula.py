@@ -37,8 +37,9 @@ def recursion_update_a(formula, level):
     for sub_formula in sub_formula_list:
         recursion_update_a(sub_formula, level)
 
+require_level = "zero"
 new_rows = []
-formula_scope = pd.read_csv(osp.join('data', 'DNF_train_EFO1.csv'))
+formula_scope = pd.read_csv(osp.join('data', 'DNF_train_soft_EFO1.csv'))
 for i, row in formula_scope.iterrows():
     given_lstr = row.formula
     p = random.random()
@@ -46,9 +47,9 @@ for i, row in formula_scope.iterrows():
 #    new_rows.append(row)
     for conj_formula in fof.formula_list:
         if conj_formula.formula.op == 'pred':
-            recursion_update_a(conj_formula.formula, "low")
+            recursion_update_a(conj_formula.formula, require_level)
         else:
-            recursion_update_a(conj_formula.formula, "low")
+            recursion_update_a(conj_formula.formula, require_level)
 
     part_lstr = fof.lstr
     row.formula = part_lstr
@@ -61,4 +62,4 @@ for i, row in formula_scope.iterrows():
 
 df_new = pd.DataFrame(new_rows, columns=formula_scope.columns)
 df_new = df_new.reset_index(drop=True)
-df_new.to_csv("data/DNF_train_soft_EFO1.csv")
+df_new.to_csv(f"data/DNF_train_{require_level}_soft_EFO1.csv")

@@ -240,7 +240,7 @@ if __name__ == "__main__":
     if args.sample_formula_scope == 'part_soft_efo1':
         formula_scope = pd.read_csv(osp.join('data', 'DNF_train_part_soft_EFO1.csv'))
     elif args.sample_formula_scope == 'soft_efo1':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_soft_EFO1.csv'))
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_zero_soft_EFO1.csv'))
     else:
         raise NotImplementedError
     '''

@@ -749,8 +749,11 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
                 node_pair_ = sub_graph.ht2rab[(now_node, to_change_node)]
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
                 alpha = data_graph.r2percentile[f"{rel}"][necess_index]
-                if (candidate_leaf, rel) not in data_graph.hr2tp:
-                    candidate_values *= 0 # for positive necess, don't need do something for zero necess
+                if (candidate_leaf, rel) not in data_graph.tr2hp:
+                    if necess_flag:
+                        candidate_values *= 0 # for positive necess, don't need do something for zero necess
+                    else:
+                        candidate_values += 0
                     continue
                 tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
                 if necess_flag:
@@ -770,11 +773,14 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
                 alpha = data_graph.r2percentile[f"{rel}"][necess_index]
                 if (candidate_leaf, rel) not in data_graph.tr2hp:
-                    candidate_values *= 0 # for positive necess, don't need do something for zero necess
+                    if necess_flag:
+                        candidate_values *= 0 # for positive necess, don't need do something for zero necess
+                    else:
+                        candidate_values += 0
                     continue
                 hp = merge_indice_value(data_graph.tr2hp[(candidate_leaf, rel)])
                 if necess_flag:
-                    hp = hp[:, hp[1]>=alpha]
+                    hp = hp[:, hp[1] >= alpha]
                     indices, values = hp[0], hp[1]
                     candidate_values *= csr_array(
                                     (np.exp(beta * values), (np.zeros(len(indices)), indices)), 
@@ -1087,19 +1093,23 @@ def ground_variable(sample_matrix, data_matrix):
             raise NotImplementedError
 
 
-def ground_variable_v2(sample_query, sample_matrix, path, data_matrix):
+def ground_variable_v2(sample_query, sample_matrix, path, data_kg):
     """
     For zero reqquirements, there is a path for reaoning chain. Other nodes are randomly select.
     """
     node_num = sample_matrix.shape[0]
     grounded_entities_list = [None for i in range(node_num)]
-    random_free_candidate = random.sample(set(range(data_matrix.shape[0])), 1)[0]
-    grounded_entities_list[path[-1]] = random_free_candidate
-    grounded_ans = random_free_candidate
     for index in np.arange(len(path)-1,0,-1):
         grounded_node, adjacency_node = path[index], path[index-1]
         leaf_in_edge_num = sample_matrix[adjacency_node][grounded_node]
-        adj_node_ans_list = np.where(data_matrix[:, grounded_ans] >= leaf_in_edge_num)[0]
+        chosen_tails = {t for t in data_kg.node2ir if len(data_kg.node2ir[t]) >= leaf_in_edge_num}
+
+        if not grounded_entities_list[grounded_node]:
+            grounded_ans = random.sample(chosen_tails, 1)[0]
+            grounded_entities_list[grounded_node] = grounded_ans
+        
+        adj_ans_connected = data_kg.t2h[grounded_ans]
+        adj_node_ans_list = [adj_ans for adj_ans in adj_ans_connected if len(data_kg.ht2r[(adj_ans, grounded_ans)]) > leaf_in_edge_num ]
         if len(adj_node_ans_list) == 0:
             return None, False
         adj_node_ans = random.choice(adj_node_ans_list)
@@ -1107,7 +1117,7 @@ def ground_variable_v2(sample_query, sample_matrix, path, data_matrix):
         grounded_ans = adj_node_ans
     for i in range(node_num):
         if not grounded_entities_list[i]:
-            random_ground_candidate = random.sample(set(range(data_matrix.shape[0])), 1)[0]
+            random_ground_candidate = random.sample(set(range(data_kg.num_entities)), 1)[0]
             grounded_entities_list[i] = random_ground_candidate
 
     return grounded_entities_list, True

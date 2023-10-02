@@ -155,10 +155,10 @@ if __name__ == "__main__":
 #    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
 #    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
 
-    qa_dict = {'s1': 8641, 's2': 5392, 'r1': 3, 'r2': 0, 'r3': 0, 'r4': 0, 'r5': 22}
-# {'s1': [15052], 'e1': [], 'f1': [10272], 'r1': [210], 'r2': [392], 'r3': [355]}
-    lstr = "(r1(s1,e1,25%,1.0))&((r2(s2,e2,25%,1.0))&((r3(e1,e2,25%,1.0))&((r4(e1,f1,25%,1.0))&(r5(e2,f1,25%,1.0)))))"
-    test_deterministic_query_instance(lstr, qa_dict, model, test_kg)
+    qa_dict = {'s1': 2921, 's2':2548, 'r1': 0, 'r2': 1, 'r3': 1}
+    lstr = "(!(r1(s1,e1,0%,1.0)))&((r2(s2,e1,0%,1.0))&(r3(e1,f1,0%,1.0)))"
+    test_deterministic_query_instance(lstr, qa_dict, model, valid_kg)
+
 
 
 
