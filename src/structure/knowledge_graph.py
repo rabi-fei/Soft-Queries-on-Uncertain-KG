@@ -406,9 +406,19 @@ def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_
         if fixed_node:
             adjacency_node_set = set.union(*[sub_graph.h2t[fixed_node], sub_graph.t2h[fixed_node],
                                              neg_sub_graph.h2t[fixed_node], neg_sub_graph.t2h[fixed_node]])
+            new_candidate_set = deepcopy(now_candidate_set)
+            fixed_grounded = list(topology_filtered_set[fixed_node])[0]
+            fixed_node_candidate_value = now_candidate_set[fixed_node].toarray().squeeze()
+            new_candidate_set.pop(fixed_node)
+            new_candidate_set[fixed_node] = {fixed_grounded}
             answer, exist_answer = cut_node_sub_problem_soft(fixed_node, adjacency_node_set, sub_graph, neg_sub_graph,
-                                                        now_candidate_set, data_graph)
-            return answer, exist_answer
+                                                        new_candidate_set, data_graph)
+            if exist_answer:
+                if int(sub_graph.facts[0][3][:-1]):
+                    final_answer = answer["f1"].toarray().squeeze() * fixed_node_candidate_value[fixed_grounded]
+                else:
+                        answer["f1"].toarray().squeeze() + fixed_node_candidate_value[candidate] #TODO:fix it
+                        
         else:  # Has to take a guess here.
             guess_node = min(topology_filtered_set.items(), key=lambda x: len(x[1]))[0]
             collect_guess_ans = []
@@ -427,10 +437,10 @@ def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_
                     else:
                         collect_guess_ans.append(answer["f1"].toarray().squeeze() + guess_node_candidate_value[candidate])
             final_answer = np.array(collect_guess_ans).max(axis=0)
-            cols = np.nonzero(final_answer)[0]
-            final_answer = coo_array((final_answer[cols], (np.zeros(cols.shape[0]), cols)), shape=(1, final_answer.shape[0]))
-            exist_final_answer = final_answer.max() > 0
-            return {"f1": final_answer}, exist_final_answer
+        cols = np.nonzero(final_answer)[0]
+        final_answer = coo_array((final_answer[cols], (np.zeros(cols.shape[0]), cols)), shape=(1, final_answer.shape[0]))
+        exist_final_answer = final_answer.max() > 0
+        return {"f1": final_answer}, exist_final_answer
 
 
 
