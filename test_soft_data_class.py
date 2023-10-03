@@ -27,7 +27,7 @@ from src.language.foq import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import QueryAnsweringSeqDataLoader, QueryAnsweringSeqDataLoader_v2
 
 
-data_folder = 'data/ppi5k'
+data_folder = 'data/processed/cn15k'
 train_queries = list(name2lstr.values())
 query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
@@ -123,10 +123,8 @@ if __name__ == "__main__":
         kgindex=kgidx)
     valid_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json'))
     test_kg.load_percentile(osp.join(data_folder, 'percentile_25_50_75.json')) 
-    with open("checkpoints/ppi5k/params_numpy", "rb") as handle:
-        params_dict = pickle.load(handle)
-    model = UKGE_rect_numpy(params_dict["entity_embedding"].shape[1], params_dict["entity_embedding"].shape[0], params_dict["relation_embedding"].shape[0])
-    model.load_params(params_dict)
+
+    model = None
     """
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
@@ -156,9 +154,11 @@ if __name__ == "__main__":
 #    lstr = "(r1(s1,e1,50%,1.0))&((r2(s2,e2,50%,1.0))&((r3(e1,e2,50%,1.0))&((r4(e1,f1,50%,1.0))&(r5(e2,f1,50%,1.0)))))"
 #    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
 #    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
-    qa_dict = {'s1': 2045, 'r1': 0, 'r2': 4, 'r3': 0} 
-    lstr = "(r1(s1,e1,0%,1.0))&((r2(e1,f1,0%,1.0))&(r3(e1,f1,0%,1.0)))"
+
+    qa_dict = {'s1': 2921, 's2':2548, 'r1': 0, 'r2': 1, 'r3': 1}
+    lstr = "(!(r1(s1,e1,0%,1.0)))&((r2(s2,e1,0%,1.0))&(r3(e1,f1,0%,1.0)))"
     test_deterministic_query_instance(lstr, qa_dict, model, valid_kg)
+
 
 
 

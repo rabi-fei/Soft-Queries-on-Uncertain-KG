@@ -662,8 +662,8 @@ class ConjunctiveFormula:
                             grounded_neg_pred[now_predicate] = True
                             node2index[now_tail] = len(node2index)
                             break
-                    else:
-                        guess_head = random.randint(0, data_kg.num_entities - 1)
+                    else: # Sample fails
+                        guess_head = random.sample(data_kg.node2or.keys(), 1)[0]
                         guess_predicate = random.sample(data_kg.node2or[guess_head].keys(), 1)[0]
                         grounded_dict[now_head] = guess_head
                         grounded_dict[now_predicate] = guess_predicate
@@ -866,6 +866,7 @@ class ConjunctiveFormula:
 
     def deterministic_soft_query_brute_test(self, index, kg_graph: KnowledgeGraph, to_test):
         #Brute solve soft queries, for testing csp solver.
+        is_right = True
 
         def get_score_with_grouned_dict(grouned_dict, sub_kg, neg_kg, data_kg):
             #All the nodes are grouned, directly get the score of the assigments.
@@ -938,10 +939,14 @@ class ConjunctiveFormula:
                 for e1, e2 in product(range(kg_graph.num_entities), range(kg_graph.num_entities)):
                     grouned_dict.update({"e1": [e1], "e2": [e2]})
                     candi_score = get_score_with_grouned_dict(grouned_dict, sub_kg, neg_kg, kg_graph)
-                    scores.append(candi_score)
+                    if candi_score > 0:
+                        scores.append(candi_score)
                 score = np.max(scores)
                 grouned_dict.update({"e1": [], "e2": []})
-            assert abs(score - to_test[grouned_free]) < 0.01, print(grouned_dict, score, to_test[grouned_free])
+            if abs(score - to_test[grouned_free]) > 0.01:
+                print(grouned_dict)
+                is_right = False
+        return is_right
 
     def deterministic_query_set_with_initialization(self, index, kg_graph: KnowledgeGraph, skip_predicate: List = None,
                                 return_full_match: bool = False, initialization: Dict = None):
