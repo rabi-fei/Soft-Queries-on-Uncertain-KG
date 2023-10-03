@@ -749,7 +749,7 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
                 node_pair_ = sub_graph.ht2rab[(now_node, to_change_node)]
                 _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
                 alpha = data_graph.r2percentile[f"{rel}"][necess_index]
-                if (candidate_leaf, rel) not in data_graph.tr2hp:
+                if (candidate_leaf, rel) not in data_graph.hr2tp:
                     if necess_flag:
                         candidate_values *= 0 # for positive necess, don't need do something for zero necess
                     else:
@@ -808,7 +808,7 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
                                     shape=(1,kg_num))
                 else:
                     candidate_values += csr_array(
-                                    (beta * (1-all_values) + leaf_value, (np.zeros(kg_num), np.arange(kg_num))), 
+                                    (beta * (1-all_values), (np.zeros(kg_num), np.arange(kg_num))), 
                                     shape=(1,kg_num))
         if t2h_negation:
             t2h_negation_exclude = set.union(*[data_graph.tr2h[(candidate_leaf, rel)] for rel in t2h_negation])
