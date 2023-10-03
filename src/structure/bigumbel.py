@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 # from param import *
-from tensor_dataloader import *
 import torch.nn.functional as F
 from torch.distributions import uniform
 import copy

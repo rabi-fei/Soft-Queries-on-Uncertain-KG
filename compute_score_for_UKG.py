@@ -74,7 +74,7 @@ if __name__ == "__main__":
     train_kg = KnowledgeGraph.create(
         quadruple_files=osp.join(data_folder, 'train.txt'),
         kgindex=kgidx)
-    threshold, epsilon = 0.01, 0.001
+    threshold, epsilon = 0.05, 0.001
 
     if args.ckpt_type == 'ukge':
         with open(cqd_path, "rb") as handle:

@@ -553,9 +553,9 @@ class ConjunctiveFormula:
                 start_node = random.choices(archor_nodes)[0]
                 target_node = [i for i in index2node.keys() if "f" in index2node[i]][0]
                 path = nx.shortest_path(graph, start_node, target_node)
-                grounded_entity_list, exist_grounding = ground_variable_v2(connected_kg, connect_kg_matrix, path, original_kg_matrix)
+                grounded_entity_list, exist_grounding = ground_variable_v2(connected_kg, connect_kg_matrix, path, data_kg)
                 while not exist_grounding:
-                    grounded_entity_list, exist_grounding = ground_variable_v2(connected_kg, connect_kg_matrix, path, original_kg_matrix)
+                    grounded_entity_list, exist_grounding = ground_variable_v2(connected_kg, connect_kg_matrix, path, data_kg)
                 grounded_relation_dict = ground_predicate_v2(grounded_entity_list, path, sub_kg, data_kg)
             elif np.all([int(r.alpha[:-1]) > 0 for r in self.predicate_dict.values()]):
                 grounded_entity_list, exist_grounding = ground_variable_v3(connected_kg, connect_kg_matrix, data_kg, index=[i for i in range(connected_kg.num_entities)])
@@ -874,7 +874,7 @@ class ConjunctiveFormula:
                 head, predict, tail, a, b = facts
                 necess_index = int(a[:-1]) // 25 - 1
                 h,  t = grouned_dict[head][0], grouned_dict[tail][0]
-                if (h, predict, t) in data_kg.hrt2p:
+                if len(data_kg.hrt2p[(h, predict, t)]):
                     p = np.mean(data_kg.hrt2p[(h, predict, t)]) 
                 else:
                     p = 0
@@ -892,7 +892,7 @@ class ConjunctiveFormula:
                 head, predict, tail, a, b = facts
                 necess_index = int(a[:-1]) // 25 - 1
                 h, t = grouned_dict[head][0], grouned_dict[tail][0]
-                if (h, predict, t) in data_kg.hrt2p:
+                if len(data_kg.hrt2p[(h, predict, t)]):
                     p = np.mean(data_kg.hrt2p[(h, predict, t)]) 
                 else:
                     p = 0
@@ -941,7 +941,7 @@ class ConjunctiveFormula:
                     scores.append(candi_score)
                 score = np.max(scores)
                 grouned_dict.update({"e1": [], "e2": []})
-            assert abs(score - to_test[grouned_free]) < 0.01, print(grouned_dict)
+            assert abs(score - to_test[grouned_free]) < 0.01, print(grouned_dict, score, to_test[grouned_free])
 
     def deterministic_query_set_with_initialization(self, index, kg_graph: KnowledgeGraph, skip_predicate: List = None,
                                 return_full_match: bool = False, initialization: Dict = None):
