@@ -16,7 +16,7 @@ from torch import nn
 
 from src.language.tnorm import GodelTNorm, ProductTNorm, Tnorm
 from src.structure import get_nbp_class
-from src.structure.geometric_graph import QueryGraph
+#from src.structure.geometric_graph import QueryGraph
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
@@ -155,9 +155,9 @@ if __name__ == "__main__":
 #    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
 #    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
 
-    qa_dict = {'s1': 2921, 's2':2548, 'r1': 0, 'r2': 1, 'r3': 1}
-    lstr = "(!(r1(s1,e1,0%,1.0)))&((r2(s2,e1,0%,1.0))&(r3(e1,f1,0%,1.0)))"
-    test_deterministic_query_instance(lstr, qa_dict, model, valid_kg)
+    qa_dict = {'s1': 883, 's2': 883, 'r1': 3, 'r2': 3, 'r3': 0}
+    lstr = "(r1(s1,e1,25%,1.0))&((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))"
+    test_deterministic_query_instance(lstr, qa_dict, model, test_kg)
 
 
 
