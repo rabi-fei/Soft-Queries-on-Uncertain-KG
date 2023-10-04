@@ -1109,7 +1109,10 @@ def ground_variable_v2(sample_query, sample_matrix, path, data_kg):
             grounded_entities_list[grounded_node] = grounded_ans
         
         adj_ans_connected = data_kg.t2h[grounded_ans]
-        adj_node_ans_list = [adj_ans for adj_ans in adj_ans_connected if len(data_kg.ht2r[(adj_ans, grounded_ans)]) > leaf_in_edge_num ]
+        if leaf_in_edge_num == 1:
+            adj_node_ans_list = list(data_kg.t2h[grounded_ans])
+        else:
+            adj_node_ans_list = [adj_ans for adj_ans in adj_ans_connected if len(data_kg.ht2r[(adj_ans, grounded_ans)]) > leaf_in_edge_num ]
         if len(adj_node_ans_list) == 0:
             return None, False
         adj_node_ans = random.choice(adj_node_ans_list)
