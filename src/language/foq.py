@@ -649,7 +649,7 @@ class ConjunctiveFormula:
                         grounded_dict[now_predicate] = guess_predicate
                         node2index[now_tail] = len(node2index)
                 else:
-                    tail_candidate = set(full_answer["f1"].col) #TODO: solve it
+                    tail_candidate = set(full_answer["f1"].col).intersection(set(data_kg.node2ir.keys())) #TODO: solve it
                     for now_try_time in range(10):
                         to_change_tail = random.sample(tail_candidate, 1)[0]
                         guess_predicate = random.sample(data_kg.node2ir[to_change_tail].keys(), 1)[0]
