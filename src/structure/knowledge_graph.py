@@ -711,7 +711,7 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
     """
     Use now node to change to_change node
     """
-    necess_index = int(sub_graph.facts[0][3][:-1]) // 25 -1
+    necess_index = int(sub_graph.facts[0][3][:-1]) // 25 -1 #TODO:fix it, it's not fair!
     if necess_index >= 0:
         necess_flag = True 
     else:
@@ -747,8 +747,8 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
         if h2t_relation:
             for rel in h2t_relation:
                 node_pair_ = sub_graph.ht2rab[(now_node, to_change_node)]
-                _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
-                alpha = data_graph.r2percentile[f"{rel}"][necess_index]
+                alpha_level, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                alpha = data_graph.r2percentile[f"{rel}"][int(alpha_level[:-1]) // 25 - 1]
                 if (candidate_leaf, rel) not in data_graph.hr2tp:
                     if necess_flag:
                         candidate_values *= 0 # for positive necess, don't need do something for zero necess
@@ -770,8 +770,8 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
         if t2h_relation:
             for rel in t2h_relation:
                 node_pair_ = sub_graph.ht2rab[(to_change_node, now_node)]
-                _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
-                alpha = data_graph.r2percentile[f"{rel}"][necess_index]
+                alpha_level, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                alpha = data_graph.r2percentile[f"{rel}"][int(alpha_level[:-1]) // 25 - 1]
                 if (candidate_leaf, rel) not in data_graph.tr2hp:
                     if necess_flag:
                         candidate_values *= 0 # for positive necess, don't need do something for zero necess
@@ -793,8 +793,8 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
         if h2t_negation:
             for rel in h2t_negation:
                 node_pair_ = neg_sub_graph.ht2rab[(now_node, to_change_node)]
-                _, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
-                alpha = data_graph.r2percentile[f"{rel}"][necess_index]
+                alpha_level, beta = [triple_[1:]  for triple_ in node_pair_ if triple_[0]==rel][0]
+                alpha = data_graph.r2percentile[f"{rel}"][int(alpha_level[:-1]) // 25 - 1]
                 all_values = np.zeros(kg_num)
                 if (candidate_leaf, rel) in data_graph.hr2tp:
                     tp = merge_indice_value(data_graph.hr2tp[(candidate_leaf, rel)])
@@ -1175,7 +1175,7 @@ def ground_variable_v3(sample_query, sample_matrix, data_kg, index):
                 for leaf_ans_candi in data_kg.t2h[adjacency_ans]:
                     exist_rs = data_kg.ht2r[(leaf_ans_candi, adjacency_ans)]
                     num_requirements = [0 for require in necess_requirements]
-                    necess_index = int(necess_requirements[0][:-1]) // 25 - 1 # In a query ,the requirements have equal level!
+                    necess_index = max(int(necess_requirement[:-1]) // 25 - 1 for necess_requirement in necess_requirements) # In a query ,the requirements have equal level!
                     for exist_r in exist_rs:#TODO: Check the necessary
                         p = np.mean(data_kg.hrt2p[(leaf_ans_candi, exist_r, adjacency_ans)])
                         for i in range(len(necess_requirements)):

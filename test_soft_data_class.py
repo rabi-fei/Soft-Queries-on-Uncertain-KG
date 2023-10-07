@@ -27,7 +27,7 @@ from src.language.foq import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import QueryAnsweringSeqDataLoader, QueryAnsweringSeqDataLoader_v2
 
 
-data_folder = 'data/processed/cn15k'
+data_folder = 'data/processed/ppi5k'
 train_queries = list(name2lstr.values())
 query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
@@ -155,8 +155,8 @@ if __name__ == "__main__":
 #    qa_dict = {'s1': 7767,  's2': 12740, 'r1': 306, 'r2': 306}
 #    lstr = "(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))"
 
-    qa_dict = {'s1': 883, 's2': 883, 'r1': 3, 'r2': 3, 'r3': 0}
-    lstr = "(r1(s1,e1,25%,1.0))&((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))"
+    qa_dict = {'s1': 1175, 's2': 793, 'r1': 0, 'r2': 0}
+    lstr = "(!(r1(s1,f1,75%,0.4)))&(r2(s2,f1,25%,0.8))"
     test_deterministic_query_instance(lstr, qa_dict, model, test_kg)
 
 

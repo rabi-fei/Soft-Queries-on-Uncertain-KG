@@ -41,6 +41,7 @@ parser.add_argument("--c_norm", type=str, default='Product', choices=['Plus', 'G
 parser.add_argument("--max", type=int, default=10)
 parser.add_argument("--data_type", type=str, default='soft_EFO1')
 parser.add_argument("--formula", type=list, default=["r1(s1,f1,25%,1.0)"])
+parser.add_argument("--query_path", type=str, default="test_type0000_soft_efo1_qaa.json")
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))',
                  '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))',
                  '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
@@ -175,7 +176,7 @@ def existential_update(leaf_node, adjacency_node, sub_graph: KnowledgeGraph, neg
     all_prob_matrix = construct_matrix_list(leaf_node, adjacency_node, sub_graph, neg_sub_graph, r_matrix_list, necess_confindence,
                                             conj_tnorm)
     if conj_tnorm == 'Plus':
-        all_prob_matrix.mul_(leaf_candidates.unsqueeze(-1))
+        all_prob_matrix += leaf_candidates.unsqueeze(-1)
         all_prob_matrix += adj_candidates.unsqueeze(-2)
     elif conj_tnorm == 'Product':
         all_prob_matrix.mul_(leaf_candidates.unsqueeze(-1))
@@ -203,7 +204,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in h2t_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense()
@@ -211,7 +216,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in t2h_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense().transpose_()
@@ -220,7 +229,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in h2t_negation:
         ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense()
@@ -228,7 +241,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in t2h_negation:
         ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense().transpose_()
@@ -239,7 +256,7 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
     if conj_tnorm == 'Plus':
         candi_vec = adj_candidates
         for i in range(0, len(candi_vec_list)):
-            candi_vec += beta_list[i] * (candi_vec_list[i] >= alpha_list[i]) * candi_vec
+            candi_vec += beta_list[i] * candi_vec_list[i] * (candi_vec_list[i] >= alpha_list[i])
     elif conj_tnorm == 'Product':
         candi_vec = adj_candidates
         for i in range(0, len(candi_vec_list)):
@@ -279,30 +296,47 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
 
     for r in h2t_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         transit_matrix_list.append(relation_matrix_list[r])
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in t2h_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         transit_matrix_list.append(relation_matrix_list[r].transpose(-2, -1))
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in h2t_negation:
         ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         transit_matrix_list.append(1 - relation_matrix_list[r].to_dense())
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in t2h_negation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        alpha, beta =necess_confidence[f"{r}"][int(ab[0][:-1])//25-1], ab[1]
+        if int(ab[0][:-1])//25-1 >= 0:
+            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        else:
+            alpha = 0.0
+        beta = ab[1]
         transit_matrix_list.append(1 - relation_matrix_list[r].transpose(-2, -1).to_dense())
         alpha_list.append(alpha)
         beta_list.append(beta)
     if conj_tnorm == 'Plus':
-        all_prob_matrix = beta_list[0] * transit_matrix_list[0] * (transit_matrix_list[0].to_dense() >= alpha_list[0])
+        trans_matrix_0 = transit_matrix_list[0].to_dense()
+        all_prob_matrix = beta_list[0] * trans_matrix_0 * (trans_matrix_0 >= alpha_list[0])
         for i in range(1, len(transit_matrix_list)):
             trans_matrix_i = transit_matrix_list[i].to_dense()
             all_prob_matrix += beta_list[i] * trans_matrix_i * (trans_matrix_i >= alpha_list[i])
@@ -377,7 +411,7 @@ def compute_single_evaluation(fof, batch_ans_tensor, n_entity):
     for i in range(batch_ans_tensor.shape[0]):
         # ranking = ranking.scatter_(0, argsort, torch.arange(n_entity).to(torch.float))
 
-        ans = fof.easy_answer_list[i][f"{k}_answers"]
+        ans = fof.easy_answer_list[i][f"{k}_answers"][::-1]
         value = fof.hard_answer_list[i][f"{k}_values"]
         num_ans = len(ans)
         
@@ -402,16 +436,16 @@ def compute_single_evaluation(fof, batch_ans_tensor, n_entity):
         ndcg = dcg / idcg
         map = torch.mean((torch.cumsum(predict_exist, dim=-1)  / range_to_num) * predict_exist, -1).item()
 
-        kendalltau = stats.kendalltau(range_to_num.cpu(), cur_ranking.cpu())
-
         metrics['MAP'] += map
         metrics['DCG'] += dcg
         metrics['NDCG'] += ndcg
-        if  not -1 <= kendalltau[0] <= 1:
-            print(cur_ranking.item())
-            metrics['tau'] += 1 / cur_ranking.item()
-        else:
-            metrics['tau'] += kendalltau[0]
+        if  num_ans > 1:
+            x, y = range_to_num.cpu(), cur_ranking.cpu()
+            kendalltau = stats.kendalltau(x, y)
+            spearmanr = stats.spearmanr(x, y)
+            metrics['kendalltau'] += kendalltau[0]
+            metrics['spearmanr'] += spearmanr[0]
+            metrics['num_correlation_queries'] += batch_ans_tensor.shape[0]
 
     metrics['num_queries'] += batch_ans_tensor.shape[0]
     return metrics
@@ -432,7 +466,7 @@ if __name__ == "__main__":
         cuda_device = torch.device('cuda:{}'.format(args.cuda))
     for i in range(len(r_matrix_list)):
         r_matrix_list[i] = r_matrix_list[i].to(dtype=torch.float16).to(cuda_device)
-    formula_path = osp.join(args.data_folder, 'test_type0000_soft_efo1_qaa.json')
+    formula_path = osp.join(args.data_folder, args.query_path)
 
     test_dataloader = QueryAnsweringSeqDataLoader_v2(
         formula_path,
@@ -469,6 +503,10 @@ if __name__ == "__main__":
         for log_metric in all_metrics[full_formula].keys():
             if log_metric != 'num_queries':
                 all_metrics[full_formula][log_metric] /= all_metrics[full_formula]['num_queries']
+    for full_formula in all_metrics.keys():
+        for log_metric in all_metrics[full_formula].keys():
+            if log_metric in ['kendalltau', 'spearmanr']:
+                all_metrics[full_formula][log_metric] /= all_metrics[full_formula]['num_correlation_queries']
     print(all_metrics)
     # writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
     writer.save_pickle(all_metrics, f"all_logging_{args.mode}_0.pickle")
