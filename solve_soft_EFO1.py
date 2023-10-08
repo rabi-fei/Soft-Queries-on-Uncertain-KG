@@ -31,16 +31,17 @@ torch.autograd.set_detect_anomaly(True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
-parser.add_argument("--ckpt", type=str, default='checkpoints/ppi5k/full_matrix_list_0.01_0.001.ckpt')
+parser.add_argument("--ckpt", type=str, default='checkpoints/onet20k/full_matrix_list_0.01_0.001_box.ckpt')
 parser.add_argument("--batch_size", type=int, default=1)
 parser.add_argument("--cuda", type=int, default=1)
-parser.add_argument("--data_folder", type=str, default='data/ppi5k')
+parser.add_argument("--data_folder", type=str, default='data/processed_from_2335/onet20k')
+parser.add_argument("--out_folder", type=str, default='results/onet20k/low')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='Product', choices=['Plus', 'Godel', 'Product'])
 parser.add_argument("--max", type=int, default=10)
 parser.add_argument("--data_type", type=str, default='soft_EFO1')
-parser.add_argument("--formula", type=list, default=["r1(s1,f1,25%,1.0)"])
+parser.add_argument("--formula", type=list, default=['r1(s1,f1,25%,1.0)', '(r1(s1,e1,25%,1.0))&(r2(e1,f1,25%,1.0))', '(r1(s1,f1,25%,1.0))&(r2(s2,f1,25%,1.0))', '(!(r1(s1,f1,25%,1.0)))&(r2(s2,f1,25%,1.0))', '(r1(s1,f1,25%,1.0))&(r2(e1,f1,25%,1.0))', '(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(r3(e1,f1,25%,1.0)))', 'r1(s1,f1,25%,1.0)|r2(s2,f1,25%,1.0)', '(r1(s1,e1,25%,1.0))&((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))', '(r1(s1,e1,25%,1.0))&((r2(s2,e1,25%,1.0))&((r3(e1,f1,25%,1.0))&(r4(e1,f1,25%,1.0))))', '(!(r1(s1,e1,25%,1.0)))&((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))', '(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(!(r3(e1,f1,25%,1.0))))', '(r1(s1,e1,25%,1.0))&((r2(s2,e2,25%,1.0))&((r3(e1,e2,25%,1.0))&((r4(e1,f1,25%,1.0))&(r5(e2,f1,25%,1.0)))))'])
 parser.add_argument("--query_path", type=str, default="test_type0000_soft_efo1_qaa.json")
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))',
                  '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))',
@@ -453,6 +454,7 @@ def compute_single_evaluation(fof, batch_ans_tensor, n_entity):
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    data = args.data_folder.split("/")[-1]
     print(args)
     torch.set_default_dtype(torch.float16)
     r_matrix_list = torch.load(args.ckpt)
@@ -508,5 +510,7 @@ if __name__ == "__main__":
             if log_metric in ['kendalltau', 'spearmanr']:
                 all_metrics[full_formula][log_metric] /= all_metrics[full_formula]['num_correlation_queries']
     print(all_metrics)
-    # writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-    writer.save_pickle(all_metrics, f"all_logging_{args.mode}_0.pickle")
+    for key in all_metrics:
+        # writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
+        with open(f"{args.out_folder}/{key}.json", 'w') as f:
+                json.dump(all_metrics[key], f)
