@@ -37,7 +37,7 @@ def recursion_update_a(formula, level):
     for sub_formula in sub_formula_list:
         recursion_update_a(sub_formula, level)
 
-require_level = "zero"
+require_level = "normal"
 new_rows = []
 formula_scope = pd.read_csv(osp.join('data', 'DNF_train_soft_EFO1.csv'))
 for i, row in formula_scope.iterrows():

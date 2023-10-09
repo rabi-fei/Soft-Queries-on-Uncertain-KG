@@ -11,12 +11,12 @@ from src.structure.knowledge_graph_index import KGIndex
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt_path", type=str, default='checkpoints/ppi5k/params_numpy')
+parser.add_argument("--ckpt_path", type=str, default='checkpoints/cn15k/params_numpy')
 parser.add_argument("--ckpt_type", type=str, default='ukge', choices=['cqd', 'ukge'])
-parser.add_argument("--data_folder", type=str, default='data/processed/ppi5k')
+parser.add_argument("--data_folder", type=str, default='data/processed/cn15k')
 parser.add_argument("--cuda", type=int, default=1)
 parser.add_argument("--batch", type=int, default=1000)
-parser.add_argument("--output_folder", type=str, default='checkpoints/ppi5k')
+parser.add_argument("--output_folder", type=str, default='checkpoints/cn15k')
 
 
 def compute_batch_score_complex(rel, arg1, arg2, rank):
@@ -47,7 +47,7 @@ def create_matrix_from_ckpt_for_UKG(scoring_matrix, observed_kg: KnowledgeGraph,
                                                        full_tail_prob[rel_id][h_id], torch.zeros(n_entity))
             full_tail_prob[rel_id][h_id] = full_tail_prob[rel_id][h_id].clamp(0, 1-epsilon)
 
-        sparse_matrix_list.append(full_tail_prob[rel_id].to_sparse())
+        sparse_matrix_list.append(full_tail_prob[rel_id].to(torch.float16).to_sparse())
     return sparse_matrix_list
 
 def compute_batch_score_transe(rel, h_emb, t_emb):
