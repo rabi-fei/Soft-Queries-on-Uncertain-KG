@@ -4,7 +4,7 @@ from math import ceil
 
 import torch
 
-from create_matrix import create_matrix_from_ckpt
+from .create_matrix import create_matrix_from_ckpt
 from src.structure.knowledge_graph import KnowledgeGraph
 from src.structure.knowledge_graph_index import KGIndex
 

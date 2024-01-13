@@ -391,4 +391,4 @@ if __name__ == "__main__":
                 all_metrics[full_formula][log_metric] /= all_metrics[full_formula]['num_queries']
     print(all_metrics)
     # writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-    writer.save_pickle(all_metrics, f"all_logging_{args.mode}_0.pickle")
+    writer.save_json(all_metrics, f"all_logging_{args.mode}_0.pickle")

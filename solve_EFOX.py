@@ -299,4 +299,4 @@ if __name__ == "__main__":
             all_two_log[f'marginal_{log_metric}'] = all_one_log[log_metric]
         '''
         print(all_two_log)
-        writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]}, f"all_logging_test_0_{formula_id}.pickle")
+        writer.save_json({formula: [all_two_log, all_one_log, all_no_log]}, f"all_logging_test_0_{formula_id}.pickle")

@@ -77,8 +77,8 @@ def check_ldict(ldict):
     if op == Atomic.op:
         assert 'name' in args
         assert 'relation_id_list' in args
-        check_ldict(args['term1'])
-        check_ldict(args['term2'])
+        check_ldict(args['head'])
+        check_ldict(args['tail'])
     if op == Negation.op:
         assert 'formula' in args
         check_ldict(args['formula'])
@@ -248,6 +248,8 @@ class Atomic(Formula):
         )
         self.beta = None if beta is  None  else float(beta)
         self.relation_id_list = []
+        self.alpha_float_list = []
+        self.beta_float_list = []
         self.negated = False
 
     @classmethod
@@ -443,6 +445,8 @@ class ConjunctiveFormula:
         self.predicate_dict: Dict[str, Atomic] = {}
         self.pred_grounded_relation_id_dict: Dict[str, List] = {}
 
+        self.pred_grounded_alpha_beta_dict: Dict[str, List] = {}
+
         self.term_dict: Dict[str, Term] = {}
         self.term_grounded_entity_id_dict: Dict[str, List] = {}
 
@@ -456,7 +460,10 @@ class ConjunctiveFormula:
             name: predicate.relation_id_list
             for name, predicate in self.predicate_dict.items()
         }
-
+        for name, predicate in self.predicate_dict.items():
+            self.pred_grounded_alpha_beta_dict.update(
+                {f"a{name[1]}":predicate.alpha_float_list ,f"b{name[1]}":predicate.beta_float_list}
+                )
         self.term_dict = OrderedDict()
         for _, pred in self.predicate_dict.items():
             for t in pred.get_terms():
@@ -476,6 +483,8 @@ class ConjunctiveFormula:
         for k, v in append_dict.items():
             if k in self.term_dict:
                 self.term_grounded_entity_id_dict[k].append(v)
+            elif k in self.pred_grounded_alpha_beta_dict:
+                self.pred_grounded_alpha_beta_dict[k].append(v)
             else:
                 self.pred_grounded_relation_id_dict[k].append(v)
 
@@ -1215,6 +1224,7 @@ class DisjunctiveFormula:
         self.term_dict: Dict[str, Term] = {}
         self.free_term_dict: Dict[str, Term] = {}
         self.term_grounded_entity_id_dict: Dict[str, List] = {}
+        self.term_grounded_alpha_beta_dict: Dict[str, List] = {}
 
         self.term_name2predicate_name_dict: Dict[str, str] = defaultdict(list)
         # run initialization
@@ -1236,7 +1246,10 @@ class DisjunctiveFormula:
             name: predicate.relation_id_list
             for name, predicate in self.predicate_dict.items()
         }
-
+        for name, predicate in self.predicate_dict.items():
+            self.term_grounded_alpha_beta_dict.update(
+                {f"a{name[1]}":predicate.alpha_float_list ,f"b{name[1]}":predicate.beta_float_list}
+                )
         self.term_dict = {}
         for _, pred in self.predicate_dict.items():
             for t in pred.get_terms():
@@ -1255,7 +1268,7 @@ class DisjunctiveFormula:
     def append_relation_and_symbols(self, append_dict):
         for sub_formula in self.formula_list:
             sub_append_dict = {key: append_dict[key] for key in append_dict if key in sub_formula.term_dict or
-                               key in sub_formula.predicate_dict}
+                               key in sub_formula.predicate_dict or key in sub_formula.pred_grounded_alpha_beta_dict}
             sub_formula.append_relation_and_symbols(sub_append_dict)
 
     def append_qa_instances(self,

@@ -493,7 +493,7 @@ if __name__ == "__main__":
                             for metric in no_mar_logs.keys():
                                 all_no_log[metric] += no_mar_logs[metric]
                         all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
-                        writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                        writer.save_json({formula: [all_two_log, all_one_log, all_no_log]},
                                            f"all_logging_valid_{step}_{formula_id}.pickle")
 
                 if 'test' in configure['action']:
@@ -528,9 +528,9 @@ if __name__ == "__main__":
                                 all_no_log[metric] += no_mar_logs[metric]
                         # print(all_two_log)
                         all_metrics[formula] = {formula: [all_two_log, all_one_log, all_no_log]}
-                        writer.save_pickle({formula: [all_two_log, all_one_log, all_no_log]},
+                        writer.save_json({formula: [all_two_log, all_one_log, all_no_log]},
                                            f"all_logging_test_{step}_{formula_id}.pickle")
-                    writer.save_pickle(all_metrics, f"all_logging_test_{step}.pickle")
+                    writer.save_json(all_metrics, f"all_logging_test_{step}.pickle")
 
 
 
