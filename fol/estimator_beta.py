@@ -1,6 +1,7 @@
 from typing import List
 
 import torch
+import math
 import torch.nn.functional as F
 from torch import nn
 
@@ -32,18 +33,23 @@ class BetaProjection(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.layer1 = nn.Linear(
-            self.entity_dim + self.relation_dim, self.hidden_dim)  # 1st layer
+            self.entity_dim , self.hidden_dim)  # 1st layer
         self.layer0 = nn.Linear(
             self.hidden_dim, self.entity_dim)  # final layer
+        self.layer_alpha = nn.Linear(self.relation_dim, self.relation_dim)
+        self.layer_beta = nn.Linear(self.relation_dim, self.relation_dim)
         for nl in range(2, num_layers + 1):
             setattr(self, "layer{}".format(nl), nn.Linear(
                 self.hidden_dim, self.hidden_dim))
         for nl in range(num_layers + 1):
             nn.init.xavier_uniform_(getattr(self, "layer{}".format(nl)).weight)
         self.projection_regularizer = projection_regularizer
+        nn.init.xavier_uniform_(self.layer_alpha.weight)
+        nn.init.xavier_uniform_(self.layer_beta.weight)
 
-    def forward(self, e_embedding, r_embedding):
-        x = torch.cat([e_embedding, r_embedding], dim=-1)
+    def forward(self, e_embedding, r_embedding, a_embedding, b_embedding):
+        ab_emb = self.layer_alpha(a_embedding) + self.layer_beta(b_embedding)
+        x = e_embedding + r_embedding + ab_emb
         for nl in range(1, self.num_layers + 1):
             x = F.relu(getattr(self, "layer{}".format(nl))(x))
         x = self.layer0(x)
@@ -229,7 +235,7 @@ class BetaEstimator4V(AppFOQEstimator):
     name = "beta"
 
     def __init__(self, n_entity, n_relation, hidden_dim,
-                 gamma, entity_dim, relation_dim, num_layers,
+                 gamma, omega,  entity_dim, relation_dim, num_layers,
                  negative_sample_size, device):
         super().__init__()
         self.name = 'beta'
@@ -239,6 +245,10 @@ class BetaEstimator4V(AppFOQEstimator):
         self.hidden_dim = hidden_dim
         self.gamma = nn.Parameter(
             torch.Tensor([gamma]),
+            requires_grad=False
+        )
+        self.omega = nn.Parameter(
+            torch.Tensor([omega]),
             requires_grad=False
         )
         self.epsilon = 2.0
@@ -265,6 +275,8 @@ class BetaEstimator4V(AppFOQEstimator):
 
         self.entity_regularizer = Regularizer(1, 0.05, 1e9)
         self.projection_regularizer = Regularizer(1, 0.05, 1e9)
+        self.f = nn.ReLU()
+        self.loss = nn.MSELoss()
         # self.intersection_net = BetaIntersection(self.entity_dim)
         self.center_net = BetaIntersection(self.entity_dim)
         self.projection_net = BetaProjection(self.entity_dim * 2,
@@ -273,6 +285,18 @@ class BetaEstimator4V(AppFOQEstimator):
                                              self.projection_regularizer,
                                              num_layers)
 
+    def get_float_embedding(self, floats):
+
+        float_emb = torch.zeros(floats.shape[0], 2 * self.entity_dim, device=self.device)
+        div_term = torch.exp((torch.arange(0, 2 * self.entity_dim, 2, dtype=torch.float) *
+                            -(math.log(10000.0) / self.entity_dim)))
+        div_term = div_term.to(self.device)
+        
+        float_emb[:, 0::2] = torch.sin(floats.unsqueeze(-1) * div_term.unsqueeze(0))
+        float_emb[:, 1::2] = torch.cos(floats.unsqueeze(-1) * div_term.unsqueeze(0))
+
+        return float_emb
+        
     def get_entity_embedding(self, entity_ids: torch.LongTensor,
                              **kwargs):
         # emb = self.entity_embedding[entity_ids, :]
@@ -285,13 +309,16 @@ class BetaEstimator4V(AppFOQEstimator):
 
     def get_projection_embedding(self, proj_ids: torch.LongTensor, emb,
                                  **kwargs):
+        proj_ids, alpha_floats, beta_floats = proj_ids[0], proj_ids[1], proj_ids[2]
         assert emb.shape[0] == len(proj_ids)
+        alpha_emb = self.get_float_embedding(alpha_floats)
+        beta_emb = self.get_float_embedding(beta_floats)
         rel_emb = torch.index_select(
             self.relation_embedding,
             dim=0,
-            index=proj_ids.view(-1)).view(
+            index=proj_ids.to(int).view(-1)).view(
                 list(proj_ids.shape) + [self.relation_dim])
-        pro_emb = self.projection_net(emb, rel_emb)
+        pro_emb = self.projection_net(emb, rel_emb, alpha_emb, beta_emb)
         return pro_emb
 
     def get_conjunction_embedding(self, conj_emb: List[torch.Tensor],
@@ -340,14 +367,14 @@ class BetaEstimator4V(AppFOQEstimator):
     def criterion(self,
                   pred_emb: torch.Tensor,
                   answer_set: List[IntList],
+                  value_set: List[IntList],
                   union: bool = False):
         assert pred_emb.shape[0] == len(answer_set)
         alpha_embedding, beta_embedding = torch.chunk(pred_emb, 2, dim=-1)
         query_dist = torch.distributions.beta.Beta(
             alpha_embedding, beta_embedding)
-        chosen_ans, chosen_false_ans, subsampling_weight = \
-            inclusion_sampling(answer_set, negative_size=self.negative_size,
-                               entity_num=self.n_entity)  # todo: negative
+        chosen_ans, chosen_scores, chosen_false_ans, subsampling_weight = \
+            inclusion_sampling(answer_set,value_set, negative_size=self.negative_size, entity_num=self.n_entity)  # todo: negative
         answer_embedding = self.get_entity_embedding(
             torch.tensor(chosen_ans, device=self.device)).squeeze()
         if union:
@@ -355,7 +382,10 @@ class BetaEstimator4V(AppFOQEstimator):
                 answer_embedding.unsqueeze(1), query_dist)  # b*disj
             positive_logit = torch.max(positive_union_logit, dim=1)[0]
         else:
-            positive_logit = self.compute_logit(answer_embedding, query_dist)
+            chosen_scores = torch.tensor(chosen_scores, device=self.device)
+            positive_tmp = self.compute_logit(answer_embedding, query_dist)
+            positive_logit = (positive_tmp.unsqueeze(dim=-1) - chosen_scores)**2
+
         all_neg_emb = self.get_entity_embedding(torch.tensor(
             chosen_false_ans, device=self.device).view(-1))
         # batch*negative*dim
@@ -370,22 +400,27 @@ class BetaEstimator4V(AppFOQEstimator):
         else:
             query_dist_unsqueezed = torch.distributions.beta.Beta(
                 alpha_embedding.unsqueeze(1), beta_embedding.unsqueeze(1))
-            negative_logit = self.compute_logit(
+            negative_tmp = self.compute_logit(
                 all_neg_emb, query_dist_unsqueezed)  # b*negative
+            negative_logit = (negative_tmp)**2
         return positive_logit, negative_logit, subsampling_weight.to(
                                                                 self.device)
 
     def compute_logit(self, entity_emb, query_dist):
         entity_alpha, entity_beta = torch.chunk(entity_emb, 2, dim=-1)
         entity_dist = torch.distributions.beta.Beta(entity_alpha, entity_beta)
-        logit = self.gamma - \
-            torch.norm(torch.distributions.kl.kl_divergence(
+        distance = torch.norm(torch.distributions.kl.kl_divergence(
                 entity_dist, query_dist), p=1, dim=-1)
+        logit = self.f(distance * self.omega - self.gamma)
         return logit
 
     def compute_all_entity_logit(self,
-                                 pred_emb: torch.Tensor,
+                                 pred_emb_list: List[torch.Tensor],
                                  union: bool = False) -> torch.Tensor:
+        if union:
+            pred_emb = torch.stack(pred_emb_list, dim=0)
+        else:
+            pred_emb = pred_emb_list[0]
         all_entities = torch.LongTensor(range(self.n_entity)).to(self.device)
         all_embedding = self.get_entity_embedding(all_entities)  # nentity*dim
         pred_alpha, pred_beta = torch.chunk(

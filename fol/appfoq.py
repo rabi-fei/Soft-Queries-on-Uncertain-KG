@@ -54,17 +54,20 @@ def negative_sampling(answer_set: List[IntList], negative_size: int, entity_num:
     return all_chosen_ans, all_chosen_false_ans, subsampling_weight
 
 
-def inclusion_sampling(answer_set: List[IntList], negative_size: int, entity_num: int, k=1, base_num=4):
+def inclusion_sampling(answer_set: List[IntList], value_set:List[List], negative_size: int, entity_num: int, k=1, base_num=4):
     all_chosen_ans = []
     all_chosen_false_ans = []
+    all_chosen_scores = []
     subsampling_weight = torch.zeros(len(answer_set))
     for i in range(len(answer_set)):
-        all_chosen_ans.append(random.choices(answer_set[i], k=k))
+        chosed_ans_id = random.choices(range(len(answer_set[i])), k=k)
+        all_chosen_ans.append([answer_set[i][index] for index in chosed_ans_id])
+        all_chosen_scores.append([value_set[i][index] for index in chosed_ans_id])
         subsampling_weight[i] = len(answer_set[i]) + base_num
         negative_sample = np.random.randint(entity_num, size=negative_size)
         all_chosen_false_ans.append(negative_sample)
     subsampling_weight = torch.sqrt(1 / subsampling_weight)
-    return all_chosen_ans, all_chosen_false_ans, subsampling_weight
+    return all_chosen_ans, all_chosen_scores, all_chosen_false_ans, subsampling_weight
 
 
 def compute_final_loss(positive_logit, negative_logit, subsampling_weight):

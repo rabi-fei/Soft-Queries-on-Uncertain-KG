@@ -1,5 +1,5 @@
 from typing import List
-
+import math
 import numpy as np
 import torch
 from torch import nn
@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from .appfoq import (AppFOQEstimator, IntList, find_optimal_batch,
                      inclusion_sampling)
+
 
 
 pi = 3.14159265358979323846
@@ -41,13 +42,30 @@ class ConeProjection(nn.Module):
         self.num_layers = num_layers
         self.layer1 = nn.Linear(self.entity_dim + self.relation_dim, self.hidden_dim)
         self.layer0 = nn.Linear(self.hidden_dim, self.entity_dim + self.relation_dim)
+
+        self.layer_alpha = nn.Linear(self.entity_dim, self.entity_dim)
+        self.layer_beta = nn.Linear(self.entity_dim, self.entity_dim)
         for nl in range(2, num_layers + 1):
             setattr(self, "layer{}".format(nl), nn.Linear(self.hidden_dim, self.hidden_dim))
         for nl in range(num_layers + 1):
             nn.init.xavier_uniform_(getattr(self, "layer{}".format(nl)).weight)
 
-    def forward(self, source_embedding_axis, source_embedding_arg, r_embedding_axis, r_embedding_arg):
-        x = torch.cat([source_embedding_axis + r_embedding_axis, source_embedding_arg + r_embedding_arg], dim=-1)
+        nn.init.xavier_uniform_(self.layer_alpha.weight)
+        nn.init.xavier_uniform_(self.layer_beta.weight)
+
+    def forward(self, source_embedding_axis, source_embedding_arg, r_embedding_axis, 
+    r_embedding_arg, a_embedding_axis, a_embedding_arg, b_embedding_axis, b_embedding_arg):
+
+        ab_emb_axis = self.layer_alpha(a_embedding_axis) + self.layer_beta(b_embedding_axis)
+        ab_emb_args = self.layer_alpha(a_embedding_arg) + self.layer_beta(b_embedding_arg)
+        x = torch.cat(
+            [source_embedding_axis + r_embedding_axis + ab_emb_axis,
+             source_embedding_arg + r_embedding_arg + ab_emb_args],
+        dim=-1)
+#        x = torch.cat(
+#            [source_embedding_axis + r_embedding_axis,
+#             source_embedding_arg + r_embedding_arg],
+#        dim=-1)
         for nl in range(1, self.num_layers + 1):
             x = F.relu(getattr(self, "layer{}".format(nl))(x))
         x = self.layer0(x)
@@ -140,8 +158,20 @@ class ConEstimator(AppFOQEstimator):
         self.epsilon = 2.0
         self.device = device
 
+        self.loss = torch.nn.MSELoss()
+
         self.gamma = nn.Parameter(
             torch.Tensor([gamma]),
+            requires_grad=False
+        )
+
+        self.w = nn.Parameter(
+            torch.Tensor([2.0]),
+            requires_grad=True
+        )
+
+        self.b = nn.Parameter(
+            torch.Tensor([0.0]),
             requires_grad=False
         )
 
@@ -159,7 +189,12 @@ class ConEstimator(AppFOQEstimator):
         self.entity_embeddings = nn.Embedding(n_entity, self.entity_dim)  # axis for entities
         self.angle_scale = AngleScale(self.embedding_range.item())  # scale axis embeddings to [-pi, pi]
 
-        self.modulus = nn.Parameter(torch.Tensor([0.5 * self.embedding_range.item()]), requires_grad=True)
+        self.modulus = nn.Parameter(torch.Tensor([1.5 * self.embedding_range.item()]), requires_grad=False)
+
+
+        #self.f = nn.LeakyReLU(0.1)
+        self.f = nn.ReLU()
+        #self.loss = torch.nn.HuberLoss('mean', 0.1)
 
         self.axis_scale = 1.0
         self.arg_scale = 1.0
@@ -181,6 +216,18 @@ class ConEstimator(AppFOQEstimator):
         self.cone_intersection = ConeIntersection(self.entity_dim, drop)
         self.cone_negation = ConeNegation()
 
+    def get_float_embedding(self, floats):
+
+        float_emb = torch.zeros(floats.shape[0], 2 * self.entity_dim, device=self.device)
+        div_term = torch.exp((torch.arange(0, 2 * self.entity_dim, 2, dtype=torch.float) *
+                            -(math.log(10000.0) / self.entity_dim)))
+        div_term = div_term.to(self.device)
+        
+        float_emb[:, 0::2] = torch.sin(floats.unsqueeze(-1) * div_term.unsqueeze(0))
+        float_emb[:, 1::2] = torch.cos(floats.unsqueeze(-1) * div_term.unsqueeze(0))
+
+        return float_emb
+
     def get_entity_embedding(self, entity_ids: torch.Tensor):
         emb = self.entity_embeddings(entity_ids)
         axis_emb = convert_to_axis(self.angle_scale(emb, self.axis_scale))
@@ -189,13 +236,26 @@ class ConEstimator(AppFOQEstimator):
 
     def get_projection_embedding(self, proj_ids: torch.Tensor, emb):
         entity_axis_emb, entity_arg_emb = torch.chunk(emb, 2, dim=-1)
+        proj_ids, alpha_floats, beta_floats = proj_ids[0], proj_ids[1], proj_ids[2]
         assert emb.shape[0] == len(proj_ids)
-        rel_emb = self.relation_embeddings(proj_ids)
+        alpha_emb = self.get_float_embedding(alpha_floats)
+        beta_emb = self.get_float_embedding(beta_floats)
+        rel_emb = self.relation_embeddings(proj_ids.to(int))
         rel_axis_emb, rel_arg_emb = torch.chunk(rel_emb, 2, dim=-1)
         rel_axis_emb = convert_to_axis(self.angle_scale(rel_axis_emb, self.axis_scale))
         rel_arg_emb = convert_to_axis(self.angle_scale(rel_arg_emb, self.arg_scale))  # "convert_to_axis" also
+
+        alpha_axis_emb, alpha_arg_emb = torch.chunk(alpha_emb, 2, dim=-1)
+        alpha_axis_emb = convert_to_axis(self.angle_scale(alpha_axis_emb, self.axis_scale))
+        alpha_arg_emb = convert_to_axis(self.angle_scale(alpha_arg_emb, self.arg_scale)) 
+
+        beta_axis_emb, beta_arg_emb = torch.chunk(beta_emb, 2, dim=-1)
+        beta_axis_emb = convert_to_axis(self.angle_scale(beta_axis_emb, self.axis_scale))
+        beta_arg_emb = convert_to_axis(self.angle_scale(beta_arg_emb, self.arg_scale)) 
+
         pro_axis_emb, pro_arg_emb = self.projection_net(entity_axis_emb, entity_arg_emb, rel_axis_emb,
-                                                        rel_arg_emb)
+                                                        rel_arg_emb, alpha_axis_emb, alpha_arg_emb,
+                                                        beta_axis_emb, beta_arg_emb)
         pro_emb = torch.cat((pro_axis_emb, pro_arg_emb), dim=-1)
         return pro_emb
 
@@ -240,29 +300,40 @@ class ConEstimator(AppFOQEstimator):
         distance_in = torch.min(distance2axis, distance_base)
 
         distance = torch.norm(distance_out, p=1, dim=-1) + self.cen * torch.norm(distance_in, p=1, dim=-1)
-        logit = self.gamma - distance * self.modulus  # weird since modulus is a learnable parameter
-
+        #logit = self.gamma - distance * self.modulus  # weird since modulus is a learnable parameter
+        logit = self.f(distance * self.modulus - self.gamma)
         return logit
 
-    def criterion(self, pred_emb: torch.Tensor, answer_set: List[IntList], union: bool = False):
+    def criterion(self, pred_emb: torch.Tensor, answer_set: List[IntList], value_set: List[IntList], union: bool = False):
         assert pred_emb.shape[0] == len(answer_set)
-        chosen_ans, chosen_false_ans, subsampling_weight = \
-            inclusion_sampling(answer_set, negative_size=self.negative_size, entity_num=self.n_entity)
+        chosen_ans, chosen_scores, chosen_false_ans, subsampling_weight = \
+            inclusion_sampling(answer_set,value_set, negative_size=self.negative_size, entity_num=self.n_entity)
         answer_embedding = self.get_entity_embedding(torch.tensor(np.array(chosen_ans), device=self.device))
         neg_embedding = self.get_entity_embedding(torch.tensor(np.array(chosen_false_ans), device=self.device).view(-1))  # n*dim
         neg_embedding = neg_embedding.view(-1, self.negative_size, 2 * self.entity_dim)  # batch*negative*dim
         pred_emb = pred_emb.unsqueeze(dim=-2)
         if union:
             positive_union_logit = self.compute_logit(answer_embedding.unsqueeze(1), pred_emb)
-            positive_logit = torch.max(positive_union_logit, dim=1)[0]
+            positive_tmp = torch.max(positive_union_logit, dim=1)[0]
+            positive_logit = (positive_tmp - chosen_scores)**2
             negative_union_logit = self.compute_logit(neg_embedding.unsqueeze(1), pred_emb)
-            negative_logit = torch.max(negative_union_logit, dim=1)[0]
+            negative_tmp = torch.max(negative_union_logit, dim=1)[0]
+            negative_logit = negative_tmp**2
         else:
-            positive_logit = self.compute_logit(answer_embedding, pred_emb)
-            negative_logit = self.compute_logit(neg_embedding, pred_emb)  # b*negative
+            chosen_scores = torch.tensor(chosen_scores, device=self.device)
+            positive_tmp = self.compute_logit(answer_embedding, pred_emb)
+            positive_logit = (positive_tmp - chosen_scores)**2
+            negative_tmp = self.compute_logit(neg_embedding, pred_emb)  # b*negative
+            negative_logit = negative_tmp**2
+
+        
         return positive_logit, negative_logit, subsampling_weight.to(self.device)
 
-    def compute_all_entity_logit(self, pred_emb: torch.Tensor, union: bool = False):
+    def compute_all_entity_logit(self, pred_emb_list: List[torch.Tensor], union: bool = False):
+        if union:
+            pred_emb = torch.stack(pred_emb_list, dim=0)
+        else:
+            pred_emb = pred_emb_list[0]
         all_entities = torch.LongTensor(range(self.n_entity)).to(self.device)
         all_embedding = self.get_entity_embedding(all_entities)  # n_entity*dim
         pred_emb = pred_emb.unsqueeze(-2)  # batch*(disj)*1*dim
@@ -273,7 +344,7 @@ class ConEstimator(AppFOQEstimator):
         for answer_part in chunk_of_answer:
             if union:
                 union_part = self.compute_logit(answer_part.unsqueeze(0).unsqueeze(0), pred_emb)
-                logit_part = torch.max(union_part, dim=1)[0]
+                logit_part = torch.max(union_part, dim=0)[0]
             else:
                 logit_part = self.compute_logit(answer_part.unsqueeze(dim=0), pred_emb)
                 # batch*answer_part*dim
