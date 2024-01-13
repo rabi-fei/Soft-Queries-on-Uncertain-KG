@@ -115,10 +115,10 @@ if __name__ == "__main__":
 
     kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'test_kg.tsv'),
+        quadruple_files=osp.join(data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
     """
     for lstr in DNF_lstr2name:

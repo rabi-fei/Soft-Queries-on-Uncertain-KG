@@ -339,7 +339,7 @@ if __name__ == "__main__":
     data_folder = configure['data']['data_folder']
     kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     # get model
     train_config = configure['train']

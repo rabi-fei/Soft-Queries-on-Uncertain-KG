@@ -9,14 +9,14 @@ if __name__ == "__main__":
     for data_folder in all_data_folder:
         kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
         test_kg = KnowledgeGraph.create(
-            triple_files=osp.join(data_folder, 'test_kg.tsv'),
+            quadruple_files=osp.join(data_folder, 'test_kg.tsv'),
             kgindex=kgidx)
         self_circle_num = 0
         self_circle_rel = set()
-        for triple in test_kg.triples:
+        for triple in test_kg.facts:
             h, r, t = triple
             if h == t:
                 # print(triple, kgidx.inverse_entity_id_to_name[h], kgidx.inverse_relation_id_to_name[r])
                 self_circle_num += 1
                 self_circle_rel.add(kgidx.inverse_relation_id_to_name[r])
-        print(len(test_kg.triples), self_circle_num, self_circle_rel, len(self_circle_rel))
+        print(len(test_kg.facts), self_circle_num, self_circle_rel, len(self_circle_rel))

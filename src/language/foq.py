@@ -50,6 +50,7 @@ import numpy as np
 import networkx as nx
 import torch
 
+from scipy.sparse import coo_array
 from src.language.tnorm import Tnorm
 from src.structure.neural_binary_predicate import NeuralBinaryPredicate
 from src.structure.knowledge_graph import KnowledgeGraph, csp_efo1, csp_efo1_soft, ground_variable, ground_variable_v2, ground_variable_v3, kg2matrix, \
@@ -235,12 +236,9 @@ class Atomic(Formula):
                  name: str,
                  head: Term,
                  tail: Term,
+
                  alpha: str = None,
                  beta: str = None) -> None:
-        self.name = name
-        self.relation = name
-        self.head = head
-        self.tail = tail
         self.alpha = (
             None if alpha is None
             else float(alpha) if "." in alpha
@@ -284,6 +282,7 @@ class Atomic(Formula):
             lstr = f"{self.name}({self.head.name},{self.tail.name},{self.alpha},{self.beta})"
         else:
             lstr = f"{self.name}({self.head.name},{self.tail.name})"
+
         return lstr
 
     def get_atomics(self) -> Dict[str, 'Atomic']:
@@ -581,8 +580,10 @@ class ConjunctiveFormula:
             self.append_relation_and_symbols(grounded_dict)
             now_index = max([len(grounded) for grounded in self.term_grounded_entity_id_dict.values()]) - 1
             negation_pred_list = [negation_edge[1] for negation_edge in sub_graph_negation_edge]
+
             full_answer = self.deterministic_soft_query(now_index, data_kg, negation_pred_list, False)
             if full_answer["f1_ans"]:
+
                 proper_answer_got = True
             else:
                 self.pop_relation_and_symbols(now_index, grounded_dict)
@@ -638,14 +639,14 @@ class ConjunctiveFormula:
                 if now_head in node2index:  # Tail is ungrounded anchor node
                     head_candidate = set(full_answer["f1"].col) 
                     for now_try_time in range(10):
-                        if len(head_candidate) > 1:
-                            to_delete_head = random.sample(head_candidate, 1)[0]
+                        if head_candidate.getnnz() > 1:
+                            to_delete_head = random.sample(head_candidate.col.tolist(), 1)[0]
                             guess_predicate = random.sample(data_kg.node2or[to_delete_head].keys(), 1)[0]
                             guess_tail = random.sample(data_kg.hr2t[(to_delete_head, guess_predicate)], 1)[0]
                         else:
                             guess_tail = random.randint(0, data_kg.num_entities - 1)
                             guess_predicate = random.sample(data_kg.node2ir[guess_tail].keys(), 1)[0]
-                        if len(head_candidate - data_kg.tr2h[(guess_tail, guess_predicate)]) > 0:
+                        if len(set(head_candidate.col) - data_kg.tr2h[(guess_tail, guess_predicate)]) > 0:
                             grounded_dict[now_tail] = guess_tail
                             grounded_dict[now_predicate] = guess_predicate
                             grounded_neg_pred[now_predicate] = True
@@ -666,10 +667,15 @@ class ConjunctiveFormula:
                         h_r = (guess_head, guess_predicate)
                         p = np.array(data_kg.hr2tp[h_r])[:, -1] #TODO: change the useful answers.
                         if len(tail_candidate - data_kg.hr2t[h_r]) > 0:
+
                             grounded_dict[now_head] = guess_head
                             grounded_dict[now_predicate] = guess_predicate
                             grounded_neg_pred[now_predicate] = True
                             node2index[now_tail] = len(node2index)
+                            full_answer[now_head] = guess_head
+                            for candidate in full_answer[now_tail].keys():
+                                if candidate not in data_kg.hr2t[(guess_head, guess_predicate)]:
+                                    full_answer[now_tail][candidate] += 1- data_kg.hrt2p[(now_head, now_predicate, candidate)]
                             break
                     else: # Sample fails
                         guess_head = random.sample(data_kg.node2or.keys(), 1)[0]
@@ -725,9 +731,11 @@ class ConjunctiveFormula:
         for term_name in self.term_dict:
             if self.has_term_grounded_entity_id_list(term_name) and \
                     len(self.term_grounded_entity_id_dict[term_name]) > index:
-                now_term_candidate[term_name] = {self.term_grounded_entity_id_dict[term_name][index]}
+                grounded_entity = self.term_grounded_entity_id_dict[term_name][index]
+                now_term_candidate[f"{term_name}_domain"] = {grounded_entity}
+                now_term_candidate[term_name] = coo_array((1,kg_graph.num_entities))
             else:
-                now_term_candidate[term_name] = set(range(kg_graph.num_entities))
+                now_term_candidate[term_name] = coo_array((1,kg_graph.num_entities))
             if 'f' in term_name:
                 free_variable_list.append(term_name)
         free_variable_list.sort()
@@ -759,7 +767,8 @@ class ConjunctiveFormula:
         skip_predicate = [] if not skip_predicate else skip_predicate
         for pred in self.predicate_dict.values():
             if pred.name not in skip_predicate:
-                pred_triples = (pred.head.name, self.pred_grounded_relation_id_dict[pred.name][index], pred.tail.name)
+                pred_triples = (pred.head.name, self.pred_grounded_relation_id_dict[pred.name][index], pred.tail.name, \
+                                 pred.alpha, pred.beta)
                 if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
@@ -808,7 +817,7 @@ class ConjunctiveFormula:
         """
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
-        if len(free_variable_list) == 1 or return_full_match:
+        if len(free_variable_list) == 1 or return_full_match: 
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)
             if return_full_match:
                 to_return_dict = answer_dict if exist_answer else defaultdict(set)
@@ -965,7 +974,7 @@ class ConjunctiveFormula:
         now_term_candidate, free_variable_list = self.construct_now_candidate_set(index, kg_graph)
         if initialization:
             for term_name in initialization:
-                now_term_candidate[term_name] = initialization[term_name].intersection(now_term_candidate[term_name])
+                now_term_candidate[term_name] = coo_array(initialization[term_name] + now_term_candidate[term_name])
         sub_kg, neg_kg = self.construct_query_graph(index, skip_predicate)
         if len(free_variable_list) == 1 or return_full_match:
             answer_dict, exist_answer = csp_efo1(sub_kg, neg_kg, now_term_candidate, kg_graph)

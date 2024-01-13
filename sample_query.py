@@ -19,22 +19,75 @@ from src.structure import get_nbp_class
 from src.structure.knowledge_graph import KnowledgeGraph, kg2matrix
 from src.structure.knowledge_graph_index import KGIndex
 from src.utils.data_util import RaggedBatch
-from train_lmpnn import name2lstr, newlstr2name, index2newlstr, index2EFOX_minimal
+#from train_lmpnn import name2lstr, newlstr2name, index2newlstr, index2EFOX_minimal
 from src.language.grammar import parse_lstr_to_disjunctive_formula
 from src.language.foq import Disjunction, ConjunctiveFormula, DisjunctiveFormula
 from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLoader,
                             QueryAnsweringSeqDataLoader_v2,
                             TrainRandomSentencePairDataLoader)
 
+name2lstr = {
+    "1p": "r1(s1,f)",
+    "2p": "r1(s1,e1)&r2(e1,f)",  # 2p
+    "3p": "r1(s1,e1)&r2(e1,e2)&r3(e2,f)",  # 3p
+    "2i": "r1(s1,f)&r2(s2,f)",  # 2i
+    "3i": "r1(s1,f)&r2(s2,f)&r3(s3,f)",  # 3i
+    "ip": "r1(s1,e1)&r2(s2,e1)&r3(e1,f)",  # ip
+    "pi": "r1(s1,e1)&r2(e1,f)&r3(s2,f)",  # pi
+    "2in": "r1(s1,f)&!r2(s2,f)",  # 2in
+    "3in": "r1(s1,f)&r2(s2,f)&!r3(s3,f)",  # 3in
+    "inp": "r1(s1,e1)&!r2(s2,e1)&r3(e1,f)",  # inp
+    "pin": "r1(s1,e1)&r2(e1,f)&!r3(s2,f)",  # pin
+    "pni": "r1(s1,e1)&!r2(e1,f)&r3(s2,f)",  # pni
+    "2u": "r1(s1,f)|r2(s2,f)",  # 2u
+    "up": "(r1(s1,e1)|r2(s2,e1))&r3(e1,f)",  # up
+    "2u-dm": "!(!r1(s1,f)&!r2(s2,f))",  # 2u-dm
+    "up-dm": "!(!r1(s1,e1)|r2(s2,e1))&r3(e1,f)",  # up-dm
+}
 
+newlstr2name = {  # new naming convention: m for multi edge, a for anchor node, c for circle
+    '((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f))': '2m',
+    '((r1(s1,e1))&(r2(e1,f)))&(!(r3(e1,f)))': '2nm',
+    '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e1,e2))': '3mp',
+    '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e2,f))': '3pm',
+    '(((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f)))&(r4(e1,f))': 'im',
+    # '(((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f)))&(r4(s2,f))': 'mi',
+    '(r1(s1,f))&(r2(e1,f))': '2il',
+    # '(r1(e1,f))&(!(r2(s1,f)))': '2ln',
+    '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))': '3il',
+    '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))': '3c',
+    '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))': '3cm',
+    # '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,e2))': '3mc',
+    '(((((r1(s1,e1))&(r2(e1,e3)))&(r3(s2,e2)))&(r4(e2,e3)))&(r5(e1,e2)))&(r6(e3,f))': '3pcp'
+}
+
+index2newlstr = {
+    0: '((r1(s1,e1))&(r2(e1,f)))&(r3(e1,f))',
+    1: '((r1(s1,e1))&(r2(e1,f)))&(!(r3(e1,f)))',
+    2: '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e1,e2))',
+    3: '(((r1(s1,e1))&(r2(e1,e2)))&(r3(e2,f)))&(r4(e2,f))',
+    4: '(((r1(s1,e1))&(r2(s2,e1)))&(r3(e1,f)))&(r4(e1,f))',
+    5: '(r1(s1,f))&(r2(e1,f))',
+    6: '(r1(e1,f))&(!(r2(s1,f)))',
+    7: '((r1(s1,f))&(r2(s2,f)))&(r3(e1,f))',
+    8: '((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2))',
+    9: '(((((r1(s1,e1))&(r2(e1,f)))&(r3(s2,e2)))&(r4(e2,f)))&(r5(e1,e2)))&(r6(e1,f))',
+    10: '(((((r1(s1,e1))&(r2(e1,e3)))&(r3(s2,e2)))&(r4(e2,e3)))&(r5(e1,e2)))&(r6(e3,f))'
+}
+
+
+index2EFOX_minimal = {
+    0: '((r1(s1,f1))&(r2(s2,f2)))&(r3(f1,f2))',
+    1: '((r1(s1,e1))&(r2(e1,f1)))&(r3(e1,f2))'
+}
 
 query_2in = 'r1(s1,f)&!r2(s2,f)'
 query_2i = 'r1(s1,f)&r2(s2,f)'
 parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 parser.add_argument("--double_check", type=float, default=0.01)
-parser.add_argument("--output_folder", type=str, default='data/FB15k-EFOX-final')
-parser.add_argument("--data_folder", type=str, default='data/FB15k-EFOX-final')
+parser.add_argument("--output_folder", type=str, default='data/processed/NELL-1115-betae')
+parser.add_argument("--data_folder", type=str, default='data/processed/NELL-1115-betae')
 parser.add_argument("--num_positive", type=int, default=800)
 parser.add_argument("--num_negative", type=int, default=400)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
@@ -220,13 +273,13 @@ if __name__ == "__main__":
     print(args)
     kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'train.txt'),
         kgindex=kgidx)
     valid_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'valid_kg.tsv'),
+        quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt')],
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
+        quadruple_files=[osp.join(args.data_folder, 'train.txt'), osp.join(args.data_folder, 'valid.txt'), osp.join(args.data_folder, 'test.txt')],
         kgindex=kgidx)
     """
     for lstr in DNF_lstr2name:
@@ -236,7 +289,7 @@ if __name__ == "__main__":
     if args.sample_formula_scope == 'EFOX_minimal':
         formula_scope = index2EFOX_minimal
     elif args.sample_formula_scope == 'EFOX':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166_soft.csv'))
     elif args.sample_formula_scope == 'real_EFO1':
         formula_scope = index2newlstr
     else:

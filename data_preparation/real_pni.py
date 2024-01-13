@@ -17,13 +17,13 @@ if __name__ == "__main__":
     print(args)
     kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     valid_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'valid_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'valid_kg.tsv'),
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
     f_old = open(osp.join(args.output_folder, f'{args.mode}-qaa.json'))
     old_data = json.load(f_old)

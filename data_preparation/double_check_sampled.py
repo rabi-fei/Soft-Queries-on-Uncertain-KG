@@ -50,13 +50,13 @@ if __name__ == "__main__":
     print(args)
     kgidx = KGIndex.load(osp.join(args.data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     valid_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'valid_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'valid_kg.tsv'),
         kgindex=kgidx)
     test_kg = KnowledgeGraph.create(
-        triple_files=osp.join(args.data_folder, 'test_kg.tsv'),
+        quadruple_files=osp.join(args.data_folder, 'test_kg.tsv'),
         kgindex=kgidx)
 
     formula_scope = pd.read_csv(osp.join('data', 'DNF_EFO2_23_4123166.csv'))

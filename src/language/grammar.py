@@ -169,9 +169,9 @@ def parse_lstr_to_lformula_v2(lstr: str) -> Formula:
             else:
                 term1_name, term2_name = right_lstr.split(',')
                 alpha, beta = "25%", "1.0"
-
             term1 = parse_term(term1_name)
             term2 = parse_term(term2_name)
+            alpha, beta = float(alpha), float(beta)
             if predicate_name.isnumeric():
                 predicate_id = int(predicate_name)
                 predicate = Atomic(name="predicate_by_id",

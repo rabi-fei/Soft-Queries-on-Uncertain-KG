@@ -160,14 +160,14 @@ def convert_beta_folder(beta_folder, output_folder):
     # train knowledge graphs
     print("converting train KnowledgeGraph")
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(beta_folder, 'train.txt'),
+        quadruple_files=osp.join(beta_folder, 'train.txt'),
         kgindex=kgidx)
     print("dump converted train KnowledgeGraph")
     train_kg.dump(osp.join(output_folder, 'train_kg.tsv'))
 
     print("converting valid KnowledgeGraph")
     valid_kg = KnowledgeGraph.create(
-        triple_files=[osp.join(beta_folder, 'train.txt'),
+        quadruple_files=[osp.join(beta_folder, 'train.txt'),
                       osp.join(beta_folder, 'valid.txt')],
         kgindex=kgidx)
     print("dump converted valid KnowledgeGraph")
@@ -175,7 +175,7 @@ def convert_beta_folder(beta_folder, output_folder):
 
     print("converting test KnowledgeGraph")
     test_kg = KnowledgeGraph.create(
-        triple_files=[osp.join(beta_folder, 'train.txt'),
+        quadruple_files=[osp.join(beta_folder, 'train.txt'),
                       osp.join(beta_folder, 'valid.txt'),
                       osp.join(beta_folder, 'test.txt')],
         kgindex=kgidx)

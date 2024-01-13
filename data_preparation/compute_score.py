@@ -53,7 +53,7 @@ if __name__ == "__main__":
     cqd_path = args.ckpt_path
     kgidx = KGIndex.load(osp.join(data_folder, 'kgindex.json'))
     train_kg = KnowledgeGraph.create(
-        triple_files=osp.join(data_folder, 'train_kg.tsv'),
+        quadruple_files=osp.join(data_folder, 'train_kg.tsv'),
         kgindex=kgidx)
     threshold, epsilon = 0.005, 0.001
 
