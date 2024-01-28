@@ -6,33 +6,54 @@ import math
 import torch
 import pickle
 from torch import nn
+import numpy as np
 
 from src.structure.knowledge_graph import KnowledgeGraph, kg_remove_node
 from src.structure.knowledge_graph_index import KGIndex
 from Symbloic_FIT import find_leaf_node, find_enumerate_node, solve_EFO1_new
 from data_preparation.compute_score import compute_batch_score_complex
+from fol.appfoq import (AppFOQEstimator, IntList, find_optimal_batch,
+                     inclusion_sampling)
 
 def compute_batch_score_ukge(rel, h_emb, t_emb):
-    score =  torch.sum(rel * h_emb * t_emb, dim=-1)
+    score =  torch.sum(rel * h_emb * t_emb, dim=-1)# TODO!
     return score
 
 class Kge_finetune(nn.Module):
     def __init__(self, observed_kg, ent_emb, rel_emb, relation_matrix_list, freeze_ent,
                  score_function, head_batch, sparse,  threshold,
-                 epsilon, device):
+                 epsilon, mode, device):
         super(Kge_finetune, self).__init__()
         self.observed_kg = observed_kg
         self.freeze_ent = freeze_ent
         self.ent_emb = nn.Embedding.from_pretrained(ent_emb, freeze=freeze_ent)
         self.rel_emb = nn.Embedding.from_pretrained(rel_emb, freeze=False)
-        self.rank = rel_emb.shape[1] // 2
+        self.rank = rel_emb.shape[1]
         self.score_function = score_function
         self.head_batch = head_batch
         self.sparse = sparse
+        self.mode = mode
+        self.ativate = nn.ReLU()
         self.threshold, self.epsilon = threshold, epsilon
         self.device = device
         self.n_entity, self.ent_dim = ent_emb.shape[0], ent_emb.shape[1]
         self.pretrained_rel_matrix_list = relation_matrix_list
+        init_size = 1e-3
+        if self.mode == "affine":
+                nb_out_features = 2
+                input_size = self.rank 
+                self.score_transform_subj_fun = nn.Linear(in_features=input_size, out_features=nb_out_features, bias=True)
+                self.score_transform_subj_fun.weight.data *= init_size
+                self.score_transform_subj_fun.bias.data *= init_size
+
+                self.score_transform_pred_fun = nn.Linear(in_features=input_size, out_features=nb_out_features, bias=True)
+                self.score_transform_pred_fun.weight.data *= init_size
+                self.score_transform_pred_fun.bias.data *= init_size
+
+
+                self.score_transform_obj_fun = nn.Linear(in_features=input_size, out_features=nb_out_features, bias=True)
+                self.score_transform_obj_fun.weight.data *= init_size
+                self.score_transform_obj_fun.bias.data *= init_size
 
     def forward(self, rel_id, head_ent_vec, train_mask=False):
         """
@@ -54,6 +75,28 @@ class Kge_finetune(nn.Module):
                 .unsqueeze(0).unsqueeze(0)
             #batch_score = self.score_function(this_rel_emb, batch_head_emb, tail_emb, self.rank)
             batch_score = self.score_function(this_rel_emb, batch_head_emb, tail_emb)
+            if self.mode == "affine":
+                alpha, beta = 0.0, 0.0
+                if self.score_transform_subj_fun is not None:
+                    coeffs_ = self.score_transform_subj_fun(batch_head_emb)
+                    # [B, 1], [B, 1]
+                    alpha = alpha + coeffs_[:,:, 0].view(-1, 1)
+                    beta = beta + coeffs_[:,:, 1].view(-1, 1)
+
+                # [B, 1]
+                if self.score_transform_pred_fun is not None:
+                    coeffs_ = self.score_transform_pred_fun(this_rel_emb)
+                    # [B, 1], [B, 1]
+                    alpha = alpha + coeffs_[:,:, 0].view(-1, 1)
+                    beta = beta + coeffs_[:,:, 1].view(-1, 1)
+
+                # [1 or B, N]
+                if self.score_transform_obj_fun is not None:
+                    coeffs_ = self.score_transform_obj_fun(tail_emb)
+                    # [1, N], [1, N] -> [B, N], [B, N]
+                    alpha = alpha + coeffs_[:,:, 0].view(1, -1)
+                    beta = beta + coeffs_[:,:, 1].view(1, -1)
+                batch_score = self.ativate(batch_score * (1.0 + alpha) + beta)
             scaled_tail_prob = batch_score.squeeze()
             #batch_score = batch_score.squeeze()
             #batch_prob = torch.softmax(batch_score, dim=-1)
@@ -87,13 +130,35 @@ class Kge_finetune(nn.Module):
         for head_batch_tensor in batch_head_list:
             if head_batch_tensor.ndim == 1:
                 head_batch_tensor.unsqueeze_(-1)  # (batch_size, 1)
-            batch_head_emb = self.ent_emb(head_batch_tensor).to(torch.float16)
-            tail_emb = self.ent_emb.weight.unsqueeze(0).to(torch.float16)
+            batch_head_emb = self.ent_emb(head_batch_tensor)
+            tail_emb = self.ent_emb.weight.unsqueeze(0)
             # batch_head_emb = batch_head_emb.unsqueeze(-2)
             this_rel_emb = self.rel_emb(torch.tensor(rel_id, dtype=torch.int, device=self.device)) \
-                .unsqueeze(0).unsqueeze(0).to(torch.float16)
+                .unsqueeze(0).unsqueeze(0)
             #batch_score = self.score_function(this_rel_emb, batch_head_emb, tail_emb, self.rank)
             batch_score = self.score_function(this_rel_emb, batch_head_emb, tail_emb)
+            if self.mode == "affine":
+                alpha, beta = 0.0, 0.0
+                if self.score_transform_subj_fun is not None:
+                    coeffs_ = self.score_transform_subj_fun(batch_head_emb)
+                    # [B, 1], [B, 1]
+                    alpha = alpha + coeffs_[:,:, 0].view(-1, 1)
+                    beta = beta + coeffs_[:,:, 1].view(-1, 1)
+
+                # [B, 1]
+                if self.score_transform_pred_fun is not None:
+                    coeffs_ = self.score_transform_pred_fun(this_rel_emb)
+                    # [B, 1], [B, 1]
+                    alpha = alpha + coeffs_[:,:, 0].view(-1, 1)
+                    beta = beta + coeffs_[:,:, 1].view(-1, 1)
+
+                # [1 or B, N]
+                if self.score_transform_obj_fun is not None:
+                    coeffs_ = self.score_transform_obj_fun(tail_emb)
+                    # [1, N], [1, N] -> [B, N], [B, N]
+                    alpha = alpha + coeffs_[:,:, 0].view(1, -1)
+                    beta = beta + coeffs_[:,:, 1].view(1, -1)
+                batch_score = self.ativate(batch_score * (1.0 + alpha) + beta)
             batch_score = batch_score.squeeze(1)
             #batch_prob = torch.softmax(batch_score, dim=-1)
             #batch_prob = batch_score
@@ -124,7 +189,7 @@ class SIU_finetune(nn.Module):
     def __init__(self, n_entity, n_relation, freeze_ent, negative_sample_size, train_kg: KnowledgeGraph, ukge_path: str,
                  kge: str, matrix_path: str,
                  c_norm, e_norm, max_enumeration,
-                 head_batch, sparse, threshold, epsilon, device):
+                 head_batch, sparse, threshold, epsilon,mode, device):
         super(SIU_finetune, self).__init__()
         self.kg = train_kg
         self.kge_path = ukge_path
@@ -138,6 +203,7 @@ class SIU_finetune(nn.Module):
         self.head_batch = head_batch
         self.sparse = sparse
         self.threshold, self.epsilon = threshold, epsilon
+        self.mode = mode
         self.device = device
         self.loss = torch.nn.MSELoss()
         if self.kge == 'complex':
@@ -165,7 +231,7 @@ class SIU_finetune(nn.Module):
         #rel_emb = kge_ckpt['_relation_embedding.weight'].to(device)
         self.kge_matrix = Kge_finetune(self.kg, ent_emb, rel_emb, None, self.freeze_ent,
                                     self.score_function, self.head_batch,  self.sparse,
-                                    self.threshold, self.epsilon, self.device)
+                                    self.threshold, self.epsilon, self.mode, self.device)
         if self.matrix_path and os.path.exists(self.matrix_path):
             self.stored_matrix_list = torch.load(self.matrix_path)
             self.exist_matrix = True
@@ -196,24 +262,39 @@ class SIU_finetune(nn.Module):
         ans_vec_list = []
         base_num = 4
         subsampling_weight = torch.zeros(len(answer_list)).to(self.device)
-        for i in range(len(answer_list)):
-            ans_vec = torch.zeros_like(pred_ans[i], device=self.device)
-            #ans_vec.scatter_(0, torch.tensor(answer_list[i], device=self.device),
-            #                 torch.ones(len(answer_list[i]), device=self.device))
+        chosen_ans, chosen_scores, chosen_false_ans, subsampling_weight = \
+            inclusion_sampling(answer_list, answer_values, negative_size=self.negative_sample_size, entity_num=self.n_entity)
 
-            ans_vec.scatter_(0, torch.tensor(answer_list[i], device=self.device), 
-                              torch.tensor(answer_values[i], device=self.device))
-            ans_vec_list.append(ans_vec)
-            subsampling_weight[i] = len(answer_list[i]) + base_num
-        subsampling_weight = torch.sqrt(1 / subsampling_weight)
-        ans_vec_tensor = torch.stack(ans_vec_list, dim=0)
 
-        #logits = torch.abs(pred_ans - ans_vec_tensor).sum(-1)
-        logits = ((pred_ans - ans_vec_tensor)**2).sum(-1)
-        return logits, None, subsampling_weight
+        if self.negative_sample_size > 0:
+            chosen_ans = torch.tensor(chosen_ans, device = self.device)
+            chosen_scores = torch.tensor(chosen_scores, device = self.device)
+            positive_tmp = torch.gather(pred_ans, 1, chosen_ans)
+            positive_logit = (positive_tmp - chosen_scores)**2
+            chosen_false_ans = torch.tensor(np.array(chosen_false_ans), device = self.device)
+            negative_tmp = torch.gather(pred_ans, 1, chosen_false_ans)
+            negative_logit = negative_tmp**2
+
+            return positive_logit, negative_logit, subsampling_weight.to(self.device)
+        else:
+            for i in range(len(answer_list)):
+                ans_vec = torch.zeros_like(pred_ans[i], device=self.device)
+                #ans_vec.scatter_(0, torch.tensor(answer_list[i], device=self.device),
+                #                 torch.ones(len(answer_list[i]), device=self.device))
+
+                ans_vec.scatter_(0, torch.tensor(answer_list[i], device=self.device), 
+                                torch.tensor(answer_values[i], device=self.device))
+                ans_vec_list.append(ans_vec)
+
+            ans_vec_tensor = torch.stack(ans_vec_list, dim=0)
+
+            #logits = torch.abs(pred_ans - ans_vec_tensor).sum(-1)
+            logits = ((pred_ans - ans_vec_tensor)**2).sum(-1)
+
+            return logits, None, subsampling_weight.to(self.device)
 
     def compute_all_entity_logit(self, pred_emb, union=False):
-        return pred_emb
+        return pred_emb[0]#TODO
 
     def construct_all_matrices(self):
         with torch.no_grad():

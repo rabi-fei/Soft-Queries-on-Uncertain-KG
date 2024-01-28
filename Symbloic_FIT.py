@@ -106,11 +106,17 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
             trans_matrix_i = transit_matrix_list[i].to_dense()
             all_prob_matrix += beta_list[i] * trans_matrix_i * (trans_matrix_i >= alpha_list[i])
     elif conj_tnorm == 'Product':
-        exp_pro_matrix = torch.exp(beta_list[0] * transit_matrix_list[0].to_dense())
-        all_prob_matrix = exp_pro_matrix * (exp_pro_matrix >= math.exp(alpha_list[0] * beta_list[0]))
+        if alpha_list[0] > 0:
+            pro_matrix = torch.exp(beta_list[0] * transit_matrix_list[0])
+            all_prob_matrix = pro_matrix * (pro_matrix >= math.exp(alpha_list[0] * beta_list[0]))
+        else:
+            all_prob_matrix = beta_list[0] * transit_matrix_list[0]
         for i in range(1, len(transit_matrix_list)):
-            exp_pro_matrix = torch.exp(beta_list[i] * transit_matrix_list[i].to_dense())
-            all_prob_matrix = all_prob_matrix.multiply(exp_pro_matrix * (exp_pro_matrix >= math.exp(alpha_list[0] * beta_list[0])))
+            if alpha_list[0] > 0:
+                pro_matrix = torch.exp(beta_list[i] * transit_matrix_list[i])
+                all_prob_matrix = all_prob_matrix.multiply(pro_matrix * (pro_matrix >= math.exp(alpha_list[0] * beta_list[0])))
+            else:
+                all_prob_matrix = all_prob_matrix + transit_matrix_list[i]
     else:
         raise NotImplementedError
 

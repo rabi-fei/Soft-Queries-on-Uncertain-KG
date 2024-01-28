@@ -34,12 +34,13 @@ class AngleScale:
 
 
 class ConeProjection(nn.Module):
-    def __init__(self, dim, hidden_dim, num_layers):
+    def __init__(self, dim, hidden_dim, num_layers, emb_float=True):
         super(ConeProjection, self).__init__()
         self.entity_dim = dim
         self.relation_dim = dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        self.emb_float = emb_float
         self.layer1 = nn.Linear(self.entity_dim + self.relation_dim, self.hidden_dim)
         self.layer0 = nn.Linear(self.hidden_dim, self.entity_dim + self.relation_dim)
 
@@ -56,12 +57,21 @@ class ConeProjection(nn.Module):
     def forward(self, source_embedding_axis, source_embedding_arg, r_embedding_axis, 
     r_embedding_arg, a_embedding_axis, a_embedding_arg, b_embedding_axis, b_embedding_arg):
 
-        ab_emb_axis = self.layer_alpha(a_embedding_axis) + self.layer_beta(b_embedding_axis)
-        ab_emb_args = self.layer_alpha(a_embedding_arg) + self.layer_beta(b_embedding_arg)
-        x = torch.cat(
-            [source_embedding_axis + r_embedding_axis + ab_emb_axis,
-             source_embedding_arg + r_embedding_arg + ab_emb_args],
-        dim=-1)
+        ab_emb_axis = a_embedding_axis + b_embedding_axis
+        ab_emb_args = a_embedding_arg + b_embedding_arg
+
+        #ab_emb_axis = self.layer_alpha(a_embedding_axis) + self.layer_beta(b_embedding_axis)
+        #ab_emb_args = self.layer_alpha(a_embedding_arg) + self.layer_beta(b_embedding_arg)
+        if self.emb_float:
+            x = torch.cat(
+                [source_embedding_axis + r_embedding_axis + ab_emb_axis,
+                source_embedding_arg + r_embedding_arg + ab_emb_args],
+            dim=-1)
+        else:
+            x = torch.cat(
+                [source_embedding_axis + r_embedding_axis,
+                source_embedding_arg + r_embedding_arg],
+            dim=-1)
 #        x = torch.cat(
 #            [source_embedding_axis + r_embedding_axis,
 #             source_embedding_arg + r_embedding_arg],
@@ -149,7 +159,7 @@ class ConEstimator(AppFOQEstimator):
     name = "ConE"
 
     def __init__(self, n_entity, n_relation, entity_dim, relation_dim, hidden_dim, num_layer,
-                 negative_sample_size, gamma, device, center_reg=None, drop=0.):
+                 negative_sample_size, gamma, device, center_reg=None, drop=0., emb_float=True):
         super(ConEstimator, self).__init__()
         self.n_entity = n_entity
         self.n_relation = n_relation
@@ -157,6 +167,7 @@ class ConEstimator(AppFOQEstimator):
         self.hidden_dim = hidden_dim
         self.epsilon = 2.0
         self.device = device
+        self.emb_float = emb_float
 
         self.loss = torch.nn.MSELoss()
 
@@ -212,7 +223,7 @@ class ConEstimator(AppFOQEstimator):
             b=self.embedding_range.item()
         )
 
-        self.projection_net = ConeProjection(self.entity_dim, hidden_dim, num_layer)
+        self.projection_net = ConeProjection(self.entity_dim, hidden_dim, num_layer, self.emb_float)
         self.cone_intersection = ConeIntersection(self.entity_dim, drop)
         self.cone_negation = ConeNegation()
 

@@ -23,7 +23,7 @@ from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, Con
 from fol import order_bounds
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", type=str, default="config/train/LogicE_CN15k_soft.yaml")
+parser.add_argument("--config", type=str, default="config/train/FIT_CN15k_soft_Godel.yaml")
 
 
 path_formula_list = ["r1(s1,f1)", "(r1(s1,e1))&(r2(e1,f1))"]
@@ -85,8 +85,9 @@ def train_step(model, opt, data_loader: QueryAnsweringMixDataLoader, loss_functi
     query_data = data_loader.get_single_fof_list()
     emb_list, answer_list, value_list = [], [], []
     for formula in query_data:
-        #if "e" in formula:
-        #    continue
+        if ("e" in formula or "!" in formula) and model.name == 'FIT':
+        #if formula != "r1(s1,f1)" and model.name == 'FIT':
+            continue
         if model.name != 'FIT':
             QG_instance = SoftQueryGraph(query_data[formula].formula_list[0], device)
             QG_embedding_batch = QG_instance.get_whole_graph_embedding(model=model)
@@ -110,7 +111,7 @@ def train_step(model, opt, data_loader: QueryAnsweringMixDataLoader, loss_functi
         positive_loss, negative_loss = None, None
     elif loss_function == 'l2':
         #score = F.logsigmoid(all_positive_logit)
-        if model.name == "FIT":
+        if model.name == "FIT" and model.negative_sample_size == 0:
             loss = (all_positive_logit * all_subsampling_weight).sum() / all_subsampling_weight.sum()
             positive_loss = negative_loss = None
         else:
@@ -428,7 +429,12 @@ if __name__ == "__main__":
     data_folder = configure['data']['data_folder']
     train_path_tm, train_other_tm, train_all_tm, train_primary_tm = None, None, None, None
     if 'train' in configure['action']:
-        train_data_file = osp.join(data_folder, 'train_qaa.json')
+        spilts_prefix = configure['data']['data_prefix'].split("_")
+        if len(spilts_prefix) > 2:
+            train_prefix = "_".join(spilts_prefix[:2])
+            train_data_file = osp.join(data_folder, f'train_{train_prefix}_qaa.json')
+        else:
+            train_data_file = osp.join(data_folder, 'train_qaa.json')
         train_formula_file = pd.read_csv(train_config['formula_id_file'])
         train_formulas = train_formula_file['formula'].tolist()[:4]
         # train_all_tm = QueryAnsweringMixDataLoader(
@@ -549,6 +555,7 @@ if __name__ == "__main__":
             if step % train_config['evaluate_every_steps'] == 0 or step == train_config['steps']:
                 if model.name == "FIT":
                     model.construct_all_matrices()
+                    prefix = "soft_efo1"
                 if 'valid' in configure['action']:
                     all_metrics = defaultdict(dict)
                     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
@@ -571,12 +578,13 @@ if __name__ == "__main__":
                 if 'test' in configure['action']:
                     if model_name == 'FIT' and 'train' not in configure['action']:
                         model.construct_all_matrices()
+
                     all_metrics = defaultdict(dict)
                     for i, row in tqdm.tqdm(all_formula_data.iterrows(), total=len(all_formula_data)):
                         formula_id = row['formula_id']
                         formula = row['formula']
                         data_path = osp.join(configure['data']['data_folder'], f'test_{formula_id}_{prefix}_qaa.json')
-                        #if "e" in formula:
+                        #if "e" in formula and row.Name != "2p":
                         #    continue
                         if not osp.exists(data_path):
                             print(f'Warnings,{data_path} not exists!')
@@ -587,6 +595,7 @@ if __name__ == "__main__":
                                 all_metric_formula[metric] /= all_metric_formula['num_queries']
                         # print(all_two_log)
                         all_metrics[formula] = all_metric_formula
+
                     writer.save_json(all_metrics, f"all_logging_test_{step}.json")
             if step % train_config['save_every_steps'] == 0 or step == train_config['steps']:
                 writer.save_model(model, opt, step, train_config['warm_up_steps'], lr)

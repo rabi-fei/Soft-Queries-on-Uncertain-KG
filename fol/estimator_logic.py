@@ -107,7 +107,7 @@ class LogicProjection(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.bounded = bounded
-        self.layer1 = nn.Linear(3*self.entity_dim + self.relation_dim , self.hidden_dim)  # 1st layer
+        self.layer1 = nn.Linear(self.entity_dim + self.relation_dim , self.hidden_dim)  # 1st layer
         self.layer0 = nn.Linear(self.hidden_dim, self.entity_dim)  # final layer
         self.layer_alpha = nn.Linear(self.entity_dim, self.entity_dim + self.relation_dim)
         self.layer_beta = nn.Linear(self.entity_dim, self.entity_dim + self.relation_dim)
@@ -120,7 +120,8 @@ class LogicProjection(nn.Module):
 
     def forward(self, e_embedding, r_embedding, a_embedding, b_embedding):
         ab_embedding = self.layer_alpha(a_embedding) + self.layer_beta(b_embedding)
-        x = torch.cat([e_embedding, r_embedding, a_embedding, b_embedding], dim=-1) 
+        #x = torch.cat([e_embedding, r_embedding, a_embedding, b_embedding], dim=-1) 
+        x = torch.cat([e_embedding, r_embedding], dim=-1) + ab_embedding
         for nl in range(1, self.num_layers + 1):
             x = F.relu(getattr(self, "layer{}".format(nl))(x))
         x = self.layer0(x)
