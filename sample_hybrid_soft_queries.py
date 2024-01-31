@@ -5,6 +5,7 @@ import logging
 import os
 import os.path as osp
 import random
+import math
 from collections import defaultdict
 
 import numpy as np
@@ -27,6 +28,8 @@ from src.utils.data import (QueryAnsweringMixDataLoader, QueryAnsweringSeqDataLo
                             QueryAnsweringSeqDataLoader_v2,
                             TrainRandomSentencePairDataLoader)
 
+queries_with_same_num = ["1p", "2p", "2i"]
+level2per = {"low" : 25, "normal": 50, "high": 75}
 
 #This new version is used to sample soft EFO1 queries.
 query_2in = 'r1(s1,f)&!r2(s2,f)'
@@ -35,19 +38,21 @@ parser = argparse.ArgumentParser()
 #parser.add_argument("--output_name", type=str, default='new-qaa')
 
 parser.add_argument("--double_check", type=float, default=0.0)
-parser.add_argument("--output_folder", type=str, default='data/processed/onet20k')
-parser.add_argument("--data_folder", type=str, default='data/processed/onet20k')
-parser.add_argument("--num_positive", type=int, default=1000)
-parser.add_argument("--num_negative", type=int, default=1000)
+parser.add_argument("--output_folder", type=str, default='data/ppi5k')
+parser.add_argument("--data_folder", type=str, default='data/ppi5k')
+#parser.add_argument("--num_positive", type=int, default=1500)
+#parser.add_argument("--num_negative", type=int, default=500)
 parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='train')
+parser.add_argument('--a_mode', choices=['zero', 'low', 'normal', 'hybrid'], default='zero')
+parser.add_argument('--b_mode', choices=['equal', 'random'], default='equal')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
 parser.add_argument("--negation_tolerance", type=int, default=2)
 parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=False)
-parser.add_argument("--sample_formula_scope", type=str, default='normal_soft_efo1')
+parser.add_argument("--sample_formula_scope", type=str, default='zero_soft_efo1')
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=0)
-parser.add_argument("--end_index", type=int, default=11)
+parser.add_argument("--start_index", type=int, default=2)
+parser.add_argument("--end_index", type=int, default=3)
 parser.add_argument("--max_ans", type=int, default=100)
 parser.add_argument("--store_each", type=int, default=50)
 
@@ -124,17 +129,85 @@ def double_checking_answer(given_lstr, fof_qa_dict, kg: KnowledgeGraph):
     else:
         return None
 
+def recursion_update_b(formula):
+    if formula.op == "pred":
+        beta = float(f"{math.ceil(random.random() * 10) / 10:.1f}")
+        while beta == formula.beta:
+            p = random.random()
+            beta = float(f"{math.ceil(p * 10) / 10:.1f}")
+        formula.beta = beta
+        return None
+    sub_formula_list = [formula.formula] if formula.op == "neg" else formula.formulas
+    for sub_formula in sub_formula_list:
+        recursion_update_b(sub_formula)
+
+def recursion_parse_ab(formula, saved_dict, r2percentile):
+    if formula.op == "pred":
+        relation_necess = formula.alpha
+        assert isinstance(relation_necess, str)
+        index = int(relation_necess[:-1]) // 25 -1
+        r = formula.relation
+        if index > -1:
+            float_necess = r2percentile[f"{saved_dict[r]}"][index]
+        else:
+            float_necess = 0.0000
+        int(relation_necess[:-1])
+        saved_dict[f"a{r[1]}"] = float_necess
+        saved_dict[f"b{r[1]}"] = formula.beta
+        return None
+    sub_formula_list = [formula.formula] if formula.op == "neg" else formula.formulas
+    for sub_formula in sub_formula_list:
+        recursion_parse_ab(sub_formula, saved_dict, r2percentile)
+
+def recursion_update_conj_ab(formula, a_set, b_set=None):
+
+    if formula.op == "pred":
+        if a_set not in level2per:
+            if a_set == "zero":
+                a_set = "0%"
+                formula.alpha = a_set
+            else:
+                a_set = random.choice(list(level2per.keys()))
+                formula.alpha = f"{level2per[a_set]}%"
+        else:
+            formula.alpha = f"{level2per[a_set]}%"
+
+        if b_set == "random":
+            p = random.uniform(0.1, 1)
+            beta = float(f"{p:.1f}")
+        else:
+            beta = 1.0
+        formula.beta = beta
+
+    else:
+        sub_formula_list = [formula.formula] if formula.op == "neg" else formula.formulas
+        for sub_formula in sub_formula_list:
+            recursion_update_conj_ab(sub_formula, a_set, b_set)
+
+
+def sample_disj_ab(fof, a_setting, b_setting="equal"):
+
+    for conj_formula in fof.formula_list:
+        if conj_formula.formula.op == 'pred':
+            recursion_update_conj_ab(conj_formula.formula, a_setting, b_setting)
+        else:
+            recursion_update_conj_ab(conj_formula.formula, a_setting, b_setting)
+            if random.random() < 0.1:
+                recursion_update_conj_ab(conj_formula.formula, a_setting, b_setting)
+
 
 def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: KnowledgeGraph, num_samples, sample_mode,
                              meaningful_negation, double_checking, negation_tolerance, full_matrix=None, n_cpus: int = 1, max_ans=None,
-                             existing_all_qa_dict=None):
+                             existing_all_qa_dict=None, given_qa_dict=None, ab_mode={}):
+
+
     """
     The double-checking have two probabilities: 1. Use Manually write code, 2. use the solver to check.
     Negation tolerance helps to mitigate the requirement of meaningful negation.
     We note this is only for sample queries that are of conjunctive query.
     """
     if num_samples == 0:
-        return [], []
+        return []
 
     fof = parse_lstr_to_disjunctive_formula(given_lstr)#TODO: defaut: 25%
     free_variable_list = list(fof.free_term_dict.keys())
@@ -148,7 +221,9 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
     sample_max_ans = use_max_ans if sample_mode == 'train' else 3 * max_ans
     with tqdm.tqdm(total=num_samples) as pbar:
         while pbar.n < num_samples:
-            qa_dict = None
+            sample_disj_ab(fof, ab_mode["a_mode"], ab_mode["b_mode"])
+            qa_dict = given_qa_dict
+            full_answer = None
             now_negation_tolerance = 0
             while qa_dict is None:
                 if meaningful_negation and negation_tolerance:
@@ -160,11 +235,12 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
                         now_negation_tolerance += 1
                 else:  # Not meaningful negation or not negation tolerance.
                     qa_dict, full_answer, epfo_answers = fof.sample_query(full_kg, meaningful_negation, full_matrix, sample_max_ans)
+            for conj_fof in fof.formula_list:
+                recursion_parse_ab(conj_fof.formula, qa_dict, full_kg.r2percentile)
             if qa_dict and str(qa_dict) not in stored_qa_dict:  # We notice sampling may fail and return None
                 stored_qa_dict.add(str(qa_dict))  # remember it to avoid repeat
                 fof.append_qa_instances(qa_dict)
                 now_index += 1
-
                 if full_answer is None:
                     full_answer = fof.deterministic_soft_query(
                             now_index, full_kg, 'sparse', False)
@@ -193,8 +269,8 @@ def sample_one_formula_query(given_lstr, part_kg: KnowledgeGraph, full_kg: Knowl
                     if sample_mode == 'train':
                         new_query = [qa_dict, {f"{f_str}_answers": integer_list}, {f"{f_str}_values": list(full_answer.values())}]
                     else:
-    
                         new_query = [qa_dict, {f"{f_str}_answers": integer_list}, {f"{f_str}_values": list(full_answer.values())}]
+
                     all_query_list.append(new_query)
                     pbar.update(1)
     return all_query_list, stored_qa_dict
@@ -237,16 +313,18 @@ if __name__ == "__main__":
     train_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json'))
     valid_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json'))
     test_kg.load_percentile(osp.join(args.data_folder, 'percentile_25_50_75.json')) #TODO: Consider differnent KG!
+    ab_mode = {"a_mode": args.a_mode, 
+            "b_mode":args.b_mode}
     """
     for lstr in DNF_lstr2name:
         test_sample_query(lstr, train_kg)
     """
-    if args.sample_formula_scope == 'part_soft_efo1':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_part_soft_EFO1.csv'))
+    if args.sample_formula_scope == 'soft_efo1':
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_soft_EFO1.csv'))
     elif args.sample_formula_scope == 'zero_soft_efo1':
         formula_scope = pd.read_csv(osp.join('data', 'DNF_train_zero_soft_EFO1.csv'))
     elif args.sample_formula_scope == 'low_soft_efo1':
-        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_soft_EFO1.csv'))
+        formula_scope = pd.read_csv(osp.join('data', 'DNF_train_low_soft_EFO1.csv'))
     elif args.sample_formula_scope == 'normal_soft_efo1':
         formula_scope = pd.read_csv(osp.join('data', 'DNF_train_normal_soft_EFO1.csv'))
     else:
@@ -288,30 +366,32 @@ if __name__ == "__main__":
         with open(output_file_name, 'wt') as f:
             json.dump(now_data, f)
     '''
-    all_data = {}
     for i, row in tqdm.tqdm(formula_scope.iterrows(), total=len(formula_scope)):
         if i > args.end_index or i < args.start_index:
             continue
         lstr = row.formula
         fid = row.formula_id
         output_file_name = osp.join(args.output_folder,
-                                    f'{args.mode}_{fid}_{args.sample_formula_scope}_qaa.json')
+                                    f'{args.mode}_{fid}_{args.b_mode}_{args.sample_formula_scope}_qaa.json')
         useful_num = 0
         all_qa_dict = set()
-        now_data = {lstr: []}
+        now_data = []
         if os.path.exists(output_file_name):
             if args.skip_exist:
                 continue
             with open(output_file_name, 'rt') as f:
                 old_data = json.load(f)
         else:
-            old_data = {lstr: []}
-        if lstr in old_data:
-            for i in range(len(old_data[lstr])):
-                if str(old_data[lstr][i][0]) not in all_qa_dict:
-                    now_data[lstr].append(old_data[lstr][i])
+            old_data = []
+
+        now_data = old_data
+
+        for single_query_dict in old_data:
+            qa_ground_dict = single_query_dict[0]
+
+            if str(qa_ground_dict) not in all_qa_dict:
                     useful_num += 1
-                all_qa_dict.add(str(old_data[lstr][i][0]))
+            all_qa_dict.add(str(qa_ground_dict))
         '''
         exist_lstr = list(old_data.keys())[0]
         for i in range(len(old_data[exist_lstr])):
@@ -326,68 +406,84 @@ if __name__ == "__main__":
         print(f'sampling query of {lstr}')
         if args.mode == 'train':
             use_full_matrix = None
-            for j in range(0, args.num_negative - useful_num, args.store_each):
-                all_query, all_qa_dict = sample_one_formula_query(lstr, None, train_kg, args.store_each, args.mode,
-                                                 args.meaningful_negation, args.double_check, args.negation_tolerance,
-                                                 use_full_matrix, args.ncpus, args.max_ans, all_qa_dict)
-                now_data[lstr].extend(all_query)
-                with open(output_file_name, 'wt') as f:
-                    json.dump(now_data, f)
-                print("now data length: ", len(now_data[lstr]))
+            queries_1p = train_kg.hr2tp
+            num_1p = len(queries_1p)
+            if row.Name == "1p":
+                    #continue
+                    level2per.update({"zero":0})
+                    for j, hr in enumerate(queries_1p):
+                        if ab_mode["a_mode"] == "zero":
+                            necess_req = 0.0
+                        else:
+                            index = level2per[ab_mode["a_mode"]] // 25 -1
+                            necess_req = train_kg.r2percentile[f"{hr[1]}"][index]
+                        if any([tp[1] > necess_req for tp in queries_1p[hr]]):
+                            given_qa_dict = {"r1":hr[1], "s1":hr[0]}
+                            all_query, stored_qa_dict = sample_one_formula_query(lstr, None, train_kg, 1, args.mode,
+                                                        args.meaningful_negation, args.double_check, args.negation_tolerance,
+                                                        use_full_matrix, args.ncpus, args.max_ans, all_qa_dict, given_qa_dict, ab_mode)
+                            now_data.extend(all_query)
+                    with open(output_file_name, 'wt') as f:
+                            json.dump(now_data, f)
+                    print("now data length: ", len(now_data))
+                    del level2per["zero"]
+
+            else:
+                if row.Name in queries_with_same_num:
+                    num = num_1p
+                else:
+                    num = max(len(queries_1p) // 10, 1500)
+                for j in range(0, num - useful_num, args.store_each):
+                        all_query, all_qa_dict = sample_one_formula_query(lstr, None, train_kg, args.store_each,
+                                                            args.mode,
+                                                            args.meaningful_negation, args.double_check,
+                                                            args.negation_tolerance,
+                                                            use_full_matrix, args.ncpus, args.max_ans, all_qa_dict, ab_mode=ab_mode)
+                        now_data.extend(all_query)
+                        with open(output_file_name, 'wt') as f:
+                            json.dump(now_data, f)
+                        print("now data length: ", len(now_data))
 
         elif args.mode == 'valid':
-            use_full_matrix = None #useless
-        
-            if '!' in lstr:
-                for j in range(0, args.num_negative - useful_num, args.store_each):
-                    all_query, all_qa_dict = sample_one_formula_query(lstr, train_kg, valid_kg, args.store_each,
+            use_full_matrix = None
+            for j in range(0, 3000 - useful_num, args.store_each):
+                all_query, all_qa_dict = sample_one_formula_query(lstr, train_kg, valid_kg, args.store_each,
                                                          args.mode,
                                                          args.meaningful_negation, args.double_check,
                                                          args.negation_tolerance,
-                                                         use_full_matrix, args.ncpus, args.max_ans, all_qa_dict)
-                    now_data[lstr].extend(all_query)
-                    with open(output_file_name, 'wt') as f:
-                        json.dump(now_data, f)
-                    print("now data length: ", len(now_data[lstr]))
+                                                         use_full_matrix, args.ncpus, args.max_ans, all_qa_dict, ab_mode=ab_mode)
+                now_data.extend(all_query)
+                with open(output_file_name, 'wt') as f:
+                    json.dump(now_data, f)
+                print("now data length: ", len(now_data))
 
-            else:
-                for j in range(0, args.num_positive - useful_num, args.store_each):
-                    all_query, all_qa_dict = sample_one_formula_query(
-                        lstr, train_kg, valid_kg, args.store_each, args.mode, args.meaningful_negation,
-                        args.double_check, args.negation_tolerance, use_full_matrix, args.ncpus, args.max_ans,
-                        all_qa_dict)
-                    now_data[lstr].extend(all_query)
-                    with open(output_file_name, 'wt') as f:
-                        json.dump(now_data, f)
-                    print("now data length: ", len(now_data[lstr]))
         elif args.mode == 'test':
             use_full_matrix = None #useless
         
             if '!' in lstr:
-                for j in range(0, args.num_negative - useful_num, args.store_each):
+                for j in range(0, 3000 - useful_num, args.store_each):
                     all_query, all_qa_dict = sample_one_formula_query(lstr, valid_kg, test_kg, args.store_each,
                                                          args.mode,
                                                          args.meaningful_negation, args.double_check,
                                                          args.negation_tolerance,
-                                                         use_full_matrix, args.ncpus, args.max_ans, all_qa_dict)
-                    now_data[lstr].extend(all_query)
+                                                         use_full_matrix, args.ncpus, args.max_ans, all_qa_dict, ab_mode=ab_mode)
+                    now_data.extend(all_query)
                     with open(output_file_name, 'wt') as f:
                         json.dump(now_data, f)
-                    print("now data length: ", len(now_data[lstr]))
+                    print("now data length: ", len(now_data))
 
             else:
-                for j in range(0, args.num_positive - useful_num, args.store_each):
+                for j in range(0, 3000 - useful_num, args.store_each):
                     all_query, all_qa_dict = sample_one_formula_query(
                         lstr, valid_kg, test_kg, args.store_each, args.mode, args.meaningful_negation,
                         args.double_check, args.negation_tolerance, use_full_matrix, args.ncpus, args.max_ans,
-                        all_qa_dict)
-                    now_data[lstr].extend(all_query)
+                        all_qa_dict, ab_mode=ab_mode)
+                    now_data.extend(all_query)
                     with open(output_file_name, 'wt') as f:
                         json.dump(now_data, f)
-                    print("now data length: ", len(now_data[lstr]))
+                    print("now data length: ", len(now_data))
         else:
             raise NotImplementedError
-        all_data[lstr] = now_data[lstr]
         with open(output_file_name, 'wt') as f:
             json.dump(now_data, f)
     # with open(osp.join(args.output_folder, f'{args.mode}_{args.sample_formula_scope}_qaa.json'), 'wt') as f:

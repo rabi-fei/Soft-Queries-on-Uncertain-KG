@@ -89,12 +89,17 @@ class Writer:
         with open(join(self.case_dir, name), 'wb') as f:
             pickle.dump(obj, f)
 
+    def save_json(self, obj, name):
+        with open(join(self.case_dir, name), 'wb') as f:
+            json.dump(obj, f)
+
     def save_array(self, arr, name):
         np.save(join(self.case_dir, name), arr)
 
     def save_json(self, obj, name):
         if not name.endswith('json'):
-            name += '.json'
+            main_name =  name.split(".")[0]
+            name = main_name + '.json'
         with open(join(self.case_dir, name), 'wt') as f:
             json.dump(obj, f)
 

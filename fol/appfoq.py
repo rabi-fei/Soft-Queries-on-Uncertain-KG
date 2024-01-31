@@ -58,7 +58,7 @@ def inclusion_sampling(answer_set: List[IntList], value_set:List[List], negative
     all_chosen_ans = []
     all_chosen_false_ans = []
     all_chosen_scores = []
-    subsampling_weight = torch.zeros(len(answer_set))
+    subsampling_weight = torch.zeros(len(answer_set), dtype=torch.float32)
     for i in range(len(answer_set)):
         chosed_ans_id = random.choices(range(len(answer_set[i])), k=k)
         all_chosen_ans.append([answer_set[i][index] for index in chosed_ans_id])

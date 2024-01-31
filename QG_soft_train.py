@@ -23,7 +23,7 @@ from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, Con
 from fol import order_bounds
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", type=str, default="config/train/FIT_CN15k_soft_Godel.yaml")
+parser.add_argument("--config", type=str, default="config/train/FIT_ONET20k_soft_Godel.yaml")
 
 
 path_formula_list = ["r1(s1,f1)", "(r1(s1,e1))&(r2(e1,f1))"]
@@ -117,7 +117,7 @@ def train_step(model, opt, data_loader: QueryAnsweringMixDataLoader, loss_functi
         else:
             positive_loss = (all_positive_logit.squeeze() * all_subsampling_weight).sum()
             negative_loss = (all_negative_logit.mean(1) * all_subsampling_weight).sum()
-            loss = (positive_loss + negative_loss)  / all_subsampling_weight.sum()
+            loss = (positive_loss + 0 *  negative_loss)  / all_subsampling_weight.sum()#TODO:Banlacne positive loss and negative loss.
 
     elif loss_function == 'weight_BCE':
         all_subsampling_weight = all_subsampling_weight.unsqueeze(-1)

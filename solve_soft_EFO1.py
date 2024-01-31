@@ -27,22 +27,26 @@ from src.utils.class_util import Writer
 from src.utils.data_util import RaggedBatch
 from train_lmpnn import compute_evaluation_scores
 
+
 torch.autograd.set_detect_anomaly(True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
-parser.add_argument("--ckpt", type=str, default='checkpoints/cn15k/full_matrix_list_0.2_0.001_box.ckpt')
+parser.add_argument("--ckpt", type=str, default='checkpoints/valid_onet20k/full_matrix_list_0.1_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=1)
-parser.add_argument("--cuda", type=int, default=1)
-parser.add_argument("--data_folder", type=str, default='data/processed/cn15k')
-parser.add_argument("--out_folder", type=str, default='results/cn15k/low')
+parser.add_argument("--cuda", type=int, default=0)
+parser.add_argument("--data_folder", type=str, default='data/processed/onet20k')
+parser.add_argument("--out_folder", type=str, default='results/onet20k/hybrid_train')
 parser.add_argument("--mode", type=str, default='test', choices=['valid', 'test'])
 parser.add_argument("--e_norm", type=str, default='Godel', choices=['Godel', 'product'])
 parser.add_argument("--c_norm", type=str, default='Product', choices=['Plus', 'Godel', 'Product'])
 parser.add_argument("--max", type=int, default=10)
-parser.add_argument("--data_type", type=str, default='soft_EFO1')
-parser.add_argument("--formula", type=list, default=['r1(s1,f1,25%,1.0)', '(r1(s1,e1,25%,1.0))&(r2(e1,f1,25%,1.0))', '(r1(s1,f1,25%,1.0))&(r2(s2,f1,25%,1.0))', '(!(r1(s1,f1,25%,1.0)))&(r2(s2,f1,25%,1.0))','(!(r1(s1,f1,25%,1.0)))&((r2(s2,f1,25%,1.0))&(r3(s3,f1,25%,1.0)))', '(r1(s1,f1,25%,1.0))&(r2(e1,f1,25%,1.0))', '(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(r3(e1,f1,25%,1.0)))', '(r1(s1,f1,25%,1.0))|(r2(s2,f1,25%,1.0))', '(r1(s1,e1,25%,1.0))&((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))', '(r1(s1,e1,25%,1.0))&((r2(s2,e1,25%,1.0))&((r3(e1,f1,25%,1.0))&(r4(e1,f1,25%,1.0))))', '(!(r1(s1,e1,25%,1.0)))&((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))', '(r1(s1,e1,25%,1.0))&((r2(e1,f1,25%,1.0))&(!(r3(e1,f1,25%,1.0))))', '(r1(s1,f1,25%,1.0))|((r2(s2,e1,25%,1.0))&(r3(e1,f1,25%,1.0)))'])
+parser.add_argument("--data_type", type=str, default='soft_efo1')
+parser.add_argument("--formula", type=list, default=["r1(s1,f1)", "(r1(s1,e1))&(r2(e1,f1))", "(r1(s1,f1))&(r2(s2,f1))", "(!(r1(s1,f1)))&(r2(s2,f1))", "(r1(s1,f1))&(r2(e1,f1))", "(r1(s1,e1))&((r2(e1,f1))&(r3(e1,f1)))", "(r1(s1,f1))|(r2(s2,f1))", "(!(r1(s1,f1)))&((r2(s2,f1))&(r3(s3,f1)))", "(r1(s1,e1))&((r2(s2,e1))&(r3(e1,f1)))", "(r1(s1,e1))&((r2(s2,e1))&((r3(e1,f1))&(r4(e1,f1))))", "(!(r1(s1,e1)))&((r2(s2,e1))&(r3(e1,f1)))", "(r1(s1,f1))|((r2(s2,e1))&(r3(e1,f1)))"])
 parser.add_argument("--query_path", type=str, default="test_type0000_soft_efo1_qaa.json")
+formula_list = ["r1(s1,f1)", "(r1(s1,e1))&(r2(e1,f1))", "(r1(s1,f1))&(r2(s2,f1))", "(!(r1(s1,f1)))&(r2(s2,f1))", "(r1(s1,f1))&(r2(e1,f1))", "(r1(s1,e1))&((r2(e1,f1))&(r3(e1,f1)))", "(r1(s1,f1))|(r2(s2,f1))"\
+    ,"(!(r1(s1,f1)))&((r2(s2,f1))&(r3(s3,f1)))", "(r1(s1,e1))&((r2(s2,e1))&(r3(e1,f1)))", "(!(r1(s1,e1)))&((r2(s2,e1))&(r3(e1,f1)))", "(!(r1(s1,e1)))&((r2(s2,e1))&(r3(e1,f1)))", "(r1(s1,f1))|((r2(s2,e1))&(r3(e1,f1)))"]
+#soft_list = ['r1(s1,f1,50%,1.0)', '(r1(s1,e1,50%,1.0))&(r2(e1,f1,50%,1.0))', '(r1(s1,f1,50%,1.0))&(r2(s2,f1,50%,1.0))', '(!(r1(s1,f1,50%,1.0)))&(r2(s2,f1,50%,1.0))','(!(r1(s1,f1,50%,1.0)))&((r2(s2,f1,50%,1.0))&(r3(s3,f1,50%,1.0)))', '(r1(s1,f1,50%,1.0))&(r2(e1,f1,50%,1.0))', '(r1(s1,e1,50%,1.0))&((r2(e1,f1,50%,1.0))&(r3(e1,f1,50%,1.0)))', '(r1(s1,f1,50%,1.0))|(r2(s2,f1,50%,1.0))', '(r1(s1,e1,50%,1.0))&((r2(s2,e1,50%,1.0))&(r3(e1,f1,50%,1.0)))', '(r1(s1,e1,50%,1.0))&((r2(s2,e1,50%,1.0))&((r3(e1,f1,50%,1.0))&(r4(e1,f1,50%,1.0))))', '(!(r1(s1,e1,50%,1.0)))&((r2(s2,e1,50%,1.0))&(r3(e1,f1,50%,1.0)))', '(r1(s1,e1,50%,1.0))&((r2(e1,f1,50%,1.0))&(!(r3(e1,f1,50%,1.0))))', '(r1(s1,f1,50%,1.0))|((r2(s2,e1,50%,1.0))&(r3(e1,f1,50%,1.0)))']
 negation_list = ['(r1(s1,f))&(!(r2(s2,f)))', '((r1(s1,f))&(r2(s2,f)))&(!(r3(s3,f)))',
                  '((r1(s1,e1))&(!(r2(s2,e1))))&(r3(e1,f))', '((r1(s1,e1))&(r2(e1,f)))&(!(r3(s2,f)))',
                  '((r1(s1,e1))&(!(r2(e1,f))))&(r3(s2,f))']
@@ -205,11 +209,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in h2t_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense()
@@ -217,11 +221,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in t2h_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense().transpose_()
@@ -230,11 +234,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in h2t_negation:
         ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense()
@@ -242,11 +246,11 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
 
     for r in t2h_negation:
         ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(constant_node, adjacency_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense().transpose_()
@@ -297,41 +301,41 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
 
     for r in h2t_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         transit_matrix_list.append(relation_matrix_list[r])
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in t2h_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         transit_matrix_list.append(relation_matrix_list[r].transpose(-2, -1))
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in h2t_negation:
         ab = [(rab[1], rab[2]) for rab in neg_sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         transit_matrix_list.append(1 - relation_matrix_list[r].to_dense())
         alpha_list.append(alpha)
         beta_list.append(beta)
     for r in t2h_negation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
-        if int(ab[0][:-1])//25-1 >= 0:
-            alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
-        else:
-            alpha = 0.0
-        beta = ab[1]
+        #if int(ab[0][:-1])//25-1 >= 0:
+        #    alpha = necess_confidence[f"{r}"][int(ab[0][:-1])//25-1]
+        #else:
+        #    alpha = 0.0
+        alpha, beta = ab
         transit_matrix_list.append(1 - relation_matrix_list[r].transpose(-2, -1).to_dense())
         alpha_list.append(alpha)
         beta_list.append(beta)
@@ -376,7 +380,7 @@ def solve_soft_EFO1(DNF_formula: DisjunctiveFormula, relation_matrix, necess_con
             sub_graph_edge, sub_graph_negation_edge = [], []
             for pred in sub_formula.predicate_dict.values():
                 pred_triples = (pred.head.name, sub_formula.pred_grounded_relation_id_dict[pred.name][index],
-                                pred.tail.name, pred.alpha, pred.beta)
+                                pred.tail.name, pred.alpha_float_list[-1], pred.beta_float_list[-1])
                 if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
@@ -512,5 +516,5 @@ if __name__ == "__main__":
     print(all_metrics)
     for key in all_metrics:
         # writer.save_torch(all_answers, 'all_answer_tensor.ckpt')
-        with open(f"{args.out_folder}/{key}.json", 'w') as f:
+        with open(f"{args.out_folder}/{args.query_path}", 'w') as f:
                 json.dump(all_metrics[key], f)

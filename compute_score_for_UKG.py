@@ -11,12 +11,12 @@ from src.structure.knowledge_graph_index import KGIndex
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt_path", type=str, default='checkpoints/cn15k/params_numpy')
-parser.add_argument("--ckpt_type", type=str, default='ukge', choices=['cqd', 'ukge'])
-parser.add_argument("--data_folder", type=str, default='data/processed/cn15k')
+parser.add_argument("--ckpt_path", type=str, default='checkpoints/onet20k/best_valid.model')
+parser.add_argument("--ckpt_type", type=str, default='ukge', choices=['cqd', 'ukge', 'ukge_numpy'])
+parser.add_argument("--data_folder", type=str, default='data/processed/onet20k')
 parser.add_argument("--cuda", type=int, default=1)
 parser.add_argument("--batch", type=int, default=1000)
-parser.add_argument("--output_folder", type=str, default='checkpoints/cn15k')
+parser.add_argument("--output_folder", type=str, default='checkpoints/valid_onet20k')
 
 
 def compute_batch_score_complex(rel, arg1, arg2, rank):
@@ -46,7 +46,7 @@ def create_matrix_from_ckpt_for_UKG(scoring_matrix, observed_kg: KnowledgeGraph,
             full_tail_prob[rel_id][h_id] = torch.where(full_tail_prob[rel_id][h_id] > threshold,
                                                        full_tail_prob[rel_id][h_id], torch.zeros(n_entity))
             full_tail_prob[rel_id][h_id] = full_tail_prob[rel_id][h_id].clamp(0, 1-epsilon)
-
+        print((full_tail_prob[rel_id] > 0).sum() / (full_tail_prob[rel_id].shape[0] * full_tail_prob[rel_id].shape[1]))
         sparse_matrix_list.append(full_tail_prob[rel_id].to(torch.float16).to_sparse())
     return sparse_matrix_list
 
@@ -60,10 +60,13 @@ def compute_batch_score_distmult(rel, h_emb, t_emb):
     score = torch.sum(rel * h_emb * t_emb, dim=-1)
     return score
 
-def compute_batch_score_ukge(rel, h_emb, t_emb, w, b):
+def compute_batch_score_ukge_numpy(rel, h_emb, t_emb, w, b):
     score = w * torch.sum(rel * h_emb * t_emb, dim=-1) + b
     return score
 
+def compute_batch_score_ukge(rel, h_emb, t_emb):
+    score = torch.sum(rel * h_emb * t_emb, dim=-1)
+    return score
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -74,9 +77,13 @@ if __name__ == "__main__":
     train_kg = KnowledgeGraph.create(
         quadruple_files=osp.join(data_folder, 'train.txt'),
         kgindex=kgidx)
-    threshold, epsilon = 0.05, 0.001
+    threshold, epsilon = 0.1, 0.001
 
     if args.ckpt_type == 'ukge':
+        model_param = torch.load(cqd_path)
+        ent_emb = model_param['ent.weight']
+        rel_emb = model_param['rel.weight']
+    elif args.ckpt_type == 'ukge_numpy':
         with open(cqd_path, "rb") as handle:
             params_dict = pickle.load(handle)
         ent_emb = torch.tensor(params_dict['entity_embedding'], device=device)
@@ -105,7 +112,9 @@ if __name__ == "__main__":
                 tail_emb = ent_emb.unsqueeze(0)
                 this_rel_emb = rel_emb[relation_total_id].unsqueeze(0).unsqueeze(0)
                 if args.ckpt_type == 'ukge':
-                    batch_score = compute_batch_score_ukge(this_rel_emb, batch_head_emb, tail_emb, w, b)
+                    batch_score = compute_batch_score_ukge(this_rel_emb, batch_head_emb, tail_emb)
+                elif args.ckpt_type == 'ukge_numpy':
+                    batch_score = compute_batch_score_ukge_numpy(this_rel_emb, batch_head_emb, tail_emb, w, b)
                 else:
                     batch_score = compute_batch_score_distmult(this_rel_emb, batch_head_emb, tail_emb)
                 all_matrix[0, starting_h_id: starting_h_id + batch_head] = batch_score

@@ -31,17 +31,10 @@ class KnowledgeGraph:
         self.num_entities: int = kgindex.num_entities
         self.num_relations: int = kgindex.num_relations
         self.device = device
-<<<<<<< HEAD
         self.hrt2p = defaultdict(list)
         self.hr2tp = defaultdict(list)
         self.tr2hp = defaultdict(list)
         self.ht2rab = defaultdict(set)
-=======
-        self.hrt2p = defaultdict(set)
-        self.hr2tp = defaultdict(list)
-        self.tr2hp = defaultdict(list)
-        self.ht2ab = defaultdict(tuple)
->>>>>>> 6ce17aad2fb3ed694b722c847955f1ce9e90a90e
 
         self.hr2t = defaultdict(set)
         self.tr2h = defaultdict(set)
@@ -55,29 +48,17 @@ class KnowledgeGraph:
         self.node2or = fixed_depth_nested_dict(int, 2)
         self.node2ir = fixed_depth_nested_dict(int, 2)
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 6ce17aad2fb3ed694b722c847955f1ce9e90a90e
         for fact in self.facts:
             if len(fact) == 3:
                 h, r, t = fact
             elif len(fact) == 4:
                 h, r, t, p = fact
-<<<<<<< HEAD
                 self.hrt2p[(h, r, t)].append(p)
-=======
-                self.hrt2p[(h, r, t)].add(p)
->>>>>>> 6ce17aad2fb3ed694b722c847955f1ce9e90a90e
                 self.hr2tp[(h, r)].append((t, p))
                 self.tr2hp[(t, r)].append((h, p))
             elif len(fact) == 5:
                 h, r, t, alpha, beta = fact
-<<<<<<< HEAD
                 self.ht2rab[h, t].add((r, alpha, beta))
-=======
-                self.ht2ab[h, r, t] = (alpha, beta)
->>>>>>> 6ce17aad2fb3ed694b722c847955f1ce9e90a90e
             self.hr2t[(h, r)].add(t)
             self.tr2h[(t, r)].add(h)
             self.r2ht[r].add((h, t))
@@ -1412,13 +1393,8 @@ def kg2matrix(kg: KnowledgeGraph):
     all_node_list = list(set(kg.node2or.keys()).union(set(kg.node2ir.keys())))
     node_num = len(all_node_list)
     kg_matrix = np.zeros((node_num, node_num), dtype=int)
-<<<<<<< HEAD
     for fact in kg.facts:
         triple = fact[:3] if len(fact) > 3 else fact
-=======
-    for quadruple in kg.facts:
-        triple = quadruple[:3]
->>>>>>> 6ce17aad2fb3ed694b722c847955f1ce9e90a90e
         head, relation, tail = triple
         kg_matrix[head][tail] += 1
     return kg_matrix
