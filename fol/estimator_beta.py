@@ -33,7 +33,7 @@ class BetaProjection(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.layer1 = nn.Linear(
-            self.entity_dim , self.hidden_dim)  # 1st layer
+            2 * self.entity_dim + self.relation_dim, self.hidden_dim)  # 1st layer
         self.layer0 = nn.Linear(
             self.hidden_dim, self.entity_dim)  # final layer
         self.layer_alpha = nn.Linear(self.relation_dim, self.relation_dim)
@@ -48,8 +48,8 @@ class BetaProjection(nn.Module):
         nn.init.xavier_uniform_(self.layer_beta.weight)
 
     def forward(self, e_embedding, r_embedding, a_embedding, b_embedding):
-        ab_emb = self.layer_alpha(a_embedding) + self.layer_beta(b_embedding)
-        x = e_embedding + r_embedding + ab_emb
+        #ab_emb = self.layer_alpha(a_embedding) + self.layer_beta(b_embedding)
+        x = torch.cat([e_embedding, r_embedding, a_embedding, b_embedding], dim=-1)
         for nl in range(1, self.num_layers + 1):
             x = F.relu(getattr(self, "layer{}".format(nl))(x))
         x = self.layer0(x)
@@ -287,8 +287,8 @@ class BetaEstimator4V(AppFOQEstimator):
 
     def get_float_embedding(self, floats):
 
-        float_emb = torch.zeros(floats.shape[0], 2 * self.entity_dim, device=self.device)
-        div_term = torch.exp((torch.arange(0, 2 * self.entity_dim, 2, dtype=torch.float) *
+        float_emb = torch.zeros(floats.shape[0], self.entity_dim, device=self.device)
+        div_term = torch.exp((torch.arange(0, self.entity_dim, 2, dtype=torch.float) *
                             -(math.log(10000.0) / self.entity_dim)))
         div_term = div_term.to(self.device)
         

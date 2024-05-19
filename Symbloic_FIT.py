@@ -58,6 +58,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
     h2t_relation, t2h_relation = sub_graph.ht2r[node_pair], sub_graph.ht2r[reverse_node_pair]
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
     transit_matrix_list, alpha_list, beta_list = [], [], []
+    epsion = 0.1
 
     for r in h2t_relation:
         ab = [(rab[1], rab[2]) for rab in sub_graph.ht2rab[(head_node, tail_node)] if rab[0] ==r][0]
@@ -66,6 +67,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         transit_matrix_list.append(relation_matrix_list[r])
         alpha_list.append(alpha)
         beta_list.append(beta)
@@ -76,6 +78,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         transit_matrix_list.append(relation_matrix_list[r].transpose(-2, -1))
         alpha_list.append(alpha)
         beta_list.append(beta)
@@ -86,6 +89,7 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         transit_matrix_list.append(1 - relation_matrix_list[r].to_dense())
         alpha_list.append(alpha)
         beta_list.append(beta)
@@ -96,25 +100,26 @@ def construct_matrix_list(head_node, tail_node, sub_graph, neg_sub_graph, relati
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         transit_matrix_list.append(1 - relation_matrix_list[r].transpose(-2, -1).to_dense())
         alpha_list.append(alpha)
         beta_list.append(beta)
     if conj_tnorm == 'Plus':
         trans_matrix_0 = transit_matrix_list[0].to_dense()
-        all_prob_matrix = beta_list[0] * trans_matrix_0 * (trans_matrix_0 >= alpha_list[0])
+        all_prob_matrix = beta_list[0] * trans_matrix_0 * (trans_matrix_0 >= max(alpha_list[0]-epsion, 0.0))
         for i in range(1, len(transit_matrix_list)):
             trans_matrix_i = transit_matrix_list[i].to_dense()
-            all_prob_matrix += beta_list[i] * trans_matrix_i * (trans_matrix_i >= alpha_list[i])
+            all_prob_matrix += beta_list[i] * trans_matrix_i * (trans_matrix_i >= max(alpha_list[0]-epsion, 0.0))
     elif conj_tnorm == 'Product':
         if alpha_list[0] > 0:
             pro_matrix = torch.exp(beta_list[0] * transit_matrix_list[0])
-            all_prob_matrix = pro_matrix * (pro_matrix >= math.exp(alpha_list[0] * beta_list[0]))
+            all_prob_matrix = pro_matrix * (pro_matrix >= math.exp(max(alpha_list[0]-epsion, 0.0) * beta_list[0]))
         else:
             all_prob_matrix = beta_list[0] * transit_matrix_list[0]
         for i in range(1, len(transit_matrix_list)):
             if alpha_list[0] > 0:
                 pro_matrix = torch.exp(beta_list[i] * transit_matrix_list[i])
-                all_prob_matrix = all_prob_matrix.multiply(pro_matrix * (pro_matrix >= math.exp(alpha_list[0] * beta_list[0])))
+                all_prob_matrix = all_prob_matrix.multiply(pro_matrix * (pro_matrix >= math.exp(max(alpha_list[0]-epsion, 0.0) * beta_list[0])))
             else:
                 all_prob_matrix = all_prob_matrix + transit_matrix_list[i]
     else:
@@ -176,6 +181,7 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
     h2t_negation, t2h_negation = neg_sub_graph.ht2r[node_pair], neg_sub_graph.ht2r[reverse_node_pair]
     constant_ground = torch.nonzero(cons_andidates).item()
 
+    epsion = 0.1
     candi_vec_list, alpha_list, beta_list = [], [], []
 
     for r in h2t_relation:
@@ -185,6 +191,7 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense()
@@ -197,6 +204,7 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense().transpose_()
@@ -210,6 +218,7 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense()
@@ -222,6 +231,7 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
         #else:
         #    alpha = 0.0
         alpha, beta = ab
+        #alpha, beta = 0.0, 1.0
         alpha_list.append(alpha)
         beta_list.append(beta)
         relation_matrix = r_matrix_list[r].to_dense().transpose_()
@@ -232,13 +242,13 @@ def constant_update(constant_node, adjacency_node, sub_graph: KnowledgeGraph, ne
     if conj_tnorm == 'Plus':
         candi_vec = adj_candidates
         for i in range(0, len(candi_vec_list)):
-            candi_vec += beta_list[i] * candi_vec_list[i] * (candi_vec_list[i] >= alpha_list[i])
+            candi_vec += beta_list[i] * candi_vec_list[i] * (candi_vec_list[i] >= max(0, alpha_list[i]-epsion))
     elif conj_tnorm == 'Product':
         candi_vec = adj_candidates
         for i in range(0, len(candi_vec_list)):
             a, b = alpha_list[i], beta_list[i]
             exp_candi_vec = torch.exp(b * candi_vec_list[i]) 
-            candi_vec = candi_vec.multiply(exp_candi_vec * (exp_candi_vec >= math.exp(a * b)))
+            candi_vec = candi_vec.multiply(exp_candi_vec * (exp_candi_vec >= math.exp(max(0, a-epsion) * b)))
     else:
         raise NotImplementedError
     return candi_vec

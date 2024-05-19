@@ -23,7 +23,7 @@ from fol import BetaEstimator4V, BoxEstimator, LogicEstimator, NLKEstimator, Con
 from fol import order_bounds
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", type=str, default="config/train/FIT_ONET20k_soft_Godel.yaml")
+parser.add_argument("--config", type=str, default="config/train/FIT_PPI5k_soft_Godel.yaml")
 
 
 path_formula_list = ["r1(s1,f1)", "(r1(s1,e1))&(r2(e1,f1))"]

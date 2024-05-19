@@ -781,13 +781,22 @@ class ConjunctiveFormula:
         skip_predicate = [] if not skip_predicate else skip_predicate
         for pred in self.predicate_dict.values():
             if pred.name not in skip_predicate:
-                pred_triples = (
-                    pred.head.name, 
-                    self.pred_grounded_relation_id_dict[pred.name][index], 
-                    pred.tail.name,
-                    pred.alpha,
-                    pred.beta
-                    )
+                if len(pred.alpha_float_list) > 0:
+                    pred_triples = (
+                        pred.head.name, 
+                        self.pred_grounded_relation_id_dict[pred.name][index], 
+                        pred.tail.name,
+                        pred.alpha_float_list[index],
+                        pred.beta_float_list[index]
+                        )
+                else:
+                    pred_triples = (
+                        pred.head.name, 
+                        self.pred_grounded_relation_id_dict[pred.name][index], 
+                        pred.tail.name,
+                        pred.alpha,
+                        pred.beta
+                        )
                 if pred.negated:
                     sub_graph_negation_edge.append(pred_triples)
                 else:
@@ -850,8 +859,12 @@ class ConjunctiveFormula:
                 useful_values, useful_index, = sorted_values[-100:], sorted_index[-100:]
             else:
                 useful_values, useful_index, = sorted_values, sorted_index
-            if int(sub_kg.facts[0][3][:-1]) > 0:
-                useful_values = np.log(useful_values)
+            if isinstance(sub_kg.facts[0][3], str):
+                if int(sub_kg.facts[0][3][:-1]) > 0:
+                    useful_values = np.log(useful_values)
+            elif isinstance(sub_kg.facts[0][3], float):
+                if sub_kg.facts[0][3] > 0:
+                    useful_values = np.log(useful_values)
             useful_values = np.round(useful_values, decimals=4)
             if return_full_match:
                 ans_vec = answer_dict["f1"].toarray().squeeze()
