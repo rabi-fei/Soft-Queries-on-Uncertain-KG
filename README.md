@@ -34,7 +34,9 @@ data/cn15k/
   - valid_kg.txt
   - test_kg.txt
   - percentile_25_50_75.json
-  - test_type0000_equal_zero_soft_efo1_qaa.json
+  - test_train_qaa.json
+  - valid_type0000_soft_efo1_qaa.json
+  - test_type0000_soft_efo1_qaa.json
   - ......
 ```
 
@@ -78,14 +80,15 @@ where each sub folder is the checkpoint for each model, and the name of the sub 
 
 To generate the matrix list used for SIU with UKGE, please run the command:
 ```angular2html
-python create_matrix_for_UKG.py
+python create_matrix_for_UKG.py --ckpt_path ckpt/onet20k/ukge.pt --data_folder data/processed/onet20k --output_folder ckpt/onet20k
 ```
 ## 2. Sample the data yourself
 
 We have the powerful frame that supports several key functionalities for the task of soft query answering, you can also sample the query by yourself following the instruction. 
 
 ```angular2html
-python sample_hybrid_soft_queries.py
+python sample_hybrid_soft_queries.py --sample_formula_scope zero_soft_efo1 --mode valid --a_mode zero --b_mode equal
+
 ```
 
 If you have downloaded the SQUK dataset, you can also skip this section.
@@ -93,8 +96,8 @@ If you have downloaded the SQUK dataset, you can also skip this section.
 
 ## 2. Reproduce the result of the paper.
 
-### 2.1 Query embedding method
-For query embedding method, including  LogicE, ConE, please run the following command:
+### 2.1 main experiments
+For query embedding method, including  LogicE, ConE, and SIU please run the following command:
 
 ```angular2html
 python QG_soft_train.py --config config/train/ConE_ONET20k_soft_equal_zero.yaml
@@ -102,15 +105,11 @@ python QG_soft_train.py --config config/train/ConE_ONET20k_soft_equal_zero.yaml
 
 which is an example for LogicE method on ONET20k dataset. The config file in the `config` folder is used to specify the model and knowledge graph used in the experiment.
 
-### 2.2 Query graph method: SIU
-
-For SIU, please run the following command to run the expriment on Onet20k: 
-
-```angular2html
-run_solve_soft_queries.sh
-
-```
 
 ### 2.3 comparing with LLM
 
-anoated 
+Annotated queries is aslo presented in SQUK.
+
+To reproduce the result of ChatGPT, please refer to `chatgpt_multiple_choice/ChatGPT_evaluation.ipynb`.
+
+To reproduce the result of SIU, please refer to `solve_choice_soft_EFO1.py`.
