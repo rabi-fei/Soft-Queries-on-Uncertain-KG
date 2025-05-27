@@ -94,10 +94,14 @@ If you have downloaded the SQUK dataset, you can also skip this section.
 
 ### 2.1 main experiments
 Please run the following commands to reproduce our main results.
+```
+
 iterations=11
 for ((i=0; i<=$iterations; i++))
 do
     path=$(printf "test_type%04d_soft_efo1_qaa.json" $i)
     python solve_soft_EFO1.py --cuda 0 --data_folder data/processed/onet20k --out_folder results/onet20k/main_box --query_path "$path" --ckpt checkpoints/onet20k/full_matrix_list_0.1_0.001.ckpt
 done
+```
+
 
