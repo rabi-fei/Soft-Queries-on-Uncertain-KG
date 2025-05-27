@@ -1,0 +1,93 @@
+action: [train, valid,'test']  # one of [train, train+valid, train+test, valid, test]
+seed: 0
+cuda: 1
+data:
+  type: EFO-1  # one of ['beta', 'EFO-1', 'soft EFO-1']
+  data_folder: data/ppi5k
+  cpu: 1
+  data_prefix: soft_efo1
+load:
+  load_model: False
+  checkpoint_path: soft_EFO-1_log/train_embedding_models/ConE_PPi5k_soft.yaml231226.09:31:5913cab677
+  step: 30000
+output:
+  output_path: null  # can be null, which means it will be auto_generated
+  prefix: soft_EFO-1_log
+train:
+  L2_reg: 0
+  loss_function: l2
+  formula_split: path
+  train_method: 'original'     # one of [MetaLearning, original]
+  negative_sample_size: 128  # for each positive sample
+  batch_size: 512
+  learning_rate: 0.0001
+  size_limit: null
+  steps: 45001
+  log_every_steps: 100
+  warm_up_steps: 2250
+  evaluate_every_steps: 3000
+  save_every_steps: 30000
+  interested_normal_forms:
+    - 'DNF+MultiIU'
+  formula_id_file: 'data/DNF_train_EFO1.csv' #TODO!
+  use_freeze: False
+  freeze_formula_file: 'data/FB15k-237-betae/freeze_formulas_dumps.csv'
+  use_distance: False   #  one of [False, root, leaf]
+evaluate:  # only used when valid/test in action
+  batch_size: 1000
+  print: true
+  interested_normal_forms:
+    - 'DNF'
+    - 'DNF+MultiIU'
+    - 'DeMorgan'
+  formula_id_file: 'data/DNF_train_zero_soft_EFO1.csv'
+estimator:
+  embedding: logic # one of [Transe, box, beta, dm]
+  beta:
+    entity_dim: 40
+    relation_dim: 80
+    hidden_dim: 160
+    num_layers: 2
+    # evaluate_union: DM # one of [DM, DNF] after parsing it can be omitted
+    gamma: 0.5
+  box:
+    entity_dim: 400
+    relation_dim: 400
+    offset_activation: None
+    center_reg: 0.02
+    gamma: 60
+  dm:
+    entity_dim: 2
+    relation_dim: 2
+    hidden_dim: 1600
+    num_layers: 2
+  logic:
+    entity_dim: 400
+    relation_dim: 800
+    hidden_dim: 1600
+    num_layers: 2
+    omega: 15
+    gamma: 5.175
+    t_norm: luk
+    bounded: 0
+    use_att: 1
+    use_gtrans: 0
+  cqd:
+    entity_dim: 1000 # actually 2000
+    relation_dim: 1000
+    norm_type: product
+  NewLook:
+    entity_dim: 400
+    relation_dim: 400
+    center_reg: 0.2
+    x_reg: 0.2 # \lambda in the paper
+  ConE:
+    entity_dim: 400
+    relation_dim: 800
+    hidden_dim: 800
+    num_layer: 2
+    gamma: 0.5
+    center_reg: 0.02
+    drop: 0.05
+
+

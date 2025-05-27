@@ -1,0 +1,93 @@
+action:
+- train
+- valid
+- test
+cuda: 0
+data:
+  cpu: 1
+  data_folder: data/processed/cn15k
+  data_prefix: soft_efo1
+  type: EFO-1
+estimator:
+  ConE:
+    center_reg: 0.02
+    drop: 0.05
+    entity_dim: 400
+    gamma: 0.5
+    hidden_dim: 800
+    num_layer: 2
+    relation_dim: 800
+  NewLook:
+    center_reg: 0.2
+    entity_dim: 400
+    relation_dim: 400
+    x_reg: 0.2
+  beta:
+    entity_dim: 400
+    gamma: 1.0
+    hidden_dim: 800
+    num_layers: 2
+    omega: 1.5
+    relation_dim: 800
+  box:
+    center_reg: 0.02
+    entity_dim: 400
+    gamma: 60
+    offset_activation: None
+    relation_dim: 400
+  cqd:
+    entity_dim: 1000
+    norm_type: product
+    relation_dim: 1000
+  dm:
+    entity_dim: 2
+    hidden_dim: 1600
+    num_layers: 2
+    relation_dim: 2
+  embedding: beta
+  logic:
+    bounded: 0
+    entity_dim: 400
+    gamma: 0.375
+    hidden_dim: 1600
+    num_layers: 2
+    relation_dim: 400
+    t_norm: luk
+    use_att: 1
+    use_gtrans: 0
+evaluate:
+  batch_size: 1000
+  formula_id_file: data/DNF_train_zero_soft_EFO1.csv
+  interested_normal_forms:
+  - DNF
+  - DNF+MultiIU
+  - DeMorgan
+  print: true
+load:
+  checkpoint_path: None
+  load_model: false
+  step: 45001
+output:
+  output_path: null
+  prefix: soft_EFO-1_log
+seed: 0
+train:
+  L2_reg: 0
+  batch_size: 512
+  evaluate_every_steps: 3000
+  formula_id_file: data/DNF_train_EFO1.csv
+  formula_split: path
+  freeze_formula_file: data/FB15k-237-betae/freeze_formulas_dumps.csv
+  interested_normal_forms:
+  - DNF+MultiIU
+  learning_rate: 0.0005
+  log_every_steps: 100
+  loss_function: l2
+  negative_sample_size: 128
+  save_every_steps: 3000
+  size_limit: null
+  steps: 45000
+  train_method: original
+  use_distance: false
+  use_freeze: false
+  warm_up_steps: 2250

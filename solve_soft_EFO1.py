@@ -32,7 +32,7 @@ torch.autograd.set_detect_anomaly(True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--sleep", type=int, default=0)
-parser.add_argument("--ckpt", type=str, default='checkpoints/valid_onet20k/full_matrix_list_0.1_0.001.ckpt')
+parser.add_argument("--ckpt", type=str, default='checkpoints/ppi5k/full_matrix_list_0.1_0.001.ckpt')
 parser.add_argument("--batch_size", type=int, default=1)
 parser.add_argument("--cuda", type=int, default=0)
 parser.add_argument("--data_folder", type=str, default='data/processed/onet20k')

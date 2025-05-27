@@ -8,3 +8,6 @@ def get_nbp_class(name):
     if name.lower() == 'complex':
         from .nbp_complex import ComplEx
         return ComplEx
+    if name.lower() == 'ukge':
+        from .nbp_ukge import UKGE
+        return UKGE

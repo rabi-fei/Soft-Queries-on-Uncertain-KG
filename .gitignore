@@ -3,12 +3,21 @@
 *.pt
 *.txt
 **/__pycache__
-data
-log
-pretrain
-kbc
+data/*
+log/*
+soft_EFO-1_log/*
+results/*
+pretrain/*
+kbc/*
+src/my_utils/*
+checkpoints/*
+ckpt/*
+chatgpt_multiple_choice/*
 
 BATCH.md
 run_batch.sh
 run_rsync.sh
 .rsyncignore
+.ckpt
+.txt
+.zip

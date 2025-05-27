@@ -2,12 +2,12 @@ import csv
 import os
 import json
 
-read_folder = "data/nl27k"
-save_folder = "data/processed/nl27k"
+read_folder = "data/cn15k"
+save_folder = "data/processed/cn15k"
 file_names = ["train.tsv", "val.tsv", "test.tsv"]
 
 
-names = ["entity_id.csv", "relation_id.csv"]
+names = ["concept_id.csv", "relation_id.csv"]
 saved_dict = {}
 for name in names:
     map_id = {}
@@ -18,7 +18,7 @@ for name in names:
         for i, row in enumerate(reader):
             if i==0:
                 continue
-            id, key = row
+            key, id = row
             map_id[key] = int(id)
     saved_dict[name[0]] = map_id
 with open(saved_path, "w") as f:

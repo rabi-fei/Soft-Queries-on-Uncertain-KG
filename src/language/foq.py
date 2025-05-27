@@ -781,7 +781,7 @@ class ConjunctiveFormula:
         skip_predicate = [] if not skip_predicate else skip_predicate
         for pred in self.predicate_dict.values():
             if pred.name not in skip_predicate:
-                if len(pred.alpha_float_list) > 0:
+                if len(pred.alpha_float_list) > index:
                     pred_triples = (
                         pred.head.name, 
                         self.pred_grounded_relation_id_dict[pred.name][index], 
@@ -1405,6 +1405,11 @@ class EFO1Query:
         for alstr, atomic in self.atomic_dict.items():
             rel_name = atomic.relation
             self.pred_grounded_relation_id_dict[rel_name] = []
+            a_name = f'a{rel_name[1:]}'
+            b_name = f'b{rel_name[1:]}'
+            self.pred_grounded_relation_id_dict[a_name] = []
+            self.pred_grounded_relation_id_dict[b_name] = []
+
 
         # handle terms
         self.term_dict = {}

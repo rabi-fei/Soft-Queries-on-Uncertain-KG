@@ -86,6 +86,7 @@ class NeuralBinaryPredicate:
         batch_size = batch_embedding_input.size(0)
         begin = 0
         entity_ranking_list = []
+        argsort_list = []
         for begin in range(0, batch_size, eval_batch_size):
             end = begin + eval_batch_size
             eval_batch_embedding_input = batch_embedding_input[begin: end]
@@ -103,9 +104,12 @@ class NeuralBinaryPredicate:
             # entity_rankings[entity_id] = {rankings} of the entity
             entity_rankings = torch.argsort(ranked_entity_ids, dim=-1, descending=False)
             entity_ranking_list.append(entity_rankings)
+            argsort_list.append(ranked_entity_ids)
 
         batch_entity_rankings = torch.cat(entity_ranking_list, dim=0)
-        return batch_entity_rankings
+        argsort = torch.cat(argsort_list, dim=0)
+
+        return argsort, batch_entity_rankings
 
 
     def get_all_entity_rankings_v2(self, batch_embedding_input, eval_batch_size=16, score='cos'):

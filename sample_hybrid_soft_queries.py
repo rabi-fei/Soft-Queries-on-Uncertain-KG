@@ -42,17 +42,17 @@ parser.add_argument("--output_folder", type=str, default='data/ppi5k')
 parser.add_argument("--data_folder", type=str, default='data/ppi5k')
 #parser.add_argument("--num_positive", type=int, default=1500)
 #parser.add_argument("--num_negative", type=int, default=500)
-parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='train')
-parser.add_argument('--a_mode', choices=['zero', 'low', 'normal', 'hybrid'], default='zero')
-parser.add_argument('--b_mode', choices=['equal', 'random'], default='equal')
+parser.add_argument('--mode', choices=['train', 'valid', 'test'], default='test')
+parser.add_argument('--a_mode', choices=['zero', 'low', 'normal', 'hybrid'], default='hybrid')
+parser.add_argument('--b_mode', choices=['equal', 'random'], default='random')
 parser.add_argument("--meaningful_negation", type=bool, default=True)
 parser.add_argument("--negation_tolerance", type=int, default=2)
 parser.add_argument("--ncpus", type=int, default=10)
 parser.add_argument("--skip_exist", type=bool, default=False)
-parser.add_argument("--sample_formula_scope", type=str, default='zero_soft_efo1')
+parser.add_argument("--sample_formula_scope", type=str, default='soft_efo1')
 parser.add_argument("--sample_formula_list", type=list, default=list(range(0, 1)))
-parser.add_argument("--start_index", type=int, default=2)
-parser.add_argument("--end_index", type=int, default=3)
+parser.add_argument("--start_index", type=int, default=12)
+parser.add_argument("--end_index", type=int, default=14)
 parser.add_argument("--max_ans", type=int, default=100)
 parser.add_argument("--store_each", type=int, default=50)
 
@@ -473,7 +473,7 @@ if __name__ == "__main__":
                     print("now data length: ", len(now_data))
 
             else:
-                for j in range(0, 3000 - useful_num, args.store_each):
+                for j in range(0, 1000 - useful_num, args.store_each):
                     all_query, all_qa_dict = sample_one_formula_query(
                         lstr, valid_kg, test_kg, args.store_each, args.mode, args.meaningful_negation,
                         args.double_check, args.negation_tolerance, use_full_matrix, args.ncpus, args.max_ans,

@@ -2,12 +2,12 @@ import tqdm
 import json
 import os
 import numpy as np
-graph_paths = ["data/processed/onet20k"]
+graph_paths = ["data/cn15k"]
 #graph_paths = ["data/FB15k", "data/FB15k-237", "data/NELL"]
 
 #Target: get the entity number, relation number
 for graph_path in graph_paths:
-    files = ["train", "valid", "test"]
+    files = ["train", "val", "test"]
     rel2uncertain = {}
     for file in files:
         target_file = graph_path + "/" + file + ".txt"
@@ -24,9 +24,9 @@ for graph_path in graph_paths:
     for rel in sorted(rel2uncertain.keys()):
             values = np.array(rel2uncertain[rel])
             filted_values = values[values > 0]
-            pre_25 = np.percentile(filted_values, 25)
-            pre_50 = np.percentile(filted_values, 50)
-            pre_75 = np.percentile(filted_values, 75)
+            pre_25 = float("{:.4f}".format(np.percentile(filted_values, 25)))
+            pre_50 = float("{:.4f}".format(np.percentile(filted_values, 50)))
+            pre_75 = float("{:.4f}".format(np.percentile(filted_values, 75)))
             rel2percentile[rel] = [pre_25, pre_50, pre_75]
     print(len(rel2percentile))
     with open(os.path.join(graph_path, 'percentile_25_50_75.json'), 'w') as f:

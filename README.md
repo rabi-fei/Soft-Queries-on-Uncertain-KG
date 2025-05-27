@@ -1,6 +1,6 @@
-# EFO<sub>k</sub>-CQA: Towards Knowledge Graph Complex Query Answering beyond Set Operation
+# Extending Complex Logical Queries on Uncertain Knowledge Graph
 
-This repository is for implementation for the paper "Soft Reasoning on Uncertain Knowledge Graphs".
+This repository is the implementation for the paper "Extending Complex Logical Queries on Uncertain Knowledge Graph".
 
 
 
@@ -23,7 +23,7 @@ conda install networkx
 ### 1.1 Data Preparation
 
 
-Please download the Soft Queries on Uncertain Knowledge graph (SQUK) dataset from [here](https://drive.google.com/drive/folders/todo), 
+Please download the Soft Queries on Uncertain Knowledge graph (SQUK) dataset from [here](https://drive.google.com/file/d/1cGu4zMfAtkK3VyNyL151ejGptugmJq3X/view?usp=sharing), 
 the data of three knowledge graphs can be downloaded separately and put it in the `data` folder.
 
 Then, after unzipping the query data. an example data folder should look like this:
@@ -34,13 +34,9 @@ data/cn15k/
   - valid_kg.txt
   - test_kg.txt
   - percentile_25_50_75.json
-  - test_train_qaa.json
-  - valid_type0000_soft_efo1_qaa.json
   - test_type0000_soft_efo1_qaa.json
   - ......
 ```
-
-where the `test_type0000_equal_zero_soft_efo1_qaa` is used for `equal` importance and `zero` necessity setting in the SQUK experiment, containing the data for query type0000 . 
 
 The `kgindex.json` and `percentile_25_50_75.json` are the index file and percentile file for the uncertain knowledge graph respectively, 
 the `train_kg.txt`, `valid_kg.txt`, and `test_kg.txt` are the training graph,  validation graph, and  test graph respectively. They are used for data generation.
@@ -97,19 +93,11 @@ If you have downloaded the SQUK dataset, you can also skip this section.
 ## 2. Reproduce the result of the paper.
 
 ### 2.1 main experiments
-For query embedding method, including  LogicE, ConE, and SIU please run the following command:
+Please run the following commands to reproduce our main results.
+iterations=11
+for ((i=0; i<=$iterations; i++))
+do
+    path=$(printf "test_type%04d_soft_efo1_qaa.json" $i)
+    python solve_soft_EFO1.py --cuda 0 --data_folder data/processed/onet20k --out_folder results/onet20k/main_box --query_path "$path" --ckpt checkpoints/onet20k/full_matrix_list_0.1_0.001.ckpt
+done
 
-```angular2html
-python QG_soft_train.py --config config/train/ConE_ONET20k_soft_equal_zero.yaml
-```
-
-which is an example for LogicE method on ONET20k dataset. The config file in the `config` folder is used to specify the model and knowledge graph used in the experiment.
-
-
-### 2.3 comparing with LLM
-
-Annotated queries is aslo presented in SQUK.
-
-To reproduce the result of ChatGPT, please refer to `chatgpt_multiple_choice/ChatGPT_evaluation.ipynb`.
-
-To reproduce the result of SIU, please refer to `solve_choice_soft_EFO1.py`.

@@ -392,7 +392,7 @@ def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_
                                                         now_candidate_set, data_graph)
             return answer, exist_answer
     else:
-        if int(sub_graph.facts[0][3][:-1]):
+        if (isinstance(sub_graph.facts[0][3], float) and sub_graph.facts[0][3] > 0) or (isinstance(sub_graph.facts[0][3], str) and int(sub_graph.facts[0][3][:-1])):
             now_candidate_set_ = {}
             for node, candidate in now_candidate_set.items():
                 if now_candidate_set[node].getnnz():
@@ -435,10 +435,12 @@ def csp_efo1_soft(sub_graph: KnowledgeGraph, neg_sub_graph: KnowledgeGraph, now_
                 answer, exist_answer = cut_node_sub_problem_soft(guess_node, adjacency_node_set, sub_graph, neg_sub_graph,
                                                             new_candidate_set, data_graph)
                 if exist_answer:
-                    if int(sub_graph.facts[0][3][:-1]):
+                    if (isinstance(sub_graph.facts[0][3], float) and sub_graph.facts[0][3] > 0) or (isinstance(sub_graph.facts[0][3], str) and int(sub_graph.facts[0][3][:-1])):
                         collect_guess_ans.append(answer["f1"].toarray().squeeze() * guess_node_candidate_value[candidate])
                     else:
                         collect_guess_ans.append(answer["f1"].toarray().squeeze() + guess_node_candidate_value[candidate])
+            if len(collect_guess_ans) == 0:
+                return None, False
             final_answer = np.array(collect_guess_ans).max(axis=0)
         cols = np.nonzero(final_answer)[0]
         final_answer = coo_array((final_answer[cols], (np.zeros(cols.shape[0]), cols)), shape=(1, final_answer.shape[0]))
@@ -901,6 +903,7 @@ def node_pair_cutting_soft(now_node, to_change_node, sub_graph: KnowledgeGraph, 
                         shape = (1, kg_num)) 
             now_candidate_set[to_change_node] = coo_array(All_Candidate_values.max(axis=0) + now_candidate_set[to_change_node])
     exist_answer = (now_candidate_set[to_change_node].getnnz() != 0)
+    assert now_candidate_set != None
     return now_candidate_set, exist_answer
 
 
@@ -1025,13 +1028,14 @@ def cut_node_sub_problem(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGr
 def cut_node_sub_problem_soft(to_cut_node, adjacency_node_set, sub_graph: KnowledgeGraph,
                          neg_sub_graph: KnowledgeGraph, now_candidate_set, data_graph: KnowledgeGraph):
     new_candidate_set = copy.deepcopy(now_candidate_set)
+    assert new_candidate_set != None
     all_adj_exist_ans = True
     for adjacency_node in adjacency_node_set:
         new_candidate_set, adj_exist_ans = node_pair_cutting_soft(to_cut_node, adjacency_node, sub_graph, neg_sub_graph,
                                                                new_candidate_set, data_graph)
         all_adj_exist_ans = adj_exist_ans and all_adj_exist_ans
-    if not all_adj_exist_ans:
-        return None, False
+        if not all_adj_exist_ans:
+            return None, False
     new_sub_graph, new_sub_neg_graph = kg_remove_node(sub_graph, to_cut_node), \
                                        kg_remove_node(neg_sub_graph, to_cut_node)
     cut_node_candidate_set = new_candidate_set.pop(to_cut_node)
@@ -1296,14 +1300,15 @@ def matrix_pair_filter_v2(node1, node2, candidate1_list, sample_query, sample_ma
     candidate2_set = set()
     for candidate1 in candidate1_list:
         if sample_matrix[node1, node2] > 0:
-            necess_requirements = sample_query.ht2rab[(index[node1], index[node2])]
+            necess_requirements = list(sample_query.ht2rab[(index[node1], index[node2])])
             tail_candidates = data_kg.h2t[candidate1]
             satisfy_candidate2_set = set()
             for tail_candidate in tail_candidates:
                 r_list = data_kg.ht2r[(candidate1, tail_candidate)]
                 num_requirements = [0 for require in necess_requirements]
+                a_index = [int(require[1][:-1]) // 25 -1 for require in necess_requirements]
                 for i in range(len(necess_requirements)):
-                    r_requirements = [np.mean(data_kg.hrt2p[(candidate1, r, tail_candidate)]) >= data_kg.r2percentile[f"{r}"][1] for r in r_list]
+                    r_requirements = [np.mean(data_kg.hrt2p[(candidate1, r, tail_candidate)]) >= data_kg.r2percentile[f"{r}"][a_index[i]] for  r in r_list]
                     if np.any(r_requirements):
                         num_requirements[i] += 1
                 if np.all(num_requirements):
@@ -1315,8 +1320,9 @@ def matrix_pair_filter_v2(node1, node2, candidate1_list, sample_query, sample_ma
             for head_candidate in tail_candidates:
                 r_list = data_kg.ht2r[(head_candidate, candidate1)]
                 num_requirements = [0 for require in necess_requirements]
+                a_index = [int(require[1][:-1]) // 25 -1 for require in necess_requirements]
                 for i in range(len(necess_requirements)):
-                    r_requirements = [np.mean(data_kg.hrt2p[(head_candidate, r, candidate1)]) >= data_kg.r2percentile[f"{r}"][1] for r in r_list]
+                    r_requirements = [np.mean(data_kg.hrt2p[(head_candidate, r, candidate1)]) >= data_kg.r2percentile[f"{r}"][a_index[i]] for r in r_list]
                     if np.any(r_requirements):
                         num_requirements[i] += 1
                 if np.all(num_requirements):
@@ -1342,7 +1348,7 @@ def ground_predicate_v3(grounded_entity_list: List, query_kg: KnowledgeGraph, da
                     inner_relation_candidate.add(r)
         if len(query_kg.ht2r[head, tail]) > 1:
                 chosed_r = {grounded_relation_dict[r] for r in query_kg.ht2r[head, tail] if r in grounded_relation_dict}
-                inner_relation_candidate = inner_relation_candidate.difference(chosed_r)
+                # inner_relation_candidate = inner_relation_candidate.difference(chosed_r)
         inner_relation_choice = random.sample(inner_relation_candidate, 1)[0]
         new_grounded_dict = {relation: inner_relation_choice}
         grounded_relation_dict.update(new_grounded_dict)

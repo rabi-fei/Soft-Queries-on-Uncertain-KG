@@ -1,0 +1,85 @@
+action: ['train', 'test']  # one of [train, train+valid, train+test, valid, test]
+seed: 0
+cuda: 1
+data:
+  data_folder: data/processed/onet20k
+  cpu: 1
+  data_prefix: soft_efo1
+load:
+  load_model: True
+  checkpoint_path: "soft_EFO-1_log/train/FIT_ONET20k_soft_Godel.yaml240129.23:17:37f34ca3b2"
+  step: 500
+output:
+  output_path: null
+  prefix: soft_EFO-1_log
+train:
+  size_limit: null
+  L2_reg: 0
+  formula_split: all
+  negative_sample_size: 128  # for each positive sample
+  batch_size: 64
+  learning_rate: 0.00001
+  steps: 5000
+  log_every_steps: 100
+  warm_up_steps: 2500
+  evaluate_every_steps: 500
+  save_every_steps: 500
+  formula_id_file: 'data/DNF_train_EFO1.csv'
+  loss_function: l2
+evaluate:  # only used when valid/test in action
+  batch_size: 1000
+  print: true
+  formula_id_file: 'data/DNF_train_zero_soft_EFO1.csv'
+estimator:
+  embedding: SIU # one of [Transe, box, beta, dm]
+  beta:
+    entity_dim: 400
+    relation_dim: 400
+    hidden_dim: 1600
+    num_layers: 2
+    # evaluate_union: DM # one of [DM, DNF] after parsing it can be omitted
+    gamma: 60
+  box:
+    entity_dim: 400
+    relation_dim: 400
+    offset_activation: None
+    center_reg: 0.02
+    gamma: 60
+  dm:
+    entity_dim: 2
+    relation_dim: 2
+    hidden_dim: 1600
+    num_layers: 2
+  logic:
+    entity_dim: 400
+    relation_dim: 400
+    hidden_dim: 1600
+    num_layers: 2
+    gamma: 0.375
+    t_norm: luk
+    bounded: 0
+    use_att: 1
+    use_gtrans: 0
+  cqd:
+    entity_dim: 1000 # actually 2000
+    relation_dim: 1000
+    norm_type: product
+  NewLook:
+    entity_dim: 400
+    relation_dim: 400
+    center_reg: 0.2
+    x_reg: 0.2 # \lambda in the paper
+  SIU:
+    ukge_path: "checkpoints/onet20k/best_valid.model"
+    matrix_path: null
+    kge: UKGE
+    head_batch: 500
+    threshold: 0.1
+    epsilon: 0.001
+    mode: fine-tune
+    e_norm: Godel
+    c_norm: Product
+    max_enumeration: 10
+    sparse: False
+    freeze_ent: True
+
