@@ -12,6 +12,7 @@ kbc/*
 src/my_utils/*
 checkpoints/*
 ckpt/*
+data_preparation/*
 chatgpt_multiple_choice/*
 
 BATCH.md
