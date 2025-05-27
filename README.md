@@ -58,7 +58,7 @@ python data_preparation/transform_kg.py
 ### 1.2 Checkpoint Preparation
 
 To reproduce the experiment in the paper, we have provided the checkpoint for each model foreach knowledge graph, we
-offer the checkpoint for six representative model (LogicE, ConE, SIU), which can be downloaded from [here](https://drive.google.com/drive/folders/todo),
+offer the checkpoint for six representative model (LogicE, ConE, SIU), which can be downloaded from [here](https://drive.google.com/file/d/1PGtpCqUVXOTQH5MSHfkwCDYzyObq3T29/view?usp=sharing),
 
 
 It should be unzipped and put in the `ckpt` folder.
