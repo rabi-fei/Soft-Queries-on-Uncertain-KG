@@ -18,7 +18,8 @@ chatgpt_multiple_choice/*
 BATCH.md
 run_batch.sh
 run_rsync.sh
-.rsyncignore
-.ckpt
-.txt
-.zip
+*.rsyncignore
+*.ckpt
+*.txt
+*.zip
+*.sh
